@@ -325,6 +325,183 @@
     return { elbow, wrist };
   }
 
+  // ------------------------------------------------------------------ anatomía (marioneta muscular)
+  // Cada segmento del cuerpo se dibuja con polígonos de músculos, en el mismo estilo del mapa muscular (body-map.js):
+  // `m` son los nombres del mapa (o 'neutral' para cabeza, manos, pies y rodillas). Coordenadas locales del hueso:
+  // u = fracción del hueso (0 = articulación de arriba, 1 = la de abajo; la cabeza usa metros), v = metros hacia el
+  // frente del cuerpo (vista de lado) o hacia afuera (vistas de frente y de espalda). `sym` dibuja también el lado
+  // espejado. Las uniones quedan con una separación oscura, como entre los músculos del mapa.
+  const M = (m, pts, o) => Object.assign({ m: Array.isArray(m) ? m : [m], pts }, o || {});
+  const HEAD_SIDE = [[0.115, 0], [0.1, 0.06], [0.06, 0.095], [0, 0.1], [-0.02, 0.122], [-0.045, 0.1], [-0.08, 0.085],
+    [-0.105, 0.04], [-0.11, -0.02], [-0.08, -0.085], [-0.02, -0.11], [0.05, -0.105], [0.1, -0.06]];
+  const HEAD_FRONT = [[0.115, 0], [0.1, 0.06], [0.06, 0.088], [0, 0.095], [-0.06, 0.088], [-0.1, 0.06], [-0.12, 0],
+    [-0.1, -0.06], [-0.06, -0.088], [0, -0.095], [0.06, -0.088], [0.1, -0.06]];
+  const FOREARM = [
+    M('forearm', [[0.06, -0.034], [0.06, 0.036], [0.35, 0.04], [0.9, 0.022], [0.94, 0], [0.9, -0.022], [0.35, -0.038]]),
+    M('neutral', [[1, -0.026], [1, 0.026], [1.2, 0.032], [1.38, 0.014], [1.4, -0.006], [1.2, -0.03]]),
+  ];
+  const NECK_FRONT = [M('neck', [[0.02, -0.045], [0.02, 0.045], [0.52, 0.04], [0.52, -0.04]])];
+  const ARM_FRONT = (main) => [
+    M(['front-deltoids', 'back-deltoids'], [[-0.1, -0.035], [-0.07, 0.05], [0.08, 0.072], [0.3, 0.05], [0.33, -0.03], [0.1, -0.05]]),
+    M(main, [[0.36, -0.045], [0.36, 0.048], [0.7, 0.05], [0.95, 0.03], [0.95, -0.03], [0.7, -0.045]]),
+  ];
+  const LEGS_FRONT = {
+    thigh: [
+      M('quadriceps', [[0.08, -0.045], [0.08, 0.06], [0.4, 0.075], [0.85, 0.05], [0.95, 0.03], [0.95, -0.03], [0.6, -0.04], [0.3, -0.045]]),
+      M('adductor', [[0.06, -0.055], [0.35, -0.05], [0.58, -0.046], [0.52, -0.075], [0.25, -0.088], [0.06, -0.085]]),
+      M('abductors', [[-0.14, 0.058], [0.05, 0.062], [0.3, 0.072], [0.38, 0.1], [0.2, 0.128], [-0.1, 0.135]]),
+    ],
+    shin: [
+      M('tibialis', [[0.07, -0.028], [0.07, 0.034], [0.5, 0.03], [0.92, 0.018], [0.92, -0.018], [0.5, -0.026]]),
+      M('calves', [[0.1, 0.036], [0.28, 0.058], [0.52, 0.042], [0.56, 0.032]]),
+      M('calves', [[0.1, -0.032], [0.28, -0.055], [0.52, -0.04], [0.56, -0.03]]),
+    ],
+    foot: [M('neutral', [[-0.1, -0.04], [0.95, -0.035], [1.05, 0], [0.95, 0.035], [-0.1, 0.04]])],
+  };
+  const SHAPES = {
+    side: {
+      torso: [
+        M('gluteal', [[-0.13, -0.03], [-0.07, -0.115], [0.06, -0.135], [0.2, -0.12], [0.27, -0.07], [0.22, -0.03]]),
+        M('abductors', [[0, -0.01], [0.05, 0.055], [0.2, 0.065], [0.26, 0.02], [0.24, -0.02]]),
+        M('lower-back', [[0.3, -0.04], [0.29, -0.11], [0.45, -0.115], [0.6, -0.1], [0.6, -0.045]]),
+        M('obliques', [[0.29, -0.025], [0.62, -0.035], [0.62, 0.065], [0.45, 0.075], [0.29, 0.065]]),
+        M('abs', [[0.1, 0.075], [0.3, 0.085], [0.64, 0.085], [0.64, 0.125], [0.4, 0.13], [0.12, 0.11]]),
+        M('upper-back', [[0.63, -0.03], [0.62, -0.1], [0.78, -0.125], [0.92, -0.11], [0.9, -0.03]]),
+        M('chest', [[0.66, 0], [0.66, 0.1], [0.78, 0.135], [0.94, 0.12], [0.95, 0.02]]),
+        M('trapezius', [[0.88, -0.085], [0.95, -0.11], [1.06, -0.06], [1.1, -0.02], [0.93, -0.015]]),
+      ],
+      neck: [M('neck', [[0.02, -0.04], [0.02, 0.035], [0.5, 0.035], [0.55, -0.035]])],
+      head: [M('neutral', HEAD_SIDE, { head: true })],
+      upper: [
+        M('front-deltoids', [[-0.1, 0], [-0.06, 0.06], [0.08, 0.07], [0.3, 0.04], [0.33, 0]]),
+        M('back-deltoids', [[-0.1, -0.005], [-0.06, -0.062], [0.08, -0.07], [0.3, -0.04], [0.33, -0.005]]),
+        M('biceps', [[0.36, 0], [0.42, 0.048], [0.7, 0.05], [0.9, 0.028], [0.95, 0]]),
+        M('triceps', [[0.36, -0.005], [0.42, -0.055], [0.7, -0.05], [0.9, -0.03], [0.95, -0.005]]),
+      ],
+      fore: FOREARM,
+      thigh: [
+        M('quadriceps', [[0.08, 0], [0.1, 0.07], [0.35, 0.088], [0.65, 0.078], [0.88, 0.055], [0.95, 0.025], [0.95, 0]]),
+        M('hamstring', [[0.15, -0.005], [0.2, -0.072], [0.45, -0.08], [0.75, -0.062], [0.92, -0.035], [0.95, -0.005]]),
+        M('neutral', [[0.95, 0.03], [1.02, 0.055], [1.08, 0.035], [1.04, 0.006]]),
+      ],
+      shin: [
+        M('tibialis', [[0.07, 0.003], [0.08, 0.045], [0.45, 0.038], [0.85, 0.02], [0.93, 0.003]]),
+        M('calves', [[0.06, -0.003], [0.1, -0.062], [0.3, -0.078], [0.5, -0.052], [0.6, -0.022], [0.6, -0.003]]),
+        M('soleus', [[0.62, -0.003], [0.62, -0.024], [0.68, -0.04], [0.8, -0.032], [0.94, -0.012], [0.94, -0.003]]),
+      ],
+      foot: [M('neutral', [[-0.32, -0.05], [-0.36, -0.01], [-0.22, 0.03], [0.3, 0.03], [0.8, 0.012], [1.02, -0.012], [1, -0.05], [0.2, -0.055]])],
+    },
+    front: {
+      torso: [
+        M('chest', [[0.66, 0.012], [0.95, 0.02], [0.96, 0.15], [0.86, 0.17], [0.7, 0.14], [0.65, 0.08]], { sym: true }),
+        M('abs', [[0.47, 0.008], [0.63, 0.008], [0.63, 0.058], [0.47, 0.058]], { sym: true }),
+        M('abs', [[0.3, 0.008], [0.45, 0.008], [0.45, 0.058], [0.3, 0.056]], { sym: true }),
+        M('abs', [[0.12, 0.008], [0.28, 0.008], [0.28, 0.054], [0.14, 0.05]], { sym: true }),
+        M('obliques', [[0.12, 0.062], [0.6, 0.068], [0.64, 0.13], [0.42, 0.135], [0.18, 0.11]], { sym: true }),
+        M('trapezius', [[0.96, 0.03], [1.1, 0.05], [1.03, 0.16], [0.97, 0.155]], { sym: true }),
+        M('neutral', [[-0.1, 0.005], [0.1, 0.005], [0.1, 0.1], [-0.02, 0.118], [-0.1, 0.085]], { sym: true }),
+      ],
+      neck: NECK_FRONT,
+      head: [M('neutral', HEAD_FRONT, { head: true })],
+      upper: ARM_FRONT('biceps'),
+      fore: FOREARM,
+      thigh: LEGS_FRONT.thigh, shin: LEGS_FRONT.shin, foot: LEGS_FRONT.foot,
+    },
+    back: {
+      torso: [
+        M('trapezius', [[0.6, 0.006], [0.84, 0.05], [1, 0.16], [1.08, 0.04], [1.08, 0.006]], { sym: true, scap: true }),
+        M('upper-back', [[0.42, 0.012], [0.62, 0.02], [0.86, 0.075], [0.94, 0.17], [0.72, 0.175], [0.5, 0.11]], { sym: true, scap: true }),
+        M('lower-back', [[0.1, 0.008], [0.42, 0.008], [0.42, 0.075], [0.14, 0.065]], { sym: true }),
+        M('gluteal', [[-0.16, 0.012], [0.08, 0.012], [0.09, 0.12], [-0.06, 0.14], [-0.17, 0.1]], { sym: true }),
+      ],
+      neck: NECK_FRONT,
+      head: [M('neutral', HEAD_FRONT, { head: true })],
+      upper: ARM_FRONT('triceps'),
+      fore: FOREARM,
+      thigh: LEGS_FRONT.thigh, shin: LEGS_FRONT.shin, foot: LEGS_FRONT.foot,
+    },
+  };
+  const shapeSet = (guide) => SHAPES[guide.view === 'side' ? 'side' : guide.view === 'back' ? 'back' : 'front'];
+
+  /** Envolvente convexa (cadena monótona): la silueta base de un segmento a partir de sus músculos. */
+  function hull(points) {
+    const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+    if (pts.length < 3) return pts;
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    pts.forEach((pt) => { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pt) <= 0) lower.pop(); lower.push(pt); });
+    const upper = [];
+    pts.slice().reverse().forEach((pt) => { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pt) <= 0) upper.pop(); upper.push(pt); });
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+
+  /**
+   * Contorno de la figura: polígonos de músculos en coordenadas del mundo, en orden de dibujo (lo de atrás primero).
+   * Cada segmento lleva primero su silueta base (base: true) y después sus músculos.
+   * Devuelve [{ part, side, seg, m, neutral, base, far, pts }].
+   */
+  function outlines(p, guide, pose) {
+    const set = shapeSet(guide);
+    const side = guide.view === 'side';
+    const lying = guide.view === 'lying';
+    const front = guide.view === 'front' || guide.view === 'back';
+    const yawK = Math.cos(rad((pose && pose.yaw) || 0));
+    const scap = (pose && pose.scap) || 0;
+    const out = [];
+    const unit = (a, b) => { const d = dist(a, b) || 1e-6; return { x: (b.x - a.x) / d, y: (b.y - a.y) / d, len: d }; };
+    // perp: frente del cuerpo (de lado) o afuera (de frente). Extremidades: dirección del hueso girada -90°; tronco,
+    // cuello y cabeza: +90° (apuntan hacia arriba). En las vistas de frente se elige el lado de afuera de cada miembro.
+    function add(part, sideKey, a, b, opts = {}) {
+      const shapes = set[part];
+      if (!shapes || !a || !b) return;
+      const d = opts.headFrame ? opts.headFrame : unit(a, b);
+      const up = part === 'torso' || part === 'neck' || part === 'head';
+      let perp = up ? { x: -d.y, y: d.x } : { x: d.y, y: -d.x };
+      if (!side && !up && opts.flip) perp = { x: -perp.x, y: -perp.y };
+      const seg = part === 'head' ? 'neck' : (part === 'torso' || part === 'neck' ? part : part + sideKey);
+      const mine = [];
+      shapes.forEach((sh) => {
+        const variants = sh.sym ? [1, -1] : [1];
+        variants.forEach((sgn) => {
+          const pts = sh.pts.map(([u, v0]) => {
+            let v = v0 * sgn;
+            if (sh.scap && scap) v = Math.sign(v) * Math.max(0.004, Math.abs(v) - 0.03 * scap);
+            if (part === 'torso' && front) v *= 1 + (yawK - 1) * Math.max(0, Math.min(1, u));
+            const along = sh.head ? u : u * d.len;
+            return { x: a.x + d.x * along + perp.x * v, y: a.y + d.y * along + perp.y * v };
+          });
+          mine.push({ part, side: sideKey, seg, m: sh.m, neutral: sh.m[0] === 'neutral', base: false, far: opts.far || false, pts });
+        });
+      });
+      if (part !== 'head') {
+        out.push({ part, side: sideKey, seg, m: ['neutral'], neutral: true, base: true, far: opts.far || false,
+          pts: hull([].concat(...mine.map((x) => x.pts))) });
+      }
+      out.push(...mine);
+    }
+    const arm = (s, far) => {
+      const flip = front ? s === 'N' : lying ? s === 'F' : false;
+      add('upper', s, p[`sh${s}`], p[`el${s}`], { far, flip });
+      add('fore', s, p[`el${s}`], p[`wr${s}`], { far, flip });
+    };
+    const leg = (s, far) => {
+      if (guide.upper) return;
+      const flip = front ? s === 'N' : lying ? s === 'F' : false;
+      add('thigh', s, p[`hip${s}`], p[`kn${s}`], { far, flip });
+      add('shin', s, p[`kn${s}`], p[`an${s}`], { far, flip });
+      add('foot', s, p[`an${s}`], p[`to${s}`], { far, flip });
+    };
+    const trunk = () => {
+      add('torso', null, p.hip, p.sh);
+      add('neck', null, p.sh, p.head);
+      const nd = unit(p.sh, p.head);
+      add('head', null, p.head, p.head, { headFrame: { x: nd.x, y: nd.y, len: 1 } });
+    };
+    if (front) { trunk(); arm('F', false); arm('N', false); leg('F', false); leg('N', false); }
+    else { arm('F', true); leg('F', true); trunk(); leg('N', false); arm('N', false); }
+    return out;
+  }
+
   const KEYS = ['hip', 'sh', 'shN', 'shF', 'hipN', 'hipF', 'head', 'elN', 'wrN', 'elF', 'wrF', 'knN', 'anN', 'toN', 'knF', 'anF', 'toF'];
   function shift(p, dx, dy) {
     const out = {};
@@ -332,13 +509,17 @@
     return out;
   }
 
-  /** Apoya la figura en el suelo (y = 0): el punto más bajo toca el piso. En las vistas de medio cuerpo, la cadera. */
-  function ground(p, guide) {
-    if (guide.upper) return shift(p, 0, -p.hip.y);
+  /** Lo más bajo del contorno de la figura (planta del pie, espalda, glúteos...). */
+  function lowestY(p, guide, pose) {
     let maxY = -Infinity;
-    KEYS.forEach((k) => { if (p[k]) maxY = Math.max(maxY, p[k].y); });
-    maxY = Math.max(maxY, p.head.y + L.head);
-    return shift(p, 0, -maxY);
+    outlines(p, guide, pose).forEach((o) => o.pts.forEach((pt) => { if (pt.y > maxY) maxY = pt.y; }));
+    return maxY;
+  }
+
+  /** Apoya la figura en el suelo (y = 0): el contorno más bajo toca el piso. En las vistas de medio cuerpo, la cadera. */
+  function ground(p, guide, pose) {
+    if (guide.upper) return shift(p, 0, -p.hip.y);
+    return shift(p, 0, -lowestY(p, guide, pose));
   }
 
   function ikTarget(name, p, ctx) {
@@ -351,7 +532,7 @@
 
   /** Pose → puntos apoyados en el suelo, con el ancla fija y los brazos que se agarran de algo resueltos. */
   function solvePose(pose, guide, ctx) {
-    let p = ground(bodyPoints(pose, guide), guide);
+    let p = ground(bodyPoints(pose, guide), guide, pose);
     if (ctx && ctx.anchorX != null) p = shift(p, ctx.anchorX - p[guide.anchor].x, 0);
     ['N', 'F'].forEach((s) => {
       const ik = pose[`ik${s}`];
@@ -367,7 +548,7 @@
 
   /** Contexto fijo de una guía: ancla, manos del primer cuadro (para la silla o la mesa) y la caja de todo el recorrido. */
   function prepare(guide) {
-    const first = ground(bodyPoints(guide.seq[0][0], guide), guide);
+    const first = ground(bodyPoints(guide.seq[0][0], guide), guide, guide.seq[0][0]);
     const ctx = { anchorX: first[guide.anchor].x, hands: { N: first.wrN, F: first.wrF }, hip0: first.hip };
     // Cada cuadro clave con agarre guarda los ángulos que resultan, para poder interpolar con cuadros sin agarre.
     guide.seq.forEach((step) => {
@@ -387,8 +568,7 @@
     };
     guide.seq.forEach((step) => {
       const p = solvePose(step[0], guide, ctx);
-      KEYS.forEach((k) => { if (p[k]) grow(p[k]); });
-      grow(p.head, L.head);
+      outlines(p, guide, step[0]).forEach((o) => o.pts.forEach((pt) => grow(pt)));
     });
     ctx.props = propShapes(guide, ctx, box);
     ctx.props.forEach((shape) => shape.pts.forEach((pt) => grow(pt)));
@@ -403,21 +583,22 @@
     (guide.props || []).forEach((name) => {
       if (name === 'chair') {
         const h = ctx.hip0;
-        const seat = h.y + 0.06;
+        const seat = h.y + 0.085;
         line([h.x - 0.24, seat - 0.48], [h.x - 0.24, 0]);
         line([h.x - 0.24, seat], [h.x + 0.2, seat]);
         line([h.x + 0.18, seat], [h.x + 0.18, 0]);
       } else if (name === 'chairBack') {
         const hand = ctx.hands.N;
-        const x = hand.x + 0.02;
+        const x = hand.x + 0.09;
         line([x, hand.y], [x, 0]);
         line([x, -0.46], [x + 0.42, -0.46]);
         line([x + 0.4, -0.46], [x + 0.4, 0]);
       } else if (name === 'table') {
         const hand = ctx.hands.F;
-        line([hand.x - 0.12, hand.y], [hand.x + 0.5, hand.y]);
-        line([hand.x - 0.08, hand.y], [hand.x - 0.08, 0]);
-        line([hand.x + 0.46, hand.y], [hand.x + 0.46, 0]);
+        const top = hand.y + 0.03;
+        line([hand.x - 0.12, top], [hand.x + 0.5, top]);
+        line([hand.x - 0.08, top], [hand.x - 0.08, 0]);
+        line([hand.x + 0.46, top], [hand.x + 0.46, 0]);
       } else if (name === 'mat') {
         out.push({ pts: [{ x: box.minX - 0.12, y: 0 }, { x: box.maxX + 0.12, y: 0 }], mat: true });
       }
@@ -509,6 +690,34 @@
     upperF: ['shF', 'elF'], foreF: ['elF', 'wrF'], thighF: ['hipF', 'knF'], shinF: ['knF', 'anF'], footF: ['anF', 'toF'],
   };
   Object.entries(FOCUS).forEach(([id, f]) => { if (GUIDES[id]) GUIDES[id].focus = f; });
+  GUIDES['one-leg-stand'].muscleLimbs = ['lN', 'lF'];      // la pierna de apoyo también trabaja
+
+  /** Músculos del catálogo que trabaja el ejercicio, con los nombres del mapa (sóleo izquierdo y derecho son uno). */
+  function musclesFor(exerciseId, catalog) {
+    const C = catalog || (typeof self !== 'undefined' && self.AxonCatalog);
+    const ex = C && C.get ? C.get(exerciseId) : null;
+    return new Set((ex ? ex.muscles : []).map((m) => (m === 'left-soleus' || m === 'right-soleus' ? 'soleus' : m)));
+  }
+
+  /** En qué brazos y piernas se encienden esos músculos: los que se mueven (FOCUS), o todos si no se mueve ninguno de
+   *  ese tipo, o los que la guía declare en `muscleLimbs` (apoyo en un pie: trabaja también la pierna de apoyo). */
+  function limbsFor(guide) {
+    if (guide.muscleLimbs) {
+      const out = { aN: false, aF: false, lN: false, lF: false };
+      guide.muscleLimbs.forEach((k) => { out[k] = true; });
+      if (!out.aN && !out.aF) { out.aN = true; out.aF = true; }
+      return out;
+    }
+    const f = focusOf(guide);
+    const any = (names) => names.some((n) => f.has(n));
+    const out = {
+      aN: any(['upperN', 'foreN']), aF: any(['upperF', 'foreF']),
+      lN: any(['thighN', 'shinN', 'footN']), lF: any(['thighF', 'shinF', 'footF']),
+    };
+    if (!out.aN && !out.aF) { out.aN = true; out.aF = true; }
+    if (!out.lN && !out.lF) { out.lN = true; out.lF = true; }
+    return out;
+  }
 
   /** Segmentos (y marcas abs/scap) que se mueven en una guía. */
   function focusOf(guide) {
@@ -570,24 +779,27 @@
     const v = (name, fallback) => (css && css.getPropertyValue(name).trim()) || fallback;
     const num = (name, fallback) => { const x = parseFloat(v(name, '')); return Number.isFinite(x) ? x : fallback; };
     return {
-      body: v('--fig-body', '#7E97B3'), far: v('--fig-body-far', '#3A4E68'), active: v('--fig-active', '#00F2FE'),
-      hold: v('--fig-hold', '#FFB800'), done: v('--fig-done', '#00FF88'), ghost: v('--fig-ghost', 'rgba(0,242,254,0.3)'),
-      joint: v('--fig-joint', '#F8FAFC'), prop: v('--fig-prop', '#5E6E85'), floor: v('--fig-floor', 'rgba(0,242,254,0.3)'),
-      band: v('--fig-band', '#CBD5E1'), ink: v('--ink', '#F1F5F9'), muted: v('--muted', '#94A3B8'),
-      mono: v('--font-mono', 'monospace'), limb: num('--fig-limb', 0.075), glow: num('--fig-glow', 14),
+      bg: v('--fig-bg', '#050B1A'), muscle: v('--muscle', '#94A3B8'), muscleFill: num('--muscle-fill', 0.16),
+      muscleEdge: num('--muscle-edge', 0.35), neutralFill: num('--muscle-neutral-fill', 0.08),
+      activeMin: num('--muscle-active-min', 0.25), activeRange: num('--muscle-active-range', 0.7),
+      active: v('--fig-active', '#00F2FE'), hold: v('--fig-hold', '#FFB800'), done: v('--fig-done', '#00FF88'),
+      ghost: v('--fig-ghost', 'rgba(0,242,254,0.3)'), prop: v('--fig-prop', '#5E6E85'),
+      floor: v('--fig-floor', 'rgba(0,242,254,0.3)'), band: v('--fig-band', '#CBD5E1'), ink: v('--ink', '#F1F5F9'),
+      muted: v('--muted', '#94A3B8'), mono: v('--font-mono', 'monospace'), glow: num('--fig-glow', 14),
     };
   }
 
-  /** Dibuja una pose en una celda. opts: phase, ghost (pose objetivo), arrow ({from, to}), holdK (0-1), dash, label. */
+  /** Dibuja una pose en una celda, con el estilo del mapa muscular. opts: phase, level (0-1, cuánto trabajan los
+   *  músculos), muscles (Set), eligible ({aN, aF, lN, lF}), ghost (pose objetivo), arrow, holdK, holdAt, dash, label. */
   function drawCell(g, guide, ctx, cell, s, pose, T, opts = {}) {
     const dpr = (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1;
     const p = solvePose(pose, guide, ctx);
     const X = (pt) => [cell.ox + pt.x * s, cell.oy + pt.y * s];
-    const focus = focusOf(guide);
     const phase = opts.phase || 'start';
     const activeColor = phase === 'hold' ? T.hold : phase === 'top' ? T.done : T.active;
-    const limbW = Math.max(2 * dpr, T.limb * s);
-    const side = guide.view === 'side' || guide.view === 'lying';
+    const level = opts.level == null ? 0.6 : Math.max(0, Math.min(1, opts.level));
+    const thin = Math.max(1, dpr);
+    const propW = Math.max(2 * dpr, 0.028 * s);
     const line = (a, b, width, color, o = {}) => {
       if (!a || !b) return;
       g.save();
@@ -596,15 +808,15 @@
       g.lineWidth = width;
       g.lineCap = 'round';
       if (o.dash) { g.setLineDash(o.dash); g.lineDashOffset = o.dashOffset || 0; }
-      if (o.glow) { g.shadowColor = color; g.shadowBlur = T.glow * dpr; }
       g.beginPath(); g.moveTo(...X(a)); g.lineTo(...X(b)); g.stroke();
       g.restore();
     };
-    // Segmento con volumen: trazo de color y un brillo interior más fino.
-    const capsule = (a, b, width, color, o = {}) => {
-      line(a, b, width, color, o);
-      line(a, b, width * 0.3, 'rgba(255, 255, 255, 0.22)', { alpha: o.alpha });
+    const poly = (pts) => {
+      g.beginPath();
+      pts.forEach((pt, i) => { const [x, y] = X(pt); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      g.closePath();
     };
+    const parts = outlines(p, guide, pose);
 
     // suelo, sombra y apoyo
     if (guide.plane) {                                    // colchoneta vista desde arriba: área suave con borde
@@ -615,10 +827,10 @@
       g.beginPath();
       if (g.roundRect) g.roundRect(x0, y0, x1 - x0, y1 - y0, r); else g.rect(x0, y0, x1 - x0, y1 - y0);
       g.globalAlpha = 0.08; g.fillStyle = T.prop; g.fill();
-      g.globalAlpha = 0.55; g.strokeStyle = T.prop; g.lineWidth = Math.max(1, dpr); g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
+      g.globalAlpha = 0.55; g.strokeStyle = T.prop; g.lineWidth = thin; g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
       g.restore();
     } else if (guide.upper) {
-      line({ x: -0.3, y: 0.03 }, { x: 0.3, y: 0.03 }, Math.max(2 * dpr, limbW * 0.45), T.prop);
+      line({ x: -0.3, y: 0.03 }, { x: 0.3, y: 0.03 }, propW, T.prop);
     } else {
       const fy = X({ x: 0, y: 0 })[1];
       const grad = g.createLinearGradient(cell.x, 0, cell.x + cell.w, 0);
@@ -626,44 +838,43 @@
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       g.save(); g.strokeStyle = grad; g.lineWidth = Math.max(1, 1.5 * dpr);
       g.beginPath(); g.moveTo(cell.x, fy); g.lineTo(cell.x + cell.w, fy); g.stroke(); g.restore();
-      const low = KEYS.map((k) => p[k]).filter((pt) => pt && pt.y > -0.08);
+      const low = [];
+      parts.forEach((o) => o.pts.forEach((pt) => { if (pt.y > -0.06) low.push(pt.x); }));
       if (low.length) {
-        const xs = low.map((pt) => pt.x);
-        const [cx] = X({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: 0 });
-        const rx = ((Math.max(...xs) - Math.min(...xs)) / 2 + 0.12) * s;
-        g.save(); g.fillStyle = 'rgba(0, 0, 0, 0.45)';
-        g.beginPath(); g.ellipse(cx, fy + 0.012 * s, rx, 0.03 * s, 0, 0, Math.PI * 2); g.fill(); g.restore();
+        const [cx] = X({ x: (Math.min(...low) + Math.max(...low)) / 2, y: 0 });
+        const rx = ((Math.max(...low) - Math.min(...low)) / 2 + 0.1) * s;
+        g.save(); g.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        g.beginPath(); g.ellipse(cx, fy + 0.01 * s, rx, 0.028 * s, 0, 0, Math.PI * 2); g.fill(); g.restore();
       }
     }
     ctx.props.forEach((shape) => {
       if (shape.anchor) return;
       if (shape.mat) {
         if (guide.plane) return;
-        const [x0, y0] = X({ x: shape.pts[0].x, y: -0.035 });
+        const [x0, y0] = X({ x: shape.pts[0].x, y: -0.03 });
         const [x1] = X({ x: shape.pts[1].x, y: 0 });
-        g.save(); g.globalAlpha = 0.5; g.fillStyle = T.prop;
-        g.fillRect(x0, y0, x1 - x0, 0.035 * s); g.restore();
+        g.save(); g.globalAlpha = 0.45; g.fillStyle = T.prop;
+        g.fillRect(x0, y0, x1 - x0, 0.03 * s); g.restore();
         return;
       }
-      for (let k = 1; k < shape.pts.length; k += 1) {
-        line(shape.pts[k - 1], shape.pts[k], Math.max(2 * dpr, limbW * 0.42), T.prop);
-      }
+      for (let k = 1; k < shape.pts.length; k += 1) line(shape.pts[k - 1], shape.pts[k], propW, T.prop);
     });
 
-    // silueta de la posición a la que hay que llegar
+    // silueta holográfica de la posición a la que hay que llegar
     if (opts.ghost) {
       const q = solvePose(opts.ghost, guide, ctx);
-      const dash = [5 * dpr, 5 * dpr];
-      ['torso', 'neck', 'shoulders', 'hips', 'upperN', 'foreN', 'thighN', 'shinN', 'footN', 'upperF', 'foreF', 'thighF', 'shinF',
-        'footF'].forEach((sname) => {
-        const [a, b] = SEGMENTS[sname];
-        if (guide.upper && /thigh|shin|foot/.test(sname)) return;
-        if (!(guide.view === 'front' || guide.view === 'back') && (sname === 'shoulders' || sname === 'hips')) return;
-        line(q[a], q[b], Math.max(1.5 * dpr, limbW * 0.35), T.ghost, { dash });
+      const moving = focusOf(guide);
+      g.save();
+      g.fillStyle = T.ghost;
+      g.shadowColor = T.active;
+      g.shadowBlur = T.glow * dpr * 0.8;
+      outlines(q, guide, opts.ghost).forEach((o) => {
+        if (!o.base || !moving.has(o.seg)) return;
+        poly(o.pts);
+        g.globalAlpha = 0.28;
+        g.fill();
       });
-      const [hx, hy] = X(q.head);
-      g.save(); g.strokeStyle = T.ghost; g.lineWidth = Math.max(1.5 * dpr, limbW * 0.3); g.setLineDash(dash);
-      g.beginPath(); g.arc(hx, hy, L.head * s, 0, Math.PI * 2); g.stroke(); g.restore();
+      g.restore();
     }
 
     // flecha del movimiento
@@ -672,17 +883,16 @@
       const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
       const len = dist(A, B);
       let nx = -(B.y - A.y) / len, ny = (B.x - A.x) / len;            // perpendicular, hacia afuera del cuerpo
-      const hipC = p.hip;
-      if ((mx - hipC.x) * nx + (my - hipC.y) * ny < 0) { nx = -nx; ny = -ny; }
+      if ((mx - p.hip.x) * nx + (my - p.hip.y) * ny < 0) { nx = -nx; ny = -ny; }
       const ctl = { x: mx + nx * len * 0.28, y: my + ny * len * 0.28 };
       const [ax, ay] = X(A), [bx, by] = X(B), [cx, cy] = X(ctl);
       g.save();
-      g.strokeStyle = T.active; g.globalAlpha = 0.9; g.lineWidth = Math.max(1.5 * dpr, limbW * 0.3);
+      g.strokeStyle = T.active; g.globalAlpha = 0.9; g.lineWidth = Math.max(1.5 * dpr, 0.02 * s);
       g.setLineDash([7 * dpr, 6 * dpr]); g.lineDashOffset = -(opts.dash || 0);
       g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(cx, cy, bx, by); g.stroke();
       g.setLineDash([]);
       const ang = Math.atan2(by - cy, bx - cx);
-      const hs = Math.max(6 * dpr, limbW * 1.1);
+      const hs = Math.max(6 * dpr, 0.07 * s);
       g.fillStyle = T.active;
       g.beginPath(); g.moveTo(bx, by);
       g.lineTo(bx - hs * Math.cos(ang - 0.45), by - hs * Math.sin(ang - 0.45));
@@ -691,106 +901,85 @@
       g.restore();
     }
 
-    // cuerpo: lado lejano, tronco y cabeza, lado cercano
-    const segColor = (sname, far) => (focus.has(sname) ? activeColor : far ? T.far : T.body);
-    const segAlpha = (sname, far) => (far && focus.has(sname) ? 0.55 : 1);
-    const limb = (sfx, far) => {
-      ['upper', 'fore'].concat(guide.upper ? [] : ['thigh', 'shin', 'foot']).forEach((part) => {
-        const sname = part + sfx;
-        const [a, b] = SEGMENTS[sname];
-        const wmul = part === 'thigh' ? 1.15 : part === 'foot' ? 0.75 : part === 'fore' ? 0.9 : 1;
-        capsule(p[a], p[b], limbW * wmul, segColor(sname, far), { glow: focus.has(sname) && !far, alpha: segAlpha(sname, far) });
-      });
-    };
-    limb('F', side);
-    if (guide.view === 'front' || guide.view === 'back') {
-      capsule(p.hipN, p.hipF, limbW * 1.2, T.body);
-      capsule(p.shN, p.shF, limbW * 1.1, segColor('shoulders'), { glow: focus.has('shoulders') });
-    }
-    capsule(p.hip, p.sh, limbW * 1.7, segColor('torso'), { glow: focus.has('torso') });
-    capsule(p.sh, p.head, limbW * 0.75, segColor('neck'), { glow: focus.has('neck') });
-    const [hx, hy] = X(p.head);
-    g.save();
-    if (focus.has('neck')) { g.shadowColor = activeColor; g.shadowBlur = T.glow * dpr; }
-    g.fillStyle = segColor('neck');
-    g.beginPath(); g.arc(hx, hy, L.head * s, 0, Math.PI * 2); g.fill();
-    g.shadowBlur = 0;
-    g.strokeStyle = 'rgba(255, 255, 255, 0.28)'; g.lineWidth = Math.max(1, dpr);
-    g.stroke();
-    // hacia dónde mira: un ojo de perfil, dos de frente
-    g.fillStyle = 'rgba(3, 7, 18, 0.85)';
-    const eye = Math.max(1.5 * dpr, L.head * s * 0.16);
-    if (side) {
-      const neckA = pose.neck == null ? (pose.torso == null ? 180 : pose.torso) : pose.neck;
-      const f = dir(neckA - 90);
-      g.beginPath(); g.arc(hx + f.x * L.head * s * 0.55, hy + f.y * L.head * s * 0.55 - L.head * s * 0.1, eye, 0, Math.PI * 2); g.fill();
-    } else if (guide.view === 'front') {
-      const off = Math.sin(rad(pose.yaw || 0)) * L.head * s * 0.45;
-      const tilt = rad((pose.neck == null ? 180 : pose.neck) - 180);
-      [-1, 1].forEach((k) => {
-        const ex = k * L.head * s * 0.38, ey = -L.head * s * 0.1;
-        g.beginPath();
-        g.arc(hx + off + ex * Math.cos(tilt) - ey * Math.sin(tilt), hy + ex * Math.sin(tilt) + ey * Math.cos(tilt), eye, 0, Math.PI * 2);
+    // cuerpo: polígonos de músculos (lo de atrás primero). Cada uno tapa lo que queda detrás con el fondo del marco y
+    // después lleva el relleno y el borde del mapa muscular; los que trabajan se encienden según `level`.
+    const muscles = opts.muscles || new Set();
+    const eligible = opts.eligible || {};
+    const limbKey = (o) => (o.side == null ? null
+      : (o.part === 'upper' || o.part === 'fore' ? 'a' : 'l') + o.side);
+    parts.forEach((o) => {
+      const key = limbKey(o);
+      const on = !o.neutral && o.m.some((m) => muscles.has(m)) && (key == null || eligible[key] !== false);
+      const farK = o.far ? 0.55 : 1;
+      poly(o.pts);
+      g.save();
+      g.fillStyle = T.bg;
+      g.fill();
+      if (o.base) {                                       // cuerpo sólido debajo de los músculos
+        g.globalAlpha = 0.75 * T.muscleFill * farK;
+        g.fillStyle = T.muscle;
         g.fill();
-      });
-    }
-    g.restore();
-    limb('N', false);
-
-    // articulaciones del lado cercano
-    g.save(); g.fillStyle = T.joint; g.globalAlpha = 0.9;
-    ['shN', 'elN', 'hipN', 'knN', 'anN', 'wrN'].forEach((k) => {
-      if (!p[k] || (guide.upper && (k === 'knN' || k === 'anN'))) return;
-      const [x, y] = X(p[k]);
-      g.beginPath(); g.arc(x, y, Math.max(1.5 * dpr, limbW * 0.22), 0, Math.PI * 2); g.fill();
-    });
-    g.restore();
-
-    // marcas de lo que la cámara no ve: abdomen activo, escápulas que se juntan
-    if (focus.has('abs')) {
-      const c = lerpP(p.hip, p.sh, 0.42);
-      const [cx, cy] = X(c);
-      const on = (pose.glow || 0) * (opts.pulse == null ? 1 : opts.pulse);
-      g.save(); g.globalAlpha = 0.25 + 0.55 * on; g.fillStyle = (pose.glow || 0) > 0.5 ? activeColor : T.active;
-      g.shadowColor = g.fillStyle; g.shadowBlur = T.glow * dpr * on;
-      g.beginPath(); g.ellipse(cx, cy, 0.15 * s, Math.max(3 * dpr, limbW * 0.9), Math.atan2(p.sh.y - p.hip.y, p.sh.x - p.hip.x), 0, Math.PI * 2);
-      g.fill(); g.restore();
-    }
-    if (guide.view === 'back') {
-      const sc = pose.scap || 0;
-      [[p.shN, 1], [p.shF, -1]].forEach(([shp, sign]) => {
-        const cx = shp.x + sign * (0.09 + 0.035 * sc);
-        g.save();
-        g.strokeStyle = focus.has('scap') ? activeColor : T.joint;
-        g.fillStyle = focus.has('scap') ? activeColor : T.joint;
-        g.globalAlpha = 0.35 + 0.5 * sc;
-        if (focus.has('scap')) { g.shadowColor = activeColor; g.shadowBlur = T.glow * dpr * sc; }
-        g.lineWidth = Math.max(1.5 * dpr, limbW * 0.25);
-        g.beginPath();
-        g.moveTo(...X({ x: cx, y: shp.y + 0.03 }));
-        g.lineTo(...X({ x: cx + sign * 0.075, y: shp.y + 0.05 }));
-        g.lineTo(...X({ x: cx, y: shp.y + 0.18 }));
-        g.closePath();
-        g.fill();
+        g.globalAlpha = 0.5 * T.muscleEdge * farK;
+        g.strokeStyle = T.muscle;
+        g.lineWidth = thin;
+        g.lineJoin = 'round';
+        g.stroke();
         g.restore();
-      });
+        return;
+      }
+      if (on) {
+        g.globalAlpha = (T.activeMin + T.activeRange * level) * farK;
+        g.fillStyle = activeColor;
+        if (!o.far) { g.shadowColor = activeColor; g.shadowBlur = T.glow * dpr * (0.3 + 0.7 * level); }
+        g.fill();
+        g.shadowBlur = 0;
+        g.globalAlpha = 0.6 * farK;
+        g.strokeStyle = activeColor;
+      } else {
+        g.globalAlpha = (o.neutral ? T.neutralFill : T.muscleFill) * farK;
+        g.fillStyle = T.muscle;
+        g.fill();
+        g.globalAlpha = T.muscleEdge * farK;
+        g.strokeStyle = T.muscle;
+      }
+      g.lineWidth = thin * 1.2;
+      g.lineJoin = 'round';
+      g.stroke();
+      g.restore();
+    });
+
+    // ojos: hacia dónde mira la persona (uno de perfil, dos de frente; de espalda no se ven)
+    if (guide.view !== 'back') {
+      const d = (() => { const len = dist(p.sh, p.head) || 1; return { x: (p.head.x - p.sh.x) / len, y: (p.head.y - p.sh.y) / len }; })();
+      const face = { x: -d.y, y: d.x };
+      const eye = (u, v) => {
+        const [x, y] = X({ x: p.head.x + d.x * u + face.x * v, y: p.head.y + d.y * u + face.y * v });
+        g.beginPath(); g.arc(x, y, Math.max(1.5 * dpr, 0.012 * s), 0, Math.PI * 2); g.fill();
+      };
+      g.save(); g.fillStyle = T.ink; g.globalAlpha = 0.75;
+      if (guide.view === 'side') eye(0.02, 0.06);
+      else {
+        const off = Math.sin(rad(pose.yaw || 0)) * 0.05;
+        eye(0.015, 0.04 + off); eye(0.015, -0.04 + off);
+      }
+      g.restore();
     }
 
     // banda elástica y su anclaje
     if (guide.band && ctx.bandAnchor) {
-      guide.band.hands.forEach((sfx) => line(p[`wr${sfx}`], ctx.bandAnchor, Math.max(1.5 * dpr, limbW * 0.25), T.band,
+      guide.band.hands.forEach((sfx) => line(p[`wr${sfx}`], ctx.bandAnchor, Math.max(1.5 * dpr, 0.016 * s), T.band,
         { dash: [3 * dpr, 3 * dpr], alpha: 0.9 }));
       const [ax, ay] = X(ctx.bandAnchor);
-      const r = Math.max(3 * dpr, limbW * 0.5);
+      const r = Math.max(3 * dpr, 0.035 * s);
       g.save(); g.fillStyle = T.prop; g.fillRect(ax - r, ay - r, 2 * r, 2 * r); g.restore();
     }
 
     // anillo del sostén alrededor del punto que se mueve
     if (opts.holdK != null && opts.holdAt) {
       const [x, y] = X(opts.holdAt);
-      const r = Math.max(8 * dpr, 0.1 * s);
+      const r = Math.max(8 * dpr, 0.11 * s);
       g.save();
-      g.lineWidth = Math.max(2 * dpr, limbW * 0.35);
+      g.lineWidth = Math.max(2 * dpr, 0.024 * s);
       g.strokeStyle = 'rgba(255, 255, 255, 0.15)';
       g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
       g.strokeStyle = T.hold; g.shadowColor = T.hold; g.shadowBlur = T.glow * dpr * 0.6;
@@ -863,6 +1052,8 @@
     const g = canvas.getContext('2d');
     const tl = timeline(guide, hold);
     const steps = plan(guide, ctx, tl.steps);
+    const muscles = musclesFor(exerciseId);                 // los mismos que pinta el mapa muscular
+    const eligible = limbsFor(guide);
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     let raf = 0, t0 = 0, last = '', visible = opts.autoplay !== 'visible', observer = null, resizer = null;
     const size = () => {
@@ -888,10 +1079,10 @@
       g.clearRect(0, 0, w, h);
       const end = endPose(guide);
       const first = steps.find((x) => x.arrow) || {};
-      drawCell(g, guide, ctx, lay.cells[0], lay.s, guide.seq[0][0], T,
-        { phase: 'start', ghost: end, arrow: first.arrow, label: '1 · Inicio', labelH: lay.labelH });
-      drawCell(g, guide, ctx, lay.cells[1], lay.s, end, T,
-        { phase: hold > 0 ? 'hold' : 'top', label: '2 · Final', labelH: lay.labelH });
+      drawCell(g, guide, ctx, lay.cells[0], lay.s, guide.seq[0][0], T, { phase: 'start', level: 0.2, muscles, eligible,
+        ghost: end, arrow: first.arrow, label: '1 · Inicio', labelH: lay.labelH });
+      drawCell(g, guide, ctx, lay.cells[1], lay.s, end, T, { phase: hold > 0 ? 'hold' : 'top', level: 1, muscles, eligible,
+        label: '2 · Final', labelH: lay.labelH });
       setText('go', 'Inicio → final', `${guide.cues.start}. ${guide.cues.go}${hold > 0 ? `; sostén ${hold} s` : ''}.`);
     }
     function tick(ts) {
@@ -908,9 +1099,12 @@
       g.clearRect(0, 0, w, h);
       const holdStep = f.cap === 'hold' && hold > 0;
       const holdAt = holdStep ? (motion(guide, ctx, guide.seq[0][0], tl.steps[f.step].pose) || {}).to : null;
+      // Cuánto trabajan los músculos: poco al inicio, suben con el movimiento, al máximo en el sostén y bajan al volver.
+      const level = f.cap === 'start' ? 0.15 : (f.cap === 'go' || f.cap === 'go2') ? 0.15 + 0.85 * f.k
+        : f.cap === 'back' ? 1 - 0.85 * f.k : 0.92 + 0.08 * Math.sin(ts / 180);
       drawCell(g, guide, ctx, lay.cells[0], lay.s, f.pose, T, {
-        phase, ghost: info.target, arrow: info.arrow, dash: (ts / 25) % 1000,
-        holdK: holdStep ? f.k : null, holdAt, pulse: 0.5 + 0.5 * Math.sin(ts / 220),
+        phase, level, muscles, eligible, ghost: info.target, arrow: info.arrow, dash: (ts / 25) % 1000,
+        holdK: holdStep ? f.k : null, holdAt,
       });
       setText(phase, chipText(phase, hold), f.caption);
     }
@@ -938,6 +1132,6 @@
     return guide ? Object.assign({ view: viewLabel(guide) }, guide.cues) : null;
   }
 
-  return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, L, bodyPoints, solvePose, prepare, frameAt, endPose, timeline, reach,
-    focusOf, motion, layout, render, cuesFor };
+  return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, SHAPES, L, bodyPoints, solvePose, prepare, frameAt, endPose, timeline,
+    reach, focusOf, motion, layout, outlines, lowestY, musclesFor, render, cuesFor };
 });

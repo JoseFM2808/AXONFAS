@@ -38,21 +38,25 @@
   --stage: #020617;
   --stage-ink: #F8FAFC;
 
+  /* Músculos: mismo estilo en el mapa muscular (body-map.js) y en las figuras de los ejercicios (guide-figure.js) */
+  --muscle: var(--muted);                     /* color de un músculo en reposo */
+  --muscle-fill: 0.16;                        /* opacidad del relleno en reposo */
+  --muscle-edge: 0.35;                        /* opacidad del borde */
+  --muscle-neutral-fill: 0.08;                /* cabeza, manos, pies y rodillas */
+  --muscle-active-min: 0.25;                  /* músculo que trabaja: opacidad mínima... */
+  --muscle-active-range: 0.7;                 /* ...más esto según cuánto trabaja (0 a 1) */
+
   /* Figuras de referencia de ejercicios (componente .fig · guide-figure.js · README §4) */
-  --fig-bg: #050B1A;                          /* fondo del marco */
+  --fig-bg: #050B1A;                          /* fondo del marco; también tapa lo que queda detrás del cuerpo */
   --fig-grid: rgba(0, 242, 254, 0.06);        /* malla táctica del marco */
-  --fig-body: #7E97B3;                        /* cuerpo en reposo: pizarra, no compite con lo que se mueve */
-  --fig-body-far: #3A4E68;                    /* brazo y pierna del lado lejano */
-  --fig-active: var(--tape);                  /* lo que se mueve en el ejercicio */
+  --fig-active: var(--tape);                  /* músculos que trabajan, flecha */
   --fig-hold: var(--hold);                    /* mientras se sostiene */
   --fig-done: var(--safe);                    /* posición final de un ejercicio sin sostén */
-  --fig-ghost: rgba(0, 242, 254, 0.32);       /* silueta punteada de la posición a la que hay que llegar */
-  --fig-joint: var(--stage-ink);              /* articulaciones del lado cercano */
+  --fig-ghost: rgba(0, 242, 254, 0.32);       /* silueta holográfica de la posición a la que hay que llegar */
   --fig-prop: #5E6E85;                        /* silla, mesa, colchoneta y anclajes */
   --fig-floor: rgba(0, 242, 254, 0.35);       /* línea del suelo */
   --fig-band: var(--ink-secondary);           /* banda elástica (punteada) */
-  --fig-limb: 0.075;                          /* grosor de brazos y piernas, en metros de la figura */
-  --fig-glow: 14;                             /* brillo de lo que se mueve, en px */
+  --fig-glow: 14;                             /* brillo de los músculos que trabajan, en px */
   
   /* Tipografía */
   --font-display: 'Space Grotesk', -apple-system, sans-serif;

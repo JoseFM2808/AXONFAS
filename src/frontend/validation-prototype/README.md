@@ -105,7 +105,7 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `share.js` | Botón "Probar en otro equipo" y QR (usa `/lan.json` de `serve.py`) |
 | `serve.py` | Servidor de red local: HTTP 8091 + HTTPS 8443 con certificado autofirmado, y la API de Staging (`src/backend/staging_api.py`) |
 | `catalog.js` | Catálogo de 24 ejercicios con fuente, dosis, músculos, huesos y precauciones (ADR-011) |
-| `guide-figure.js` | Componente "Figura de referencia" del design system (§4): figura animada de cada ejercicio, dibujo propio, con lo que se mueve resaltado, la pose objetivo, la flecha del recorrido y el sostén. Todas las páginas lo usan con `AxonGuide.render` |
+| `guide-figure.js` | Componente "Figura de referencia" del design system (§4): marioneta muscular animada de cada ejercicio, con el estilo del mapa muscular, los músculos que trabaja encendidos según el esfuerzo, la posición objetivo, la flecha del recorrido y el sostén. Todas las páginas lo usan con `AxonGuide.render` |
 | `tracker.js` | Seguimiento de cada ejercicio (ADR-014): qué medir con la pose, en qué modo contar (repeticiones, sostén o manual) y con qué valores de partida, no clínicos (TD-48). Funciones puras |
 | `seguimiento.html`, `seguimiento.js` | Página de seguimiento con la cámara y su modo paciente |
 | `body-map.js`, `body-map-data.js` | Mapa muscular 2D y estimación educativa de carga; polígonos de react-body-highlighter (MIT, atribución en el archivo) |

@@ -37,8 +37,8 @@ test('la figura queda apoyada en el suelo y el punto de apoyo no se desliza', ()
       const p = G.solvePose(f.pose, guide, ctx);
       for (const k of POINTS) if (p[k]) assert.ok(Number.isFinite(p[k].x) && Number.isFinite(p[k].y), `${id}: ${k} no es un número`);
       if (!guide.upper) {
-        const lowest = Math.max(...POINTS.filter((k) => p[k]).map((k) => p[k].y), p.head.y + G.L.head);
-        assert.ok(Math.abs(lowest) < 1e-9, `${id}: el punto más bajo no toca el suelo (${lowest})`);
+        const lowest = G.lowestY(p, guide, f.pose);
+        assert.ok(Math.abs(lowest) < 0.035, `${id}: el contorno más bajo no toca el suelo (${lowest})`);
       }
       assert.ok(Math.abs(p[guide.anchor].x - ctx.anchorX) < 1e-9, `${id}: el ancla ${guide.anchor} se mueve`);
     });
@@ -132,5 +132,34 @@ test('todas las figuras de cuerpo entero se dibujan a la misma escala', () => {
     const right = c.ox + ctx.box.maxX * lay.s;
     assert.ok(top >= 400 * G.FRAME.top - 1, `${id}: la figura invade la franja de etiquetas (${top.toFixed(1)})`);
     assert.ok(left >= 0 && right <= 600, `${id}: la figura se sale por los costados`);
+  }
+});
+
+test('la figura usa los músculos del mapa y en cada ejercicio se enciende al menos uno del catálogo', () => {
+  const DATA = require(path.join(SRC, 'body-map-data.js'));
+  const known = new Set([...Object.keys(DATA.anterior), ...Object.keys(DATA.posterior), 'soleus', 'tibialis', 'neutral']);
+  for (const set of Object.values(G.SHAPES)) {
+    for (const shapes of Object.values(set)) {
+      for (const sh of shapes) for (const m of sh.m) assert.ok(known.has(m), `músculo desconocido en la figura: ${m}`);
+    }
+  }
+  for (const e of C.EXERCISES) {
+    const guide = G.GUIDES[e.id];
+    const ctx = G.prepare(guide);
+    const pose = G.endPose(guide);
+    const p = G.solvePose(pose, guide, ctx);
+    const want = G.musclesFor(e.id, C);
+    const lit = G.outlines(p, guide, pose).filter((o) => !o.neutral && o.m.some((m) => want.has(m)));
+    assert.ok(lit.length > 0, `${e.id}: ninguno de sus músculos (${[...want].join(', ')}) se ve en la figura`);
+  }
+});
+
+test('el contorno muscular es una figura completa: tronco, cabeza y, salvo en medio cuerpo, piernas', () => {
+  for (const [id, guide] of Object.entries(G.GUIDES)) {
+    const ctx = G.prepare(guide);
+    const pose = guide.seq[0][0];
+    const parts = new Set(G.outlines(G.solvePose(pose, guide, ctx), guide, pose).map((o) => o.part));
+    for (const k of ['torso', 'neck', 'head', 'upper', 'fore']) assert.ok(parts.has(k), `${id}: falta ${k}`);
+    if (!guide.upper) for (const k of ['thigh', 'shin', 'foot']) assert.ok(parts.has(k), `${id}: falta ${k}`);
   }
 });

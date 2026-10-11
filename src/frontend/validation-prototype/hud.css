@@ -443,9 +443,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .bodymap-view { margin: 0; text-align: center; }
 .bodymap-view figcaption { font: 600 0.7rem var(--font-mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
 .bodymap-svg { width: 100%; height: auto; max-height: 280px; }
-.bodymap-muscle polygon { fill: var(--muted); fill-opacity: 0.16; stroke: var(--muted); stroke-opacity: 0.35; stroke-width: 4; transition: fill-opacity 0.15s, fill 0.15s; }
-.bodymap-muscle.neutral polygon { fill-opacity: 0.08; }
-.bodymap-muscle.active polygon { fill: var(--tape); fill-opacity: calc(0.25 + 0.7 * var(--level, 0)); stroke: var(--tape); stroke-opacity: 0.6; }
+/* Mismos tokens de músculo que las figuras de los ejercicios (tokens.css: --muscle-*) */
+.bodymap-muscle polygon { fill: var(--muscle); fill-opacity: var(--muscle-fill); stroke: var(--muscle); stroke-opacity: var(--muscle-edge); stroke-width: 4; transition: fill-opacity 0.15s, fill 0.15s; }
+.bodymap-muscle.neutral polygon { fill-opacity: var(--muscle-neutral-fill); }
+.bodymap-muscle.active polygon { fill: var(--fig-active); fill-opacity: calc(var(--muscle-active-min) + var(--muscle-active-range) * var(--level, 0)); stroke: var(--fig-active); stroke-opacity: 0.6; }
 .bodymap-muscle.alert polygon { fill: var(--alert); fill-opacity: 0.9; stroke: var(--alert); }
 .bodymap-muscle.focus polygon { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: 12; }
 .bodymap-muscle:hover polygon { stroke: #FFFFFF; stroke-opacity: 0.8; }

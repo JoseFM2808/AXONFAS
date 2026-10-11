@@ -77,8 +77,9 @@ galería sale de `catalog.js`: todo ejercicio nuevo cita una fuente pública (UR
 descripción propia (no copiar textos de la fuente). Solo `monitoring: 'auto'` si el motor de reglas lo vigila (ADR-009).
 Todo ejercicio nuevo necesita además su entrada en `SPECS` de `tracker.js` (seguimiento con cámara, ADR-014) y su
 figura en `GUIDES` y su `FOCUS` de `guide-figure.js` (dibujo propio, nunca imágenes de las fuentes); los tests lo exigen.
-Las figuras de ejercicios solo se muestran con el componente `.fig` (`AxonGuide.render`, design system §4) y sus colores
-salen de los tokens `--fig-*`: no dibujes figuras ni pongas colores por fuera de eso. El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
+Las figuras de ejercicios solo se muestran con el componente `.fig` (`AxonGuide.render`, design system §4): una
+marioneta muscular con los músculos del mapa (`SHAPES`). Sus colores salen de los tokens `--muscle-*` (compartidos con
+el mapa muscular) y `--fig-*`: no dibujes figuras ni pongas colores por fuera de eso. El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
 La carga muscular del mapa es una estimación educativa: nunca se presenta como medición ni diagnóstico (ADR-013).
 
 El prototipo de validación (`src/frontend/validation-prototype/`) se abre con doble clic en `index.html` o con

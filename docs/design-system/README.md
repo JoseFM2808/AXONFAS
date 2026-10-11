@@ -39,6 +39,7 @@ Los tokens residen en [`tokens.css`](file:///j:/Mi%20unidad/03%20Proyectos%20IA/
 | `--font-display` | `Space Grotesk` | Títulos y métricas principales |
 | `--font-body` | `Outfit` | Textos explicativos |
 | `--font-mono` | `JetBrains Mono` | Ángulos tabulares (°), latencias (ms) |
+| `--muscle-*` | ver §4 | Estilo de un músculo, el mismo en el mapa muscular y en las figuras |
 | `--fig-*` | ver §4 | Figuras de referencia de los ejercicios |
 
 ---
@@ -71,8 +72,11 @@ El servidor local se arranca con `lanzar-prototipo.cmd` (o `py src/frontend/vali
 ## 4. Componente: figura de referencia de un ejercicio (`.fig`)
 
 Es la única forma de mostrar cómo se hace un ejercicio. La dibuja `guide-figure.js` con `AxonGuide.render(contenedor,
-idEjercicio, { hold, variant })`, con los mismos colores, grosores y encuadre en todas las páginas. El dibujo es propio:
-nunca se copian imágenes de las fuentes (AAOS, NHS, CDC).
+idEjercicio, { hold, variant })`, con los mismos colores, trazos y encuadre en todas las páginas. La figura es una
+**marioneta muscular** con el estilo del mapa muscular: cada segmento del cuerpo (muslo, pierna, pie, tronco, brazo,
+antebrazo, cuello y cabeza) está hecho de polígonos de músculos con los nombres del mapa, de lado o de frente y de
+espalda, y se mueve con la animación del ejercicio. El dibujo es propio: nunca se copian imágenes de las fuentes
+(AAOS, NHS, CDC).
 
 **Anatomía**
 
@@ -82,16 +86,17 @@ nunca se copian imágenes de las fuentes (AAOS, NHS, CDC).
 | Etiqueta de fase (`.fig-chip`) | `1 · Inicio`, `2 · Movimiento`, `3 · Sostén 5 s` (o `3 · Posición final`), `4 · Vuelta` | `--font-mono` en mayúsculas; el color sigue la fase |
 | Vista (`.fig-view`) | De lado, de frente, de espalda, acostado | `--muted`, se oculta en celular |
 | Texto (`.fig-cap`) | Qué hacer en esa fase, con el sostén de la dosis del plan | `--font-body` |
-| Cuerpo | Segmentos con volumen (trazo y brillo interior), cabeza con el ojo hacia donde mira | Reposo `--fig-body`; lado lejano `--fig-body-far` |
-| Lo que se mueve | Los segmentos que trabaja el ejercicio (se declaran por ejercicio en `FOCUS`) | `--fig-active` con brillo `--fig-glow` |
-| Pose objetivo | Silueta punteada de la posición a la que hay que llegar | `--fig-ghost` |
+| Cuerpo | Silueta sólida de cada segmento con sus músculos encima; cabeza con los ojos hacia donde mira; el lado lejano más tenue | `--muscle`, `--muscle-fill`, `--muscle-edge`, `--muscle-neutral-fill` (los mismos del mapa) |
+| Músculos que trabajan | Los del catálogo para ese ejercicio (los mismos que pinta el mapa), en los brazos o piernas que se mueven. Se encienden poco al inicio, suben con el movimiento, quedan al máximo en el sostén y bajan al volver | `--fig-active` con opacidad `--muscle-active-min` + `--muscle-active-range` × esfuerzo y brillo `--fig-glow` |
+| Pose objetivo | Halo suave de la parte del cuerpo que se mueve, en la posición a la que hay que llegar | `--fig-ghost` |
 | Flecha | Recorrido del punto que más se mueve, con trazo animado | `--fig-active` |
 | Anillo del sostén | Se llena alrededor de ese punto mientras se sostiene | `--fig-hold` |
 | Suelo y accesorios | Línea del suelo con sombra; silla, mesa, colchoneta; banda elástica punteada | `--fig-floor`, `--fig-prop`, `--fig-band` |
 
-**Color por fase.** Inicio y movimiento: `--fig-active`. Sostén: `--fig-hold`, el mismo ámbar de la cuenta del sostén
-sobre el video. Posición final sin sostén: `--fig-done`. Vuelta: `--tape-hover`. El cuerpo en reposo nunca usa un color
-semántico, para que lo único que destaque sea lo que hay que mover.
+**Color por fase.** Los músculos que trabajan van en `--fig-active` al inicio, en el movimiento y en la vuelta; en
+`--fig-hold` durante el sostén (el mismo ámbar de la cuenta sobre el video); y en `--fig-done` en la posición final de
+un ejercicio sin sostén. La etiqueta de fase sigue los mismos colores (la vuelta, en `--tape-hover`). El resto del cuerpo
+nunca usa un color semántico, para que solo destaque lo que trabaja.
 
 **Encuadre.** Todas las figuras de cuerpo entero usan la misma escala (una persona de pie mide lo mismo en todos los
 ejercicios, y una acostada también), y las de medio cuerpo comparten otra. Siempre queda libre la franja superior para
@@ -106,6 +111,9 @@ en el aviso de enseñanza.
 
 **Reglas.**
 - No dibujes figuras de ejercicios fuera de este componente.
-- No pongas colores en el código: cambia los tokens `--fig-*` en `tokens.css`.
-- Todo ejercicio nuevo del catálogo necesita su figura y su `FOCUS`; los tests lo exigen.
+- No pongas colores en el código: cambia los tokens `--muscle-*` y `--fig-*` en `tokens.css`. El mapa muscular
+  (`.bodymap-muscle` en `hud.css`) usa los mismos `--muscle-*`, así que mapa y figura no se pueden desalinear.
+- Los músculos de la figura (`SHAPES` en `guide-figure.js`) usan los nombres del mapa (`body-map-data.js`).
+- Todo ejercicio nuevo del catálogo necesita su figura y su `FOCUS`, y al menos uno de sus músculos tiene que verse en
+  la vista de su figura. Los tests lo exigen.
 
