@@ -127,24 +127,14 @@
     setButtons(false);
   }
 
-  /** Figura de referencia (TD-44): pequeña sobre el video y grande en "Cómo se hace", con el sostén de la dosis. */
+  /** Figura de referencia (componente .fig del design system): pequeña sobre el video y grande en "Cómo se hace". */
   function mountGuides() {
     st.guides.forEach((g) => g.stop());
     st.guides = [];
     st.cues = GF ? GF.cuesFor(st.ex.id) : null;
     if (!GF || !st.cues) return;
-    $('pip-view').textContent = `Referencia · ${st.cues.view}`;
-    st.guides.push(GF.mount($('pip-canvas'), st.ex.id, { hold: st.dose.hold, onCaption: (t) => { $('pip-caption').textContent = t; } }));
-    st.guides.push(GF.mount($('how-canvas'), st.ex.id, {
-      hold: st.dose.hold,
-      onCaption: (t) => {
-        const cap = $('how-caption');
-        cap.textContent = t;
-        const small = document.createElement('small');
-        small.textContent = `${st.cues.view} · figura de referencia, no es una medición`;
-        cap.appendChild(small);
-      },
-    }));
+    st.guides.push(GF.render($('pip-guide'), st.ex.id, { hold: st.dose.hold, variant: 'pip', autoplay: 'always' }));
+    st.guides.push(GF.render($('how-guide'), st.ex.id, { hold: st.dose.hold, variant: 'large', autoplay: 'visible' }));
   }
 
   ui.select.addEventListener('change', () => {

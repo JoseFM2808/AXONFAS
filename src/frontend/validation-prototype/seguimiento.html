@@ -25,14 +25,10 @@
 .track-grid .source { font-size: 0.78rem; color: var(--muted); }
 .track-grid .source a { color: var(--tape); }
 .hud-sub { font: 600 0.85rem var(--font-mono); color: var(--muted); }
-/* Figura de referencia sobre el video (TD-44): cómo debería verse el movimiento mientras lo haces. */
-.guide-pip { position: absolute; top: 18px; left: 18px; width: clamp(150px, 27%, 320px); z-index: 8;
+/* Figura de referencia sobre el video (componente .fig, variante pip): solo su lugar y su tamaño. */
+.guide-pip { position: absolute; top: 18px; left: 18px; width: clamp(160px, 28%, 330px); z-index: 8;
   background: rgba(3, 7, 18, 0.86); border: 1px solid var(--surface-border); border-radius: var(--radius-sm);
-  padding: 6px 8px 8px; backdrop-filter: blur(10px); pointer-events: none; }
-.guide-pip canvas { display: block; width: 100%; aspect-ratio: 3 / 2; }
-.guide-pip p { font: 600 0.78rem/1.25 var(--font-body); color: #FFFFFF; margin-top: 4px; min-height: 2.5em; }
-.guide-pip small { display: block; font: 600 0.62rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--tape); }
+  padding: 6px 6px 8px; backdrop-filter: blur(10px); pointer-events: none; }
 /* Cuenta del sostén, grande para leerla a 2-3 m: llega a 0 y recién ahí la repetición vale. */
 .hold-badge { position: absolute; top: 18px; right: 18px; z-index: 32; min-width: min(16rem, 40%); text-align: center;
   padding: 12px 18px; border-radius: var(--radius); background: rgba(3, 7, 18, 0.92); border: 2px solid var(--hold);
@@ -45,16 +41,12 @@
 .hold-badge.done { border-color: var(--safe); box-shadow: 0 0 25px rgba(0, 255, 136, 0.45); }
 .hold-badge.done .lbl { color: var(--safe); }
 .hold-badge.done .bar > span { background: var(--safe); }
-.how-guide canvas { display: block; width: 100%; aspect-ratio: 3 / 2; background: #030712; border-radius: var(--radius-sm);
-  border: 1px solid var(--surface-border); }
-.how-guide figcaption { font: 600 0.9rem var(--font-body); margin-top: 6px; }
-.how-guide figcaption small { display: block; font: 600 0.72rem var(--font-mono); color: var(--muted); }
 @media (max-width: 900px) { .track-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) {
   .track-grid { gap: 16px; }
   .hud-sub { font-size: 0.7rem; }
-  .guide-pip { top: 64px; left: 8px; width: 42%; padding: 4px 6px 6px; }
-  .guide-pip p, .guide-pip small { display: none; }   /* la indicación ya está arriba, en el indicador de fase */
+  .guide-pip { top: 64px; left: 8px; width: 42%; padding: 4px; }
+  .guide-pip .fig-cap { display: none; }              /* la indicación ya está arriba, en el indicador de fase */
   .hold-badge { top: 64px; right: 8px; min-width: 0; width: 44%; padding: 8px 10px; }
   .hold-badge .num { font-size: 2.6rem; }
 }
@@ -115,11 +107,7 @@
         <span id="ph-camera"></span>
       </div>
 
-      <div class="guide-pip" aria-hidden="true">
-        <small id="pip-view">Referencia</small>
-        <canvas id="pip-canvas" width="300" height="200"></canvas>
-        <p id="pip-caption"></p>
-      </div>
+      <div class="guide-pip" id="pip-guide" aria-hidden="true"></div>
 
       <div class="hold-badge" id="hold-badge" role="status" hidden>
         <div class="lbl" id="hold-label">Sostén</div>
@@ -177,10 +165,7 @@
     </section>
     <section class="panel-card">
       <h2>Cómo se hace</h2>
-      <figure class="how-guide">
-        <canvas id="how-canvas" width="600" height="400" role="img" aria-label="Figura de referencia del ejercicio"></canvas>
-        <figcaption id="how-caption"></figcaption>
-      </figure>
+      <div id="how-guide"></div>
       <p class="muted" id="how-position" style="margin-top:10px;"></p>
       <ol id="how-steps"></ol>
       <h3>Dónde va la cámara</h3>

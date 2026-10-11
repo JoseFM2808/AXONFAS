@@ -139,23 +139,6 @@
 @media (max-width: 768px) {
   .guide-body { grid-template-columns: minmax(0, 1fr); }
 }
-.guide-anim canvas {
-  width: 100%;
-  aspect-ratio: 3 / 2;
-  background: #030712;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--surface-border);
-  display: block;
-}
-.guide-caption {
-  font: 600 0.85rem var(--font-body);
-  margin-top: 6px;
-}
-.guide-caption small {
-  display: block;
-  font: 400 0.8rem var(--font-mono);
-  color: var(--muted);
-}
 .guide-steps {
   padding-left: 1.2em;
   display: grid;
@@ -397,11 +380,7 @@
           <span style="font-size:0.8rem; color:var(--tape);">Ver / Ocultar</span>
         </summary>
         <div class="guide-body">
-          <figure class="guide-anim">
-            <canvas id="guide-canvas" width="600" height="400" role="img"
-              aria-label="Animación de referencia: persona levantándose de una silla"></canvas>
-            <figcaption class="guide-caption" id="guide-caption">Posición inicial</figcaption>
-          </figure>
+          <div id="guide-figure"></div>
           <div>
             <ol class="guide-steps">
               <li>Coloca la cámara a la altura de la cadera, a 2–3 m, donde se vean cuerpo y pies.</li>
@@ -539,13 +518,14 @@
 <!-- SCRIPTS OFICIALES DEL MOTOR Y PROTOTIPO -->
 <script src="engine.js"></script>
 <script src="synthetic.js"></script>
+<script src="catalog.js"></script>
+<script src="guide-figure.js"></script>
 <script src="app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="share.js"></script>
 <!-- Modo paciente (index.html?plan=sit-to-stand con cuenta de paciente): sobre del fisioterapeuta, envío en vivo y sesión -->
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>
-<script src="catalog.js"></script>
 <script src="api-client.js"></script>
 <script src="teach-toast.js"></script>
 <script src="patient-link.js"></script>

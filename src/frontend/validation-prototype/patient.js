@@ -127,7 +127,7 @@
     B.render($('g-map'), { intensities: B.staticLoad(ex), caption: `Trabajas: ${B.muscleNames(ex.muscles).join(', ')}. Huesos: ${ex.bones.join(', ')}.` });
     if (state.guide) state.guide.stop();
     if (window.AxonGuide && $('g-guide')) {
-      state.guide = AxonGuide.mount($('g-guide'), ex.id, { hold: item.hold_seconds, onCaption: (t) => { $('g-guide-cap').textContent = t; } });
+      state.guide = AxonGuide.render($('g-guide'), ex.id, { hold: item.hold_seconds, variant: 'large', autoplay: 'visible' });
     }
     const steps = $('g-steps');
     steps.innerHTML = '';

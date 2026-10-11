@@ -23,8 +23,7 @@
     btnPain: $('btn-pain'), btnStop: $('btn-stop'), btnNew: $('btn-new'), btnCopy: $('btn-copy'),
     copyStatus: $('copy-status'), copyFallback: $('copy-fallback'),
     baseline: $('baseline'), repsBody: $('reps-body'), eventsBody: $('events-body'),
-    guide: $('guide'), guideCanvas: $('guide-canvas'), guideCaption: $('guide-caption'),
-    guideRest: $('guide-rest'), guideTotal: $('guide-total'),
+    guide: $('guide'), guideRest: $('guide-rest'), guideTotal: $('guide-total'),
     hud: $('hud'), hudPhase: $('hud-phase'), hudDone: $('hud-done'), hudTotal: $('hud-total'), hudBar: $('hud-bar'),
     announce: $('announce'), btnFullscreen: $('btn-fullscreen'),
   };
@@ -299,120 +298,12 @@
     }).join('');
   }
 
-  // ---------------------------------------------------------------- TD-30 · guía animada del ejercicio
-  /** Animación de referencia vista de lado, con la misma cinemática del demo sintético (lo que el sistema espera ver). */
-  const guideAnim = (() => {
-    const g = ui.guideCanvas.getContext('2d');
-    const FPS = 30;
-    const frames = AxonSynthetic.generateSession({ script: [{}], seed: 5, fps: FPS });
-    const duration = (frames.length / FPS) * 1000;
-    let raf = 0;
-    let start = 0;
-    let prevKnee = null;
-
-    function side(frame) {                                  // metros respecto del tobillo: f = adelante, u = arriba
-      const a = frame.world[27];
-      return (i) => ({ f: -(frame.world[i].z - a.z), u: -(frame.world[i].y - a.y) });
-    }
-
-    const SEATED = frames[0];
-    const STANDING = frames[Math.round(3.5 * FPS)];          // en la pausa de pie del guion (3.2 s a 3.9 s)
-
-    function sizeCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      const w = Math.round(ui.guideCanvas.clientWidth * dpr) || 600;
-      const h = Math.round(w * 2 / 3);
-      if (ui.guideCanvas.width !== w) { ui.guideCanvas.width = w; ui.guideCanvas.height = h; }
-      g.clearRect(0, 0, w, h);
-      g.lineCap = 'round';
-      g.lineJoin = 'round';
-      return { w, h };
-    }
-
-    /** Silla, suelo y figura de un frame dentro de la franja horizontal [x0, x0 + width] del lienzo. */
-    function drawScene(frame, x0, width, h, label) {
-      const s = h * 0.47;                                    // 1.75 m de pie caben con margen arriba
-      const ox = x0 + width * 0.6;
-      const oy = h * 0.88;
-      const P = (q) => [ox + q.f * s, oy - q.u * s];
-      const at = side(frame);
-      const lw = (k) => Math.max(2, (h * 1.5) / k);
-      g.strokeStyle = cssVar('--muted');
-      g.lineWidth = lw(300);
-      g.beginPath(); g.moveTo(x0 + width * 0.06, oy); g.lineTo(x0 + width * 0.94, oy); g.stroke();
-      const chair = [[[-0.06, 0.47], [-0.5, 0.47]], [[-0.5, 0.47], [-0.53, 0.95]], [[-0.09, 0.47], [-0.09, 0]], [[-0.48, 0.47], [-0.48, 0]]];
-      g.lineWidth = lw(160);
-      for (const [a, b] of chair) {
-        g.beginPath(); g.moveTo(...P({ f: a[0], u: a[1] })); g.lineTo(...P({ f: b[0], u: b[1] })); g.stroke();
-      }
-      const hip = { f: (at(23).f + at(24).f) / 2, u: (at(23).u + at(24).u) / 2 };
-      const sh = { f: (at(11).f + at(12).f) / 2, u: (at(11).u + at(12).u) / 2 };
-      const chest = { f: hip.f + (sh.f - hip.f) * 0.7 + 0.11, u: hip.u + (sh.u - hip.u) * 0.7 };
-      const path = (pts) => { g.beginPath(); g.moveTo(...P(pts[0])); pts.slice(1).forEach((q) => g.lineTo(...P(q))); g.stroke(); };
-      const ankle = at(27);
-      g.strokeStyle = cssVar('--tape');
-      g.lineWidth = lw(90);
-      path([{ f: ankle.f + 0.2, u: 0 }, ankle, at(25), hip, sh, at(0)]);   // pie (hacia dónde mira), pierna, tronco, cuello
-      g.lineWidth = lw(120);
-      path([sh, chest]);                                     // brazos cruzados sobre el pecho
-      g.fillStyle = cssVar('--tape');
-      const head = P(at(0));
-      g.beginPath(); g.arc(head[0], head[1], 0.085 * s, 0, Math.PI * 2); g.fill();
-      g.fillStyle = cssVar('--ink');                         // cadera y rodilla marcadas
-      for (const q of [hip, at(25)]) {
-        const [x, y] = P(q);
-        g.beginPath(); g.arc(x, y, Math.max(3, 0.028 * s), 0, Math.PI * 2); g.fill();
-      }
-      if (label) {
-        g.fillStyle = cssVar('--ink');
-        g.font = `600 ${Math.round(h * 0.06)}px ${cssVar('--font-body')}`;
-        g.textAlign = 'center';
-        g.fillText(label, x0 + width / 2, h * 0.97);
-      }
-    }
-
-    function caption(text, detail) {
-      if (ui.guideCaption.firstChild?.textContent !== text) ui.guideCaption.innerHTML = `${text}<small></small>`;
-      ui.guideCaption.querySelector('small').textContent = detail;
-    }
-
-    function drawAnimated(frame) {
-      const { w, h } = sizeCanvas();
-      drawScene(frame, 0, w, h);
-      const knee = AxonEngine.computeAngles(frame.world).knee;
-      const trend = prevKnee == null ? 0 : knee - prevKnee;
-      prevKnee = knee;
-      caption(knee >= 65 ? 'Posición inicial: sentado, espalda recta y brazos cruzados'
-        : knee <= 25 ? 'Posición final: de pie, con rodillas y caderas estiradas'
-          : trend < 0 ? 'Levántate sin impulsarte con los brazos' : 'Vuelve a sentarte despacio', `rodilla ${knee.toFixed(0)}°`);
-    }
-
-    /** Sin animación (movimiento reducido): las dos posiciones lado a lado. */
-    function drawStill() {
-      const { w, h } = sizeCanvas();
-      drawScene(SEATED, 0, w / 2, h, '1 · Inicial');
-      drawScene(STANDING, w / 2, w / 2, h, '2 · Final');
-      caption('Empieza sentado (1) y termina de pie (2). Levántate sin impulsarte con los brazos y vuelve a sentarte despacio.', '');
-    }
-
-    function tick(ts) {
-      if (!start) start = ts;
-      const idx = Math.min(frames.length - 1, Math.floor((((ts - start) % duration) / 1000) * FPS));
-      drawAnimated(frames[idx]);
-      raf = requestAnimationFrame(tick);
-    }
-
-    return {
-      start() { if (!raf) { start = 0; prevKnee = null; raf = requestAnimationFrame(tick); } },
-      stop() { cancelAnimationFrame(raf); raf = 0; },
-      still: drawStill,
-    };
-  })();
-
-  function syncGuide() {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (ui.guide.open && !reduce) guideAnim.start();
-    else { guideAnim.stop(); if (ui.guide.open) guideAnim.still(); }
+  // ---------------------------------------------------------------- TD-30 · guía del ejercicio
+  // Figura de referencia del design system (componente .fig de guide-figure.js), igual que en la galería y el seguimiento.
+  let guideFig = null;
+  function renderGuide() {
+    if (!window.AxonGuide || guideFig) return;
+    guideFig = AxonGuide.render($('guide-figure'), 'sit-to-stand', { variant: 'large', autoplay: 'visible' });
   }
 
   async function toggleFullscreen() {
@@ -675,8 +566,8 @@
   ui.btnNew.addEventListener('click', () => (source === 'camera' ? startCamera() : startDemo()));
   ui.btnCopy.addEventListener('click', copySummary);
   ui.btnFullscreen.addEventListener('click', toggleFullscreen);
-  ui.guide.addEventListener('toggle', syncGuide);
+  ui.guide.addEventListener('toggle', renderGuide);
   if ('speechSynthesis' in window) window.speechSynthesis.getVoices();     // precarga la lista de voces
   renderControls();
-  syncGuide();
+  renderGuide();
 })();

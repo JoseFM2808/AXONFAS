@@ -171,8 +171,10 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
   pedido.
 - **Aproximados:** 14 ejercicios se siguen peor porque se hacen acostados, de perfil o con la profundidad que estima
   la cámara. La página lo avisa e indica dónde poner la cámara.
-- **Qué ve la persona:** una figura de referencia propia (`guide-figure.js`) con la posición inicial, el movimiento, el
-  sostén y la vuelta, junto al video, en "Cómo se hace", en cada tarjeta de la galería y en el plan del paciente. La
+- **Qué ve la persona:** una figura de referencia propia (`guide-figure.js`, componente del design system) con la
+  posición inicial, el movimiento, el sostén y la vuelta. Lo que se mueve va resaltado, la pose objetivo aparece como
+  silueta punteada y una flecha marca el recorrido. Está junto al video, en "Cómo se hace", en cada tarjeta de la
+  galería, en el plan del paciente, en el panel del fisioterapeuta y en el aviso de enseñanza. La
   indicación de cada fase sale de los mismos textos: "Levanta la pierna de arriba" → "Sostén: 3 s" → "¡Bien! Ahora
   baja" → vuelta. La cuenta del sostén aparece grande sobre el video, legible a 2–3 m.
 - **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta

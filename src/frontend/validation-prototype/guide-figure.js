@@ -1,8 +1,10 @@
-/* AXONFAS · figura de referencia animada de cada ejercicio (TD-44, ADR-014).
+/* AXONFAS · componente "Figura de referencia" de cada ejercicio (design system §4, TD-44, ADR-014).
  *
- * Dibujo propio (no copia las imágenes de las fuentes): una figura de palitos con posición inicial, movimiento, sostén y
- * vuelta, más la silla, la mesa, la banda o la colchoneta que use el ejercicio. Con movimiento reducido muestra la
- * posición inicial y la final lado a lado. Las poses son ángulos absolutos de cada segmento, en grados: 0 = hacia abajo,
+ * Dibujo propio (no copia las imágenes de las fuentes): figura con volumen, posición inicial, movimiento, sostén y
+ * vuelta, más la silla, la mesa, la banda o la colchoneta que use el ejercicio. Lo que se mueve va en el color activo,
+ * la pose objetivo como silueta punteada y una flecha marca el recorrido. Colores, grosores y brillo salen de los tokens
+ * --fig-* de docs/design-system/tokens.css; el marco y las etiquetas, de la clase .fig de hud.css. Todas las páginas lo
+ * pintan con render(); con movimiento reducido muestra inicio y final lado a lado. Las poses son ángulos absolutos de cada segmento, en grados: 0 = hacia abajo,
  * 90 = hacia adelante (derecha de la imagen), 180 = hacia arriba, -90 = hacia atrás. En las vistas de frente, 90 es la
  * derecha de la imagen. "N" es el lado cercano (o el izquierdo de la imagen) y "F" el lejano (o el derecho).
  * Las funciones de geometría corren también en Node (tests); el dibujo solo en el navegador.
@@ -265,9 +267,8 @@
     ], { upper: true }),
   };
 
-  const VIEW_LABEL = { side: 'Vista de lado', front: 'Vista de frente', back: 'Vista de espalda',
-    lying: 'Acostado de lado, visto de frente' };
-  const viewLabel = (guide) => (guide.plane ? 'Acostado de lado, visto desde arriba y de frente' : VIEW_LABEL[guide.view]);
+  const VIEW_LABEL = { side: 'De lado', front: 'De frente', back: 'De espalda', lying: 'Acostado · de frente' };
+  const viewLabel = (guide) => (guide.plane ? 'Acostado · desde arriba' : VIEW_LABEL[guide.view]);
 
   // ------------------------------------------------------------------ geometría
   /** Puntos del cuerpo sin brazos resueltos por IK todavía. y hacia abajo; todavía sin apoyar en el suelo. */
@@ -473,7 +474,8 @@
       if (rest <= step.ms || i === tl.steps.length - 1) {
         const prev = tl.steps[i === 0 ? tl.steps.length - 1 : i - 1].pose;
         const k = i === 0 ? 1 : ease(Math.min(1, rest / step.ms));
-        return { pose: lerpPose(prev, step.pose, k), cap: step.cap, caption: captionFor(guide, step.cap, hold), step: i };
+        return { pose: lerpPose(prev, step.pose, k), cap: step.cap, caption: captionFor(guide, step.cap, hold), step: i,
+          k: Math.min(1, rest / step.ms) };
       }
       rest -= step.ms;
     }
@@ -486,192 +488,438 @@
     return (hold || guide.seq[1])[0];
   }
 
-  // ------------------------------------------------------------------ dibujo (solo navegador)
-  function cssVar(name, fallback) {
-    if (typeof getComputedStyle === 'undefined') return fallback;
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  // ------------------------------------------------------------------ qué se mueve en cada ejercicio
+  // Segmentos que se resaltan con el color activo. Grupos: aN/aF = brazo, lN/lF = pierna, feet = los dos pies,
+  // abs = abdomen, scap = escápulas. Es una decisión de diseño por ejercicio, no se deduce de los ángulos.
+  const FOCUS = {
+    'sit-to-stand': ['torso', 'lN', 'lF'], 'tandem-stance': ['lN', 'lF'], 'one-leg-stand': ['lN'], 'calf-raises': ['feet'],
+    'half-squat': ['torso', 'lN', 'lF'], 'leg-extension': ['shinN', 'footN'], 'straight-leg-raise': ['lN'],
+    'hamstring-curl': ['shinN', 'footN'], 'supine-hamstring-stretch': ['shinN', 'footN'], 'hip-abduction': ['lN'],
+    'clamshell': ['lN'], 'knee-to-chest': ['lN', 'aN', 'aF'], 'hip-bridge': ['torso', 'lN', 'lF'], 'bird-dog': ['aF', 'lN'],
+    'abdominal-bracing': ['abs'], 'chin-retraction': ['neck'], 'neck-side-flexion': ['neck'],
+    'seated-trunk-rotation': ['shoulders', 'aN', 'aF'], 'pendulum': ['aN'], 'crossover-arm-stretch': ['aN'],
+    'external-rotation-band': ['foreN'], 'internal-rotation-band': ['foreN'], 'standing-row': ['aN', 'aF'],
+    'scapula-setting': ['scap'],
+  };
+  const GROUPS = { aN: ['upperN', 'foreN'], aF: ['upperF', 'foreF'], lN: ['thighN', 'shinN', 'footN'],
+    lF: ['thighF', 'shinF', 'footF'], feet: ['footN', 'footF'] };
+  const SEGMENTS = {
+    torso: ['hip', 'sh'], neck: ['sh', 'head'], shoulders: ['shN', 'shF'], hips: ['hipN', 'hipF'],
+    upperN: ['shN', 'elN'], foreN: ['elN', 'wrN'], thighN: ['hipN', 'knN'], shinN: ['knN', 'anN'], footN: ['anN', 'toN'],
+    upperF: ['shF', 'elF'], foreF: ['elF', 'wrF'], thighF: ['hipF', 'knF'], shinF: ['knF', 'anF'], footF: ['anF', 'toF'],
+  };
+  Object.entries(FOCUS).forEach(([id, f]) => { if (GUIDES[id]) GUIDES[id].focus = f; });
+
+  /** Segmentos (y marcas abs/scap) que se mueven en una guía. */
+  function focusOf(guide) {
+    const out = new Set();
+    (guide.focus || []).forEach((k) => (GROUPS[k] || [k]).forEach((sname) => out.add(sname)));
+    return out;
   }
 
-  function draw(g, guide, ctx, poses, w, h, opts = {}) {
+  /** Punto que más se desplaza entre dos poses, entre los extremos de lo que se mueve: de ahí sale la flecha. */
+  function motion(guide, ctx, fromPose, toPose) {
+    const a = solvePose(fromPose, guide, ctx);
+    const b = solvePose(toPose, guide, ctx);
+    const keys = new Set();
+    focusOf(guide).forEach((sname) => { if (SEGMENTS[sname]) SEGMENTS[sname].forEach((k) => keys.add(k)); });
+    let best = null;
+    keys.forEach((k) => {
+      if (!a[k] || !b[k]) return;
+      const d = dist(a[k], b[k]);
+      if (!best || d > best.d) best = { key: k, from: a[k], to: b[k], d };
+    });
+    return best && best.d >= 0.06 ? best : null;
+  }
+
+  // Encuadre común: todas las figuras de cuerpo entero a la misma escala (y todas las de medio cuerpo entre sí), con
+  // espacio arriba para las etiquetas del componente.
+  const FRAME = { top: 0.17, bottom: 0.12, side: 0.06, fullHeight: 1.95, upperHeight: 1.05 };
+
+  function layout(guide, ctx, w, h, n) {
     const box = ctx.box;
-    const margin = 0.08;
-    const n = poses.length;
     const bw = box.maxX - box.minX || 1;
     const bh = box.maxY - box.minY || 1;
-    // Varias poses (inicio y final): lado a lado, o una debajo de la otra si la figura es ancha (acostada).
     const rows = n > 1 && bw / bh > 1.3;
+    const areaTop = h * FRAME.top * (n > 1 ? 0.75 : 1);
     const cellW = rows ? w : w / n;
-    const cellH = rows ? h / n : h;
-    const labelH = opts.labels ? Math.max(14, cellH * 0.12) : 0;
-    const s = Math.min((cellW * (1 - 2 * margin)) / bw, (cellH * (1 - 2 * margin) - labelH) / bh);
-    g.clearRect(0, 0, w, h);
-    if (!(s > 0)) return;                                 // lienzo todavía sin tamaño: lo redibuja el próximo cuadro
-    const tape = cssVar('--tape', '#00F2FE');
-    const muted = cssVar('--muted', '#8A9BB0');
-    const ink = cssVar('--ink', '#E0E9EC');
-    const alertC = cssVar('--hold', '#FFB800');
-    const font = cssVar('--font-body', 'sans-serif');
-    g.clearRect(0, 0, w, h);
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
-    poses.forEach((pose, i) => {
-      const p = solvePose(pose, guide, ctx);
+    const cellH = rows ? (h - areaTop) / n : h - areaTop;
+    const labelH = n > 1 ? Math.max(12, cellH * 0.11) : 0;
+    const usableH = cellH - labelH - h * FRAME.bottom * (rows ? 0.5 : 1);
+    // La escala común se fija con el lienzo entero (una sola pose), así inicio y final no se achican por compartirlo.
+    const ref = guide.upper ? FRAME.upperHeight : FRAME.fullHeight;
+    const fullH = h - h * FRAME.top - h * FRAME.bottom;
+    const common = Math.min(fullH / ref, fullH / bh, (w * (1 - 2 * FRAME.side)) / bw);
+    const s = Math.min(common, usableH / bh, (cellW * (1 - 2 * FRAME.side)) / bw);
+    const cells = Array.from({ length: n }, (_, i) => {
       const cx = rows ? 0 : cellW * i;
-      const cy = rows ? cellH * i : 0;
-      const ox = cx + cellW / 2 - ((box.minX + box.maxX) / 2) * s;
-      const oy = cy + cellH * (1 - margin) - labelH - box.maxY * s;
-      const X = (pt) => [ox + pt.x * s, oy + pt.y * s];
-      const seg = (a, b, width, color, alpha = 1) => {
-        if (!a || !b) return;
-        g.globalAlpha = alpha;
-        g.strokeStyle = color;
-        g.lineWidth = width;
-        g.beginPath(); g.moveTo(...X(a)); g.lineTo(...X(b)); g.stroke();
-        g.globalAlpha = 1;
+      const cy = areaTop + (rows ? cellH * i : 0);
+      return {
+        x: cx, y: cy, w: cellW, h: cellH,
+        ox: cx + cellW / 2 - ((box.minX + box.maxX) / 2) * s,
+        oy: cy + cellH - labelH - h * FRAME.bottom * (rows ? 0.5 : 1),
       };
-      const lw = Math.max(2.5, s * 0.055);
-      // suelo y accesorios
-      if (guide.plane) {                                  // colchoneta vista desde arriba: área, sin línea de suelo
-        const [x0, y0] = X({ x: box.minX - 0.12, y: box.minY - 0.08 });
-        const [x1, y1] = X({ x: box.maxX + 0.12, y: box.maxY + 0.08 });
-        g.globalAlpha = 0.16;
-        g.fillStyle = muted;
-        g.fillRect(x0, y0, x1 - x0, y1 - y0);
-        g.globalAlpha = 1;
-      } else if (!guide.upper) seg({ x: box.minX - 0.3, y: 0 }, { x: box.maxX + 0.3, y: 0 }, Math.max(1.5, s * 0.012), muted, 0.8);
-      ctx.props.forEach((shape) => {
-        if (shape.anchor) return;
-        if (shape.mat) { if (!guide.plane) seg(shape.pts[0], shape.pts[1], Math.max(3, s * 0.035), muted, 0.55); return; }
-        for (let k = 1; k < shape.pts.length; k += 1) seg(shape.pts[k - 1], shape.pts[k], Math.max(2, s * 0.025), muted, 0.9);
+    });
+    return { rows, s, cells, labelH };
+  }
+
+  // ------------------------------------------------------------------ dibujo (solo navegador)
+  /** Lee los tokens del design system (docs/design-system/tokens.css, sección "Figuras de referencia"). */
+  function theme() {
+    const css = typeof getComputedStyle === 'undefined' ? null : getComputedStyle(document.documentElement);
+    const v = (name, fallback) => (css && css.getPropertyValue(name).trim()) || fallback;
+    const num = (name, fallback) => { const x = parseFloat(v(name, '')); return Number.isFinite(x) ? x : fallback; };
+    return {
+      body: v('--fig-body', '#7E97B3'), far: v('--fig-body-far', '#3A4E68'), active: v('--fig-active', '#00F2FE'),
+      hold: v('--fig-hold', '#FFB800'), done: v('--fig-done', '#00FF88'), ghost: v('--fig-ghost', 'rgba(0,242,254,0.3)'),
+      joint: v('--fig-joint', '#F8FAFC'), prop: v('--fig-prop', '#5E6E85'), floor: v('--fig-floor', 'rgba(0,242,254,0.3)'),
+      band: v('--fig-band', '#CBD5E1'), ink: v('--ink', '#F1F5F9'), muted: v('--muted', '#94A3B8'),
+      mono: v('--font-mono', 'monospace'), limb: num('--fig-limb', 0.075), glow: num('--fig-glow', 14),
+    };
+  }
+
+  /** Dibuja una pose en una celda. opts: phase, ghost (pose objetivo), arrow ({from, to}), holdK (0-1), dash, label. */
+  function drawCell(g, guide, ctx, cell, s, pose, T, opts = {}) {
+    const dpr = (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1;
+    const p = solvePose(pose, guide, ctx);
+    const X = (pt) => [cell.ox + pt.x * s, cell.oy + pt.y * s];
+    const focus = focusOf(guide);
+    const phase = opts.phase || 'start';
+    const activeColor = phase === 'hold' ? T.hold : phase === 'top' ? T.done : T.active;
+    const limbW = Math.max(2 * dpr, T.limb * s);
+    const side = guide.view === 'side' || guide.view === 'lying';
+    const line = (a, b, width, color, o = {}) => {
+      if (!a || !b) return;
+      g.save();
+      g.globalAlpha = o.alpha == null ? 1 : o.alpha;
+      g.strokeStyle = color;
+      g.lineWidth = width;
+      g.lineCap = 'round';
+      if (o.dash) { g.setLineDash(o.dash); g.lineDashOffset = o.dashOffset || 0; }
+      if (o.glow) { g.shadowColor = color; g.shadowBlur = T.glow * dpr; }
+      g.beginPath(); g.moveTo(...X(a)); g.lineTo(...X(b)); g.stroke();
+      g.restore();
+    };
+    // Segmento con volumen: trazo de color y un brillo interior más fino.
+    const capsule = (a, b, width, color, o = {}) => {
+      line(a, b, width, color, o);
+      line(a, b, width * 0.3, 'rgba(255, 255, 255, 0.22)', { alpha: o.alpha });
+    };
+
+    // suelo, sombra y apoyo
+    if (guide.plane) {                                    // colchoneta vista desde arriba: área suave con borde
+      const [x0, y0] = X({ x: ctx.box.minX - 0.1, y: ctx.box.minY - 0.06 });
+      const [x1, y1] = X({ x: ctx.box.maxX + 0.1, y: ctx.box.maxY + 0.06 });
+      const r = Math.min(12 * dpr, (y1 - y0) / 4);
+      g.save();
+      g.beginPath();
+      if (g.roundRect) g.roundRect(x0, y0, x1 - x0, y1 - y0, r); else g.rect(x0, y0, x1 - x0, y1 - y0);
+      g.globalAlpha = 0.08; g.fillStyle = T.prop; g.fill();
+      g.globalAlpha = 0.55; g.strokeStyle = T.prop; g.lineWidth = Math.max(1, dpr); g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
+      g.restore();
+    } else if (guide.upper) {
+      line({ x: -0.3, y: 0.03 }, { x: 0.3, y: 0.03 }, Math.max(2 * dpr, limbW * 0.45), T.prop);
+    } else {
+      const fy = X({ x: 0, y: 0 })[1];
+      const grad = g.createLinearGradient(cell.x, 0, cell.x + cell.w, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(0.15, T.floor); grad.addColorStop(0.85, T.floor);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.save(); g.strokeStyle = grad; g.lineWidth = Math.max(1, 1.5 * dpr);
+      g.beginPath(); g.moveTo(cell.x, fy); g.lineTo(cell.x + cell.w, fy); g.stroke(); g.restore();
+      const low = KEYS.map((k) => p[k]).filter((pt) => pt && pt.y > -0.08);
+      if (low.length) {
+        const xs = low.map((pt) => pt.x);
+        const [cx] = X({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: 0 });
+        const rx = ((Math.max(...xs) - Math.min(...xs)) / 2 + 0.12) * s;
+        g.save(); g.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        g.beginPath(); g.ellipse(cx, fy + 0.012 * s, rx, 0.03 * s, 0, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+    }
+    ctx.props.forEach((shape) => {
+      if (shape.anchor) return;
+      if (shape.mat) {
+        if (guide.plane) return;
+        const [x0, y0] = X({ x: shape.pts[0].x, y: -0.035 });
+        const [x1] = X({ x: shape.pts[1].x, y: 0 });
+        g.save(); g.globalAlpha = 0.5; g.fillStyle = T.prop;
+        g.fillRect(x0, y0, x1 - x0, 0.035 * s); g.restore();
+        return;
+      }
+      for (let k = 1; k < shape.pts.length; k += 1) {
+        line(shape.pts[k - 1], shape.pts[k], Math.max(2 * dpr, limbW * 0.42), T.prop);
+      }
+    });
+
+    // silueta de la posición a la que hay que llegar
+    if (opts.ghost) {
+      const q = solvePose(opts.ghost, guide, ctx);
+      const dash = [5 * dpr, 5 * dpr];
+      ['torso', 'neck', 'shoulders', 'hips', 'upperN', 'foreN', 'thighN', 'shinN', 'footN', 'upperF', 'foreF', 'thighF', 'shinF',
+        'footF'].forEach((sname) => {
+        const [a, b] = SEGMENTS[sname];
+        if (guide.upper && /thigh|shin|foot/.test(sname)) return;
+        if (!(guide.view === 'front' || guide.view === 'back') && (sname === 'shoulders' || sname === 'hips')) return;
+        line(q[a], q[b], Math.max(1.5 * dpr, limbW * 0.35), T.ghost, { dash });
       });
-      if (guide.upper) seg({ x: -0.28, y: 0.02 }, { x: 0.28, y: 0.02 }, Math.max(2, s * 0.025), muted, 0.8);   // asiento
-      const side = guide.view === 'side' || guide.view === 'lying';
-      const farAlpha = side ? 0.42 : 1;
-      const limb = (sfx, alpha) => {
-        seg(p[`sh${sfx}`], p[`el${sfx}`], lw, tape, alpha);
-        seg(p[`el${sfx}`], p[`wr${sfx}`], lw, tape, alpha);
-        if (!guide.upper) {
-          seg(p[`hip${sfx}`], p[`kn${sfx}`], lw * 1.1, tape, alpha);
-          seg(p[`kn${sfx}`], p[`an${sfx}`], lw * 1.1, tape, alpha);
-          seg(p[`an${sfx}`], p[`to${sfx}`], lw * 0.9, tape, alpha);
-        }
-      };
-      limb('F', farAlpha);
-      // tronco, hombros y cadera
-      if (side) seg(p.hip, p.sh, lw * 1.4, tape);
-      else {
-        seg(lerpP(p.hipN, p.hipF, 0.5), lerpP(p.shN, p.shF, 0.5), lw * 1.4, tape);
-        seg(p.shN, p.shF, lw * 1.1, tape);
-        seg(p.hipN, p.hipF, lw * 1.1, tape);
-      }
-      seg(lerpP(p.shN, p.shF, 0.5), p.head, lw * 0.8, tape);
-      g.fillStyle = tape;
-      const [hx, hy] = X(p.head);
-      g.beginPath(); g.arc(hx, hy, L.head * s, 0, Math.PI * 2); g.fill();
-      if (guide.view === 'front' && pose.yaw) {                           // nariz: hacia dónde mira el giro
-        g.fillStyle = ink;
-        g.beginPath(); g.arc(hx + Math.sin(rad(pose.yaw)) * L.head * 0.7 * s, hy, Math.max(2, s * 0.025), 0, Math.PI * 2); g.fill();
-      }
-      if (guide.view === 'back') {                                        // escápulas que se juntan
-        const sc = pose.scap || 0;
-        [[p.shN, 1], [p.shF, -1]].forEach(([shp, sign]) => {
-          const cx = shp.x + sign * (0.09 + 0.03 * sc);
-          g.globalAlpha = 0.8;
-          g.strokeStyle = ink;
-          g.lineWidth = Math.max(1.5, s * 0.018);
-          g.beginPath();
-          g.moveTo(...X({ x: cx, y: shp.y + 0.03 }));
-          g.lineTo(...X({ x: cx + sign * 0.07, y: shp.y + 0.05 }));
-          g.lineTo(...X({ x: cx, y: shp.y + 0.17 }));
-          g.closePath();
-          g.stroke();
-          g.globalAlpha = 1;
-        });
-      }
-      if (pose.glow) {                                                    // abdomen activo
-        const c = lerpP(p.hip, p.sh, 0.4);
-        const [cx, cy] = X(c);
-        g.globalAlpha = 0.35 + 0.35 * pose.glow * (opts.pulse == null ? 1 : opts.pulse);
-        g.fillStyle = alertC;
-        g.beginPath(); g.ellipse(cx, cy, 0.16 * s, 0.07 * s, rad(-(side ? 0 : 90)) + 0, 0, Math.PI * 2); g.fill();
-        g.globalAlpha = 1;
-      }
-      limb('N', 1);
-      if (guide.band && ctx.bandAnchor) {                                 // banda elástica
-        guide.band.hands.forEach((sfx) => seg(p[`wr${sfx}`], ctx.bandAnchor, Math.max(1.5, s * 0.015), alertC, 0.9));
-        g.fillStyle = muted;
-        const [ax, ay] = X(ctx.bandAnchor);
-        g.fillRect(ax - s * 0.03, ay - s * 0.03, s * 0.06, s * 0.06);
-      }
-      g.fillStyle = ink;                                                  // articulaciones
-      ['elN', 'wrN', 'knN', 'anN', 'hip', 'sh'].forEach((k) => {
-        if (!p[k] || (guide.upper && (k === 'knN' || k === 'anN'))) return;
-        const [x, y] = X(p[k]);
-        g.beginPath(); g.arc(x, y, Math.max(2, s * 0.022), 0, Math.PI * 2); g.fill();
+      const [hx, hy] = X(q.head);
+      g.save(); g.strokeStyle = T.ghost; g.lineWidth = Math.max(1.5 * dpr, limbW * 0.3); g.setLineDash(dash);
+      g.beginPath(); g.arc(hx, hy, L.head * s, 0, Math.PI * 2); g.stroke(); g.restore();
+    }
+
+    // flecha del movimiento
+    if (opts.arrow) {
+      const A = opts.arrow.from, B = opts.arrow.to;
+      const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+      const len = dist(A, B);
+      let nx = -(B.y - A.y) / len, ny = (B.x - A.x) / len;            // perpendicular, hacia afuera del cuerpo
+      const hipC = p.hip;
+      if ((mx - hipC.x) * nx + (my - hipC.y) * ny < 0) { nx = -nx; ny = -ny; }
+      const ctl = { x: mx + nx * len * 0.28, y: my + ny * len * 0.28 };
+      const [ax, ay] = X(A), [bx, by] = X(B), [cx, cy] = X(ctl);
+      g.save();
+      g.strokeStyle = T.active; g.globalAlpha = 0.9; g.lineWidth = Math.max(1.5 * dpr, limbW * 0.3);
+      g.setLineDash([7 * dpr, 6 * dpr]); g.lineDashOffset = -(opts.dash || 0);
+      g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(cx, cy, bx, by); g.stroke();
+      g.setLineDash([]);
+      const ang = Math.atan2(by - cy, bx - cx);
+      const hs = Math.max(6 * dpr, limbW * 1.1);
+      g.fillStyle = T.active;
+      g.beginPath(); g.moveTo(bx, by);
+      g.lineTo(bx - hs * Math.cos(ang - 0.45), by - hs * Math.sin(ang - 0.45));
+      g.lineTo(bx - hs * Math.cos(ang + 0.45), by - hs * Math.sin(ang + 0.45));
+      g.closePath(); g.fill();
+      g.restore();
+    }
+
+    // cuerpo: lado lejano, tronco y cabeza, lado cercano
+    const segColor = (sname, far) => (focus.has(sname) ? activeColor : far ? T.far : T.body);
+    const segAlpha = (sname, far) => (far && focus.has(sname) ? 0.55 : 1);
+    const limb = (sfx, far) => {
+      ['upper', 'fore'].concat(guide.upper ? [] : ['thigh', 'shin', 'foot']).forEach((part) => {
+        const sname = part + sfx;
+        const [a, b] = SEGMENTS[sname];
+        const wmul = part === 'thigh' ? 1.15 : part === 'foot' ? 0.75 : part === 'fore' ? 0.9 : 1;
+        capsule(p[a], p[b], limbW * wmul, segColor(sname, far), { glow: focus.has(sname) && !far, alpha: segAlpha(sname, far) });
       });
-      if (opts.labels) {
-        g.fillStyle = ink;
-        g.font = `600 ${Math.round(Math.max(11, labelH * 0.7))}px ${font}`;
-        g.textAlign = 'center';
-        g.fillText(opts.labels[i], cx + cellW / 2, cy + cellH - labelH * 0.3);
-      }
+    };
+    limb('F', side);
+    if (guide.view === 'front' || guide.view === 'back') {
+      capsule(p.hipN, p.hipF, limbW * 1.2, T.body);
+      capsule(p.shN, p.shF, limbW * 1.1, segColor('shoulders'), { glow: focus.has('shoulders') });
+    }
+    capsule(p.hip, p.sh, limbW * 1.7, segColor('torso'), { glow: focus.has('torso') });
+    capsule(p.sh, p.head, limbW * 0.75, segColor('neck'), { glow: focus.has('neck') });
+    const [hx, hy] = X(p.head);
+    g.save();
+    if (focus.has('neck')) { g.shadowColor = activeColor; g.shadowBlur = T.glow * dpr; }
+    g.fillStyle = segColor('neck');
+    g.beginPath(); g.arc(hx, hy, L.head * s, 0, Math.PI * 2); g.fill();
+    g.shadowBlur = 0;
+    g.strokeStyle = 'rgba(255, 255, 255, 0.28)'; g.lineWidth = Math.max(1, dpr);
+    g.stroke();
+    // hacia dónde mira: un ojo de perfil, dos de frente
+    g.fillStyle = 'rgba(3, 7, 18, 0.85)';
+    const eye = Math.max(1.5 * dpr, L.head * s * 0.16);
+    if (side) {
+      const neckA = pose.neck == null ? (pose.torso == null ? 180 : pose.torso) : pose.neck;
+      const f = dir(neckA - 90);
+      g.beginPath(); g.arc(hx + f.x * L.head * s * 0.55, hy + f.y * L.head * s * 0.55 - L.head * s * 0.1, eye, 0, Math.PI * 2); g.fill();
+    } else if (guide.view === 'front') {
+      const off = Math.sin(rad(pose.yaw || 0)) * L.head * s * 0.45;
+      const tilt = rad((pose.neck == null ? 180 : pose.neck) - 180);
+      [-1, 1].forEach((k) => {
+        const ex = k * L.head * s * 0.38, ey = -L.head * s * 0.1;
+        g.beginPath();
+        g.arc(hx + off + ex * Math.cos(tilt) - ey * Math.sin(tilt), hy + ex * Math.sin(tilt) + ey * Math.cos(tilt), eye, 0, Math.PI * 2);
+        g.fill();
+      });
+    }
+    g.restore();
+    limb('N', false);
+
+    // articulaciones del lado cercano
+    g.save(); g.fillStyle = T.joint; g.globalAlpha = 0.9;
+    ['shN', 'elN', 'hipN', 'knN', 'anN', 'wrN'].forEach((k) => {
+      if (!p[k] || (guide.upper && (k === 'knN' || k === 'anN'))) return;
+      const [x, y] = X(p[k]);
+      g.beginPath(); g.arc(x, y, Math.max(1.5 * dpr, limbW * 0.22), 0, Math.PI * 2); g.fill();
+    });
+    g.restore();
+
+    // marcas de lo que la cámara no ve: abdomen activo, escápulas que se juntan
+    if (focus.has('abs')) {
+      const c = lerpP(p.hip, p.sh, 0.42);
+      const [cx, cy] = X(c);
+      const on = (pose.glow || 0) * (opts.pulse == null ? 1 : opts.pulse);
+      g.save(); g.globalAlpha = 0.25 + 0.55 * on; g.fillStyle = (pose.glow || 0) > 0.5 ? activeColor : T.active;
+      g.shadowColor = g.fillStyle; g.shadowBlur = T.glow * dpr * on;
+      g.beginPath(); g.ellipse(cx, cy, 0.15 * s, Math.max(3 * dpr, limbW * 0.9), Math.atan2(p.sh.y - p.hip.y, p.sh.x - p.hip.x), 0, Math.PI * 2);
+      g.fill(); g.restore();
+    }
+    if (guide.view === 'back') {
+      const sc = pose.scap || 0;
+      [[p.shN, 1], [p.shF, -1]].forEach(([shp, sign]) => {
+        const cx = shp.x + sign * (0.09 + 0.035 * sc);
+        g.save();
+        g.strokeStyle = focus.has('scap') ? activeColor : T.joint;
+        g.fillStyle = focus.has('scap') ? activeColor : T.joint;
+        g.globalAlpha = 0.35 + 0.5 * sc;
+        if (focus.has('scap')) { g.shadowColor = activeColor; g.shadowBlur = T.glow * dpr * sc; }
+        g.lineWidth = Math.max(1.5 * dpr, limbW * 0.25);
+        g.beginPath();
+        g.moveTo(...X({ x: cx, y: shp.y + 0.03 }));
+        g.lineTo(...X({ x: cx + sign * 0.075, y: shp.y + 0.05 }));
+        g.lineTo(...X({ x: cx, y: shp.y + 0.18 }));
+        g.closePath();
+        g.fill();
+        g.restore();
+      });
+    }
+
+    // banda elástica y su anclaje
+    if (guide.band && ctx.bandAnchor) {
+      guide.band.hands.forEach((sfx) => line(p[`wr${sfx}`], ctx.bandAnchor, Math.max(1.5 * dpr, limbW * 0.25), T.band,
+        { dash: [3 * dpr, 3 * dpr], alpha: 0.9 }));
+      const [ax, ay] = X(ctx.bandAnchor);
+      const r = Math.max(3 * dpr, limbW * 0.5);
+      g.save(); g.fillStyle = T.prop; g.fillRect(ax - r, ay - r, 2 * r, 2 * r); g.restore();
+    }
+
+    // anillo del sostén alrededor del punto que se mueve
+    if (opts.holdK != null && opts.holdAt) {
+      const [x, y] = X(opts.holdAt);
+      const r = Math.max(8 * dpr, 0.1 * s);
+      g.save();
+      g.lineWidth = Math.max(2 * dpr, limbW * 0.35);
+      g.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = T.hold; g.shadowColor = T.hold; g.shadowBlur = T.glow * dpr * 0.6;
+      g.beginPath(); g.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, opts.holdK)); g.stroke();
+      g.restore();
+    }
+
+    if (opts.label) {
+      g.save();
+      g.fillStyle = T.muted;
+      g.font = `700 ${Math.round(Math.max(9 * dpr, Math.min(13 * dpr, opts.labelH * 0.5)))}px ${T.mono}`;
+      g.textAlign = 'center';
+      g.fillText(opts.label.toUpperCase(), cell.x + cell.w / 2, cell.y + cell.h - opts.labelH * 0.25);
+      g.restore();
+    }
+  }
+
+  // ------------------------------------------------------------------ componente .fig (design system)
+  const PHASE = { start: 'Inicio', go: 'Movimiento', go2: 'Movimiento', hold: 'Sostén', top: 'Posición final', back: 'Vuelta' };
+  const phaseOf = (cap, hold) => (cap === 'go2' ? 'go' : cap === 'hold' && !(hold > 0) ? 'top' : cap);
+
+  function chipText(phase, hold) {
+    const order = ['start', 'go', phase === 'top' ? 'top' : 'hold', 'back'];
+    const n = order.indexOf(phase) + 1;
+    const label = phase === 'hold' ? `${PHASE.hold} ${hold} s` : PHASE[phase];
+    return `${n} · ${label}`;
+  }
+
+  /** Para cada paso: pose de partida, pose objetivo y flecha (se calcula una vez por guía). */
+  function plan(guide, ctx, steps) {
+    const holdIdx = steps.map((st, i) => (st.cap === 'hold' ? i : -1)).filter((i) => i >= 0);
+    return steps.map((st, i) => {
+      if (!['start', 'go', 'go2'].includes(st.cap)) return {};
+      const j = holdIdx.find((x) => x >= i);
+      const target = j != null ? steps[j].pose : endPose(guide);
+      let from = steps[0].pose;
+      for (let k = i; k >= 0; k -= 1) if (steps[k].cap === 'start' || steps[k].cap === 'back') { from = steps[k].pose; break; }
+      return { target, arrow: motion(guide, ctx, from, target) };
     });
   }
 
   /**
-   * Monta la guía de un ejercicio en un lienzo. opts: hold (s), onCaption(texto, fase), autoplay ('always' | 'visible').
-   * Devuelve { stop() }. Con movimiento reducido dibuja inicio y final lado a lado, sin animar.
+   * Componente "Figura de referencia" (design system §4): pinta en `container` el marco, el lienzo, la etiqueta de la
+   * fase, la vista y el texto. opts: hold (s), variant ('card' | 'pip' | 'large'), autoplay ('visible' | 'always'),
+   * caption (false = sin texto). Con movimiento reducido muestra inicio y final, sin animar. Devuelve { stop() }.
    */
-  function mount(canvas, exerciseId, opts = {}) {
+  function render(container, exerciseId, opts = {}) {
     const guide = GUIDES[exerciseId];
-    if (!guide || !canvas) return { stop() {} };
+    if (!guide || !container || typeof document === 'undefined') return { stop() {} };
     const ctx = prepare(guide);
-    const g = canvas.getContext('2d');
     const hold = opts.hold || 0;
+    const variant = opts.variant || 'card';
+    const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text != null) n.textContent = text; return n; };
+    container.innerHTML = '';
+    const fig = el('figure', `fig fig--${variant}`);
+    fig.dataset.phase = 'start';
+    const stage = el('div', 'fig-stage');
+    const canvas = el('canvas', 'fig-canvas');
+    const name = (typeof self !== 'undefined' && self.AxonCatalog && self.AxonCatalog.get(exerciseId)) ? self.AxonCatalog.get(exerciseId).name : exerciseId;
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', `Figura de referencia: ${name}`);
+    const chip = el('span', 'fig-chip');
+    const view = el('span', 'fig-view', viewLabel(guide));
+    stage.append(canvas, chip, view);
+    fig.appendChild(stage);
+    const cap = opts.caption === false ? null : el('figcaption', 'fig-cap');
+    if (cap) fig.appendChild(cap);
+    container.appendChild(fig);
+
+    const g = canvas.getContext('2d');
+    const tl = timeline(guide, hold);
+    const steps = plan(guide, ctx, tl.steps);
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let raf = 0;
-    let t0 = 0;
-    let lastCap = null;
-    let visible = opts.autoplay !== 'visible';
+    let raf = 0, t0 = 0, last = '', visible = opts.autoplay !== 'visible', observer = null, resizer = null;
     const size = () => {
       const dpr = (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1;
-      const w = Math.round((canvas.clientWidth || 300) * dpr);
-      const hh = Math.round(w * 2 / 3);
-      if (canvas.width !== w || canvas.height !== hh) { canvas.width = w; canvas.height = hh; }
-      return { w, h: hh };
+      const w = Math.round((canvas.clientWidth || 0) * dpr);
+      const h = Math.round((canvas.clientHeight || 0) * dpr);
+      if (w && h && (canvas.width !== w || canvas.height !== h)) { canvas.width = w; canvas.height = h; }
+      return { w: canvas.width, h: canvas.height, ok: Boolean(w && h) };
     };
-    const caption = (text, cap) => {
-      if (text === lastCap) return;
-      lastCap = text;
-      if (opts.onCaption) opts.onCaption(text, cap);
+    const setText = (phase, chipT, capT) => {
+      const key = `${phase}|${chipT}|${capT}`;
+      if (key === last) return;
+      last = key;
+      fig.dataset.phase = phase;
+      chip.textContent = chipT;
+      if (cap) cap.textContent = capT;
     };
     function still() {
-      const { w, h } = size();
-      draw(g, guide, ctx, [guide.seq[0][0], endPose(guide)], w, h, { labels: ['1 · Inicio', '2 · Final'] });
-      caption(`${guide.cues.start}. ${guide.cues.go}${hold ? `; sostén ${hold} s` : ''}.`, 'still');
+      const { w, h, ok } = size();
+      if (!ok) return;
+      const T = theme();
+      const lay = layout(guide, ctx, w, h, 2);
+      g.clearRect(0, 0, w, h);
+      const end = endPose(guide);
+      const first = steps.find((x) => x.arrow) || {};
+      drawCell(g, guide, ctx, lay.cells[0], lay.s, guide.seq[0][0], T,
+        { phase: 'start', ghost: end, arrow: first.arrow, label: '1 · Inicio', labelH: lay.labelH });
+      drawCell(g, guide, ctx, lay.cells[1], lay.s, end, T,
+        { phase: hold > 0 ? 'hold' : 'top', label: '2 · Final', labelH: lay.labelH });
+      setText('go', 'Inicio → final', `${guide.cues.start}. ${guide.cues.go}${hold > 0 ? `; sostén ${hold} s` : ''}.`);
     }
     function tick(ts) {
       if (typeof canvas.isConnected === 'boolean' && !canvas.isConnected) { raf = 0; if (observer) observer.disconnect(); return; }
+      raf = requestAnimationFrame(tick);
+      const { w, h, ok } = size();
+      if (!ok) return;
       if (!t0) t0 = ts;
       const f = frameAt(guide, hold, ts - t0);
-      const { w, h } = size();
-      draw(g, guide, ctx, [f.pose], w, h, { pulse: 0.5 + 0.5 * Math.sin(ts / 220) });
-      caption(f.caption, f.cap);
-      raf = requestAnimationFrame(tick);
+      const phase = phaseOf(f.cap, hold);
+      const info = steps[f.step] || {};
+      const T = theme();
+      const lay = layout(guide, ctx, w, h, 1);
+      g.clearRect(0, 0, w, h);
+      const holdStep = f.cap === 'hold' && hold > 0;
+      const holdAt = holdStep ? (motion(guide, ctx, guide.seq[0][0], tl.steps[f.step].pose) || {}).to : null;
+      drawCell(g, guide, ctx, lay.cells[0], lay.s, f.pose, T, {
+        phase, ghost: info.target, arrow: info.arrow, dash: (ts / 25) % 1000,
+        holdK: holdStep ? f.k : null, holdAt, pulse: 0.5 + 0.5 * Math.sin(ts / 220),
+      });
+      setText(phase, chipText(phase, hold), f.caption);
     }
     function play() { if (!raf && !reduce && visible) { t0 = 0; raf = requestAnimationFrame(tick); } }
     function pause() { cancelAnimationFrame(raf); raf = 0; }
-    let observer = null;
-    // Sin animación se dibuja una sola vez: si el lienzo cambia de tamaño (pestaña oculta al cargar, giro del celular),
-    // se vuelve a dibujar.
-    let resizer = null;
-    if (reduce && typeof ResizeObserver !== 'undefined') {
-      resizer = new ResizeObserver(() => { if (canvas.clientWidth && canvas.width !== Math.round(canvas.clientWidth * ((typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1))) still(); });
-      resizer.observe(canvas);
-    }
-    if (reduce) still();
-    else if (opts.autoplay === 'visible' && typeof IntersectionObserver !== 'undefined') {
-      draw(g, guide, ctx, [guide.seq[0][0]], size().w, size().h);
+    if (reduce) {
+      still();
+      if (typeof ResizeObserver !== 'undefined') { resizer = new ResizeObserver(() => still()); resizer.observe(canvas); }
+    } else if (opts.autoplay === 'visible' && typeof IntersectionObserver !== 'undefined') {
       observer = new IntersectionObserver((entries) => {
         visible = entries.some((e) => e.isIntersecting);
         if (visible) play(); else pause();
@@ -679,8 +927,8 @@
       observer.observe(canvas);
     } else { visible = true; play(); }
     return {
+      el: fig,
       stop() { pause(); if (observer) observer.disconnect(); if (resizer) resizer.disconnect(); },
-      guide, viewLabel: viewLabel(guide),
     };
   }
 
@@ -690,5 +938,6 @@
     return guide ? Object.assign({ view: viewLabel(guide) }, guide.cues) : null;
   }
 
-  return { GUIDES, VIEW_LABEL, L, bodyPoints, solvePose, prepare, frameAt, endPose, timeline, reach, mount, cuesFor };
+  return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, L, bodyPoints, solvePose, prepare, frameAt, endPose, timeline, reach,
+    focusOf, motion, layout, render, cuesFor };
 });

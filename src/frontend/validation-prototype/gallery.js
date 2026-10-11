@@ -27,15 +27,9 @@
     // Figura de referencia animada (TD-44): cómo se hace, con dibujo propio. Se anima solo mientras se ve.
     let guide = null;
     if (window.AxonGuide && AxonGuide.GUIDES[e.id]) {
-      guide = document.createElement('figure');
-      guide.className = 'ex-guide';
-      const canvas = document.createElement('canvas');
-      canvas.setAttribute('role', 'img');
-      canvas.setAttribute('aria-label', `Figura de referencia: ${e.name}`);
-      const cap = document.createElement('figcaption');
-      guide.append(canvas, cap);
+      guide = document.createElement('div');
       const holdS = hold == null ? e.dose.hold : hold;
-      queueMicrotask(() => AxonGuide.mount(canvas, e.id, { hold: holdS, autoplay: 'visible', onCaption: (t) => { cap.textContent = t; } }));
+      queueMicrotask(() => AxonGuide.render(guide, e.id, { hold: holdS, variant: 'card', autoplay: 'visible' }));
     }
     const map = document.createElement('div');
     const dose = document.createElement('p');

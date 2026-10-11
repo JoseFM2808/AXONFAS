@@ -12,7 +12,7 @@
   const SOURCE = { camera: 'Cámara', demo: 'Demo sintético', guided: 'Guiado' };
   const EVENT = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDE = { left: 'izquierda', right: 'derecha' };
-  const state = { selected: null, detail: null, stream: null, liveMap: null, teachMap: null, lastFrame: 0, alertUntil: 0,
+  const state = { selected: null, detail: null, stream: null, liveMap: null, teachMap: null, teachGuide: null, lastFrame: 0, alertUntil: 0,
     alertMuscles: [], feed: [], refreshTimer: 0, livenessTimer: 0 };
 
   const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)} %`);
@@ -464,6 +464,12 @@
   function renderTeachExercise() {
     const ex = C.get($('teach-select').value);
     if (!ex) return;
+    // Figura de referencia del design system con la dosis del plan de este paciente (lo que el paciente va a ver).
+    if (state.teachGuide) state.teachGuide.stop();
+    const item = state.detail && state.detail.plan ? state.detail.plan.find((p) => p.exercise_id === ex.id) : null;
+    state.teachGuide = window.AxonGuide
+      ? AxonGuide.render($('teach-guide'), ex.id, { hold: item ? item.hold_seconds : ex.dose.hold, variant: 'card', autoplay: 'visible' })
+      : null;
     state.teachMap = B.render($('teach-map'), { intensities: B.staticLoad(ex), onMuscleClick: (m) => highlight({ muscle: m, note: $('teach-note').value }) });
     const facts = $('teach-facts');
     facts.innerHTML = '';

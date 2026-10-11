@@ -37,6 +37,22 @@
   /* Escenario de Cámara y Skeleton */
   --stage: #020617;
   --stage-ink: #F8FAFC;
+
+  /* Figuras de referencia de ejercicios (componente .fig · guide-figure.js · README §4) */
+  --fig-bg: #050B1A;                          /* fondo del marco */
+  --fig-grid: rgba(0, 242, 254, 0.06);        /* malla táctica del marco */
+  --fig-body: #7E97B3;                        /* cuerpo en reposo: pizarra, no compite con lo que se mueve */
+  --fig-body-far: #3A4E68;                    /* brazo y pierna del lado lejano */
+  --fig-active: var(--tape);                  /* lo que se mueve en el ejercicio */
+  --fig-hold: var(--hold);                    /* mientras se sostiene */
+  --fig-done: var(--safe);                    /* posición final de un ejercicio sin sostén */
+  --fig-ghost: rgba(0, 242, 254, 0.32);       /* silueta punteada de la posición a la que hay que llegar */
+  --fig-joint: var(--stage-ink);              /* articulaciones del lado cercano */
+  --fig-prop: #5E6E85;                        /* silla, mesa, colchoneta y anclajes */
+  --fig-floor: rgba(0, 242, 254, 0.35);       /* línea del suelo */
+  --fig-band: var(--ink-secondary);           /* banda elástica (punteada) */
+  --fig-limb: 0.075;                          /* grosor de brazos y piernas, en metros de la figura */
+  --fig-glow: 14;                             /* brillo de lo que se mueve, en px */
   
   /* Tipografía */
   --font-display: 'Space Grotesk', -apple-system, sans-serif;

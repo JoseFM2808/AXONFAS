@@ -87,3 +87,50 @@ test('el sostén de la dosis aparece en la animación', () => {
   assert.ok(texts.has('Sostén 5 s'), 'el texto dice el tiempo real de la dosis');
   assert.equal(G.timeline(G.GUIDES['calf-raises'], 0).steps.find((s) => s.cap === 'hold').ms, 500);
 });
+
+test('cada figura dice qué se mueve, con segmentos que existen (design system §4)', () => {
+  const groups = new Set(['aN', 'aF', 'lN', 'lF', 'feet', 'abs', 'scap']);
+  for (const [id, guide] of Object.entries(G.GUIDES)) {
+    assert.ok(guide.focus && guide.focus.length, `${id}: sin segmentos activos`);
+    for (const k of guide.focus) assert.ok(groups.has(k) || G.SEGMENTS[k], `${id}: segmento desconocido '${k}'`);
+    for (const sname of G.focusOf(guide)) {
+      if (guide.upper) assert.ok(!/thigh|shin|foot/.test(sname), `${id}: resalta una pierna en una vista de medio cuerpo`);
+    }
+  }
+});
+
+test('la flecha sale del punto que más se mueve y falta solo donde la cámara no ve el movimiento', () => {
+  const noArrow = new Set(['abdominal-bracing', 'scapula-setting']);
+  for (const [id, guide] of Object.entries(G.GUIDES)) {
+    const ctx = G.prepare(guide);
+    const m = G.motion(guide, ctx, guide.seq[0][0], G.endPose(guide));
+    if (noArrow.has(id)) assert.equal(m, null, `${id}: no debería llevar flecha`);
+    else assert.ok(m && m.d >= 0.06, `${id}: sin flecha de movimiento`);
+  }
+  const ctx = G.prepare(G.GUIDES['hip-abduction']);
+  assert.equal(G.motion(G.GUIDES['hip-abduction'], ctx, G.GUIDES['hip-abduction'].seq[0][0], G.endPose(G.GUIDES['hip-abduction'])).key, 'toN',
+    'en la abducción, la flecha sigue el pie de la pierna que sube');
+});
+
+test('todas las figuras de cuerpo entero se dibujan a la misma escala', () => {
+  const scale = (id) => { const g = G.GUIDES[id]; return G.layout(g, G.prepare(g), 600, 400, 1).s; };
+  const standing = ['sit-to-stand', 'tandem-stance', 'one-leg-stand', 'calf-raises', 'half-squat', 'hamstring-curl', 'standing-row'];
+  const ref = scale(standing[0]);
+  for (const id of standing) assert.ok(Math.abs(scale(id) - ref) < 1e-9, `${id}: escala distinta (${scale(id)} vs ${ref})`);
+  const lying = ['straight-leg-raise', 'hip-bridge', 'knee-to-chest', 'abdominal-bracing'];
+  for (const id of lying) assert.ok(Math.abs(scale(id) - ref) < 1e-9, `${id}: acostado, misma escala que de pie`);
+  const upper = ['neck-side-flexion', 'crossover-arm-stretch', 'scapula-setting'];
+  const refU = scale(upper[0]);
+  for (const id of upper) assert.ok(Math.abs(scale(id) - refU) < 1e-9, `${id}: medio cuerpo, escala distinta`);
+  // y la figura cabe en el lienzo, debajo de la franja de las etiquetas
+  for (const [id, g] of Object.entries(G.GUIDES)) {
+    const ctx = G.prepare(g);
+    const lay = G.layout(g, ctx, 600, 400, 1);
+    const c = lay.cells[0];
+    const top = c.oy + ctx.box.minY * lay.s;
+    const left = c.ox + ctx.box.minX * lay.s;
+    const right = c.ox + ctx.box.maxX * lay.s;
+    assert.ok(top >= 400 * G.FRAME.top - 1, `${id}: la figura invade la franja de etiquetas (${top.toFixed(1)})`);
+    assert.ok(left >= 0 && right <= 600, `${id}: la figura se sale por los costados`);
+  }
+});

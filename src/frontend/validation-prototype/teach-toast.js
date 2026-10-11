@@ -1,10 +1,12 @@
 /* AXONFAS · aviso de enseñanza: el fisioterapeuta señala un músculo o un ejercicio y el paciente lo ve sobre el mapa
- * corporal (ADR-013). Lo usan paciente.html y el prototipo en modo paciente (patient-link.js).
+ * corporal (ADR-013); si es un ejercicio, también su figura de referencia (componente .fig del design system).
+ * Lo usan paciente.html, el prototipo en modo paciente (patient-link.js) y seguimiento.html.
  */
 (function (root) {
   'use strict';
   let box = null;
   let timer = 0;
+  let figure = null;
 
   function show(message) {
     const C = root.AxonCatalog;
@@ -20,6 +22,7 @@
       document.body.appendChild(box);
     }
     box.hidden = false;
+    if (figure) { figure.stop(); figure = null; }
     box.innerHTML = '';
     const head = document.createElement('div');
     head.className = 'row-between';
@@ -29,14 +32,20 @@
     close.className = 'btn';
     close.type = 'button';
     close.textContent = 'Cerrar';
-    close.addEventListener('click', () => { box.hidden = true; });
+    close.addEventListener('click', () => { box.hidden = true; if (figure) { figure.stop(); figure = null; } });
     head.append(title, close);
     const what = document.createElement('p');
     what.className = 'facts';
     const names = B.muscleNames(muscles).join(', ');
     what.textContent = exercise ? `${exercise.name}: trabajas ${names}. Huesos: ${exercise.bones.join(', ')}.` : `Músculo: ${names}.`;
     const map = document.createElement('div');
-    box.append(head, what, map);
+    box.append(head, what);
+    if (exercise && root.AxonGuide && root.AxonGuide.GUIDES[exercise.id]) {
+      const fig = document.createElement('div');
+      box.appendChild(fig);
+      figure = root.AxonGuide.render(fig, exercise.id, { hold: exercise.dose.hold, variant: 'pip', autoplay: 'always' });
+    }
+    box.appendChild(map);
     if (message.note) {
       const note = document.createElement('p');
       note.className = 'muted';
