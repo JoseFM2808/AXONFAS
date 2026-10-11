@@ -49,11 +49,12 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 
 - Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `.gitignore` y `.gitattributes`. Repo público:
   https://github.com/JoseFM2808/AXONFAS (rama `main`); antes de cada push, revisar que no haya secretos ni datos personales.
+  Carpetas raíz: `.ai-context/`, `docs/`, `data/`, `notebooks/`, `src/`, `tests/`, `config/` (estructura de
+  `_Plantilla Proyecto IA`).
 - **Publicación directa autorizada por el owner (2026-10-11):** tras un cambio verificado (tests en verde, sync sin FAIL
   y revisión de secretos y datos personales), haz commit y `git push origin main` sin pedir confirmación, y avisa qué se
   publicó. El remoto usa `https://JoseFM2808@github.com/...`: Git Credential Manager publica como JoseFM2808 solo en este
-  repo. Verifica cada push con `git ls-remote` antes de darlo por hecho. Carpetas raíz: `.ai-context/`, `docs/`, `data/`,
-  `notebooks/`, `src/`, `tests/`, `config/` (estructura de `_Plantilla Proyecto IA`).
+  repo. Verifica cada push con `git ls-remote` antes de darlo por hecho.
 - Nada de `rm` / `mv` sin aprobación explícita del owner.
 
 ### Entorno local
