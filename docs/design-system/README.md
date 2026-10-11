@@ -73,9 +73,10 @@ El servidor local se arranca con `lanzar-prototipo.cmd` (o `py src/frontend/vali
 
 Es la única forma de mostrar cómo se hace un ejercicio. La dibuja `guide-figure.js` con `AxonGuide.render(contenedor,
 idEjercicio, { hold, variant })`, con los mismos colores, trazos y encuadre en todas las páginas. La figura es una
-**marioneta muscular** con el estilo del mapa muscular: cada segmento del cuerpo (muslo, pierna, pie, tronco, brazo,
-antebrazo, cuello y cabeza) está hecho de polígonos de músculos con los nombres del mapa, de lado o de frente y de
-espalda, y se mueve con la animación del ejercicio. El dibujo es propio: nunca se copian imágenes de las fuentes
+**marioneta muscular en 3D** con el estilo del mapa muscular. Tiene un esqueleto con ángulos anatómicos (cadera, rodilla,
+tobillo, hombro, codo, tronco y cuello) y una cámara en tres cuartos por ejercicio. Cada segmento (muslo, pierna, pie,
+tronco, brazo, antebrazo, cuello y cabeza) está hecho de polígonos de músculos con los nombres del mapa, y muestra su
+perfil, su frente o su espalda según cómo lo ve la cámara. El dibujo es propio: nunca se copian imágenes de las fuentes
 (AAOS, NHS, CDC).
 
 **Anatomía**
@@ -91,7 +92,8 @@ espalda, y se mueve con la animación del ejercicio. El dibujo es propio: nunca 
 | Pose objetivo | Halo suave de la parte del cuerpo que se mueve, en la posición a la que hay que llegar | `--fig-ghost` |
 | Flecha | Recorrido del punto que más se mueve, con trazo animado | `--fig-active` |
 | Anillo del sostén | Se llena alrededor de ese punto mientras se sostiene | `--fig-hold` |
-| Suelo y accesorios | Línea del suelo con sombra; silla, mesa, colchoneta; banda elástica punteada | `--fig-floor`, `--fig-prop`, `--fig-band` |
+| Profundidad | Lo que está más lejos va detrás y más tenue; lo que apunta a la cámara se acorta | Orden por profundidad, sin colores nuevos |
+| Suelo y accesorios | Suelo en perspectiva con sombra; silla, mesa y colchoneta en 3D; banda elástica punteada | `--fig-floor`, `--fig-prop`, `--fig-band` |
 
 **Color por fase.** Los músculos que trabajan van en `--fig-active` al inicio, en el movimiento y en la vuelta; en
 `--fig-hold` durante el sostén (el mismo ámbar de la cuenta sobre el video); y en `--fig-done` en la posición final de

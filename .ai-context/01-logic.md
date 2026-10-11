@@ -172,9 +172,10 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
 - **Aproximados:** 14 ejercicios se siguen peor porque se hacen acostados, de perfil o con la profundidad que estima
   la cámara. La página lo avisa e indica dónde poner la cámara.
 - **Qué ve la persona:** una figura de referencia propia (`guide-figure.js`, componente del design system) con la
-  posición inicial, el movimiento, el sostén y la vuelta. Es una marioneta muscular con el estilo del mapa: los
-  músculos que trabaja el ejercicio (los del catálogo) se encienden según el esfuerzo de cada fase, la posición objetivo
-  aparece como un halo y una flecha marca el recorrido. Está junto al video, en "Cómo se hace", en cada tarjeta de la
+  posición inicial, el movimiento, el sostén y la vuelta. Es una marioneta muscular en 3D con el estilo del mapa, vista
+  en tres cuartos y con profundidad (lo lejano detrás y más tenue). Los músculos que trabaja el ejercicio (los del
+  catálogo) se encienden según el esfuerzo de cada fase; la posición objetivo aparece como un halo y una flecha marca el
+  recorrido. Está junto al video, en "Cómo se hace", en cada tarjeta de la
   galería, en el plan del paciente, en el panel del fisioterapeuta y en el aviso de enseñanza. La
   indicación de cada fase sale de los mismos textos: "Levanta la pierna de arriba" → "Sostén: 3 s" → "¡Bien! Ahora
   baja" → vuelta. La cuenta del sostén aparece grande sobre el video, legible a 2–3 m.

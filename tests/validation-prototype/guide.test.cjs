@@ -23,7 +23,7 @@ test('cada ejercicio del catálogo tiene su figura de referencia', () => {
     for (const [pose, ms, cap] of g.seq) {
       assert.ok(ms === 'hold' || ms > 0, `${e.id}: duración inválida`);
       assert.ok(cap === 'hold' || g.cues[cap], `${e.id}: falta el texto '${cap}'`);
-      assert.ok(Number.isFinite(pose.torso), `${e.id}: pose sin tronco`);
+      assert.ok(!pose.body || ['stand', 'supine', 'side', 'quad'].includes(pose.body), `${e.id}: postura desconocida`);
     }
     assert.ok(G.VIEW_LABEL[g.view], `${e.id}: vista desconocida`);
   }
@@ -37,10 +37,11 @@ test('la figura queda apoyada en el suelo y el punto de apoyo no se desliza', ()
       const p = G.solvePose(f.pose, guide, ctx);
       for (const k of POINTS) if (p[k]) assert.ok(Number.isFinite(p[k].x) && Number.isFinite(p[k].y), `${id}: ${k} no es un número`);
       if (!guide.upper) {
-        const lowest = G.lowestY(p, guide, f.pose);
+        const lowest = G.lowestY(p, guide);
         assert.ok(Math.abs(lowest) < 0.035, `${id}: el contorno más bajo no toca el suelo (${lowest})`);
       }
-      assert.ok(Math.abs(p[guide.anchor].x - ctx.anchorX) < 1e-9, `${id}: el ancla ${guide.anchor} se mueve`);
+      const a = p._w[guide.anchor];
+      assert.ok(Math.abs(a.x - ctx.anchor.x) < 1e-9 && Math.abs(a.z - ctx.anchor.z) < 1e-9, `${id}: el ancla ${guide.anchor} se desliza`);
     });
   }
 });
