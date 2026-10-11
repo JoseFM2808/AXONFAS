@@ -110,19 +110,35 @@ test('las medidas leen bien una figura de pie y sus ángulos conocidos', () => {
   assert.equal(m('kneeFlex', { vis: 0.2 }).L.conf, 0.2);
 });
 
-test('sentadilla parcial: referencia, 3 repeticiones, sostén y fin', () => {
+test('sentadilla parcial: referencia, sostén hasta 0 y fin', () => {
   const tr = T.createTracker(T.SPECS['half-squat'], { sets: 1, reps: 3, hold: 2 });
   const rep = (holdMs) => [ramp('squat', 0, 50, 700), still({ squat: 50 }, holdMs), ramp('squat', 50, 0, 700), still({}, 400)];
-  const r = run(tr, [still(), ...rep(2300), ...rep(500), ...rep(2300)]);
+  const r = run(tr, [still(), ...rep(2300), ...rep(500), ...rep(2300), ...rep(2300)]);
   const ev = types(r.events);
   assert.equal(ev[0], 'ready', 'primero toma la referencia de pie');
-  assert.equal(ev.filter((x) => x === 'rep').length, 3);
+  assert.equal(ev.filter((x) => x === 'rep').length, 3, 'la que sostuvo medio segundo no cuenta');
+  assert.equal(ev.filter((x) => x === 'hold_done').length, 3, 'avisa al llegar a 0 en cada sostén completo');
+  const short = r.events.find((e) => e.type === 'hold_short');
+  assert.ok(short && short.needed === 2 && short.seconds < 1.5, 'avisa cuánto sostuvo y cuánto se pedía');
   assert.equal(ev[ev.length - 1], 'done');
   const reps = tr.reps;
-  assert.equal(reps[0].holdOk, true, 'sostuvo 2 s');
-  assert.equal(reps[1].holdOk, false, 'sostuvo medio segundo');
+  assert.ok(reps.every((x) => x.holdOk && x.holdSec >= 2), 'solo cuentan las que llegaron a 0');
   assert.ok(reps[0].peak > 45 && reps[0].peak < 55, `pico ${reps[0].peak}`);
   assert.equal(r.last.phase, 'done');
+});
+
+test('el sostén tolera cortes breves de la pose, pero bajar de verdad lo reinicia', () => {
+  const up = ramp('squat', 0, 50, 600);
+  const down = [ramp('squat', 50, 0, 600), still({}, 400)];
+  // corte de 0,2 s a mitad del sostén: sigue contando y la repetición vale
+  let tr = T.createTracker(T.SPECS['half-squat'], { sets: 1, reps: 5, hold: 2 });
+  let r = run(tr, [still(), up, still({ squat: 50 }, 1100), still({ squat: 20 }, 200), still({ squat: 50 }, 1100), ...down]);
+  assert.equal(r.last.count, 1);
+  // bajar 0,8 s a la mitad del recorrido: la cuenta vuelve a empezar y no llega a 0
+  tr = T.createTracker(T.SPECS['half-squat'], { sets: 1, reps: 5, hold: 2 });
+  r = run(tr, [still(), up, still({ squat: 50 }, 1100), still({ squat: 20 }, 800), still({ squat: 50 }, 1100), ...down]);
+  assert.equal(r.last.count, 0);
+  assert.ok(types(r.events).includes('hold_short'));
 });
 
 test('un recorrido corto es una repetición incompleta y no cuenta', () => {

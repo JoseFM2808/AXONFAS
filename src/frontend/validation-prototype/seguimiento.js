@@ -19,6 +19,7 @@
   const B = window.AxonBodyMap;
   const T = window.AxonTracker;
   const A = window.AxonApi;
+  const GF = window.AxonGuide;
   const S = T.SIDES;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
@@ -41,13 +42,14 @@
     hudBar: $('hud-bar'), announce: $('announce'), status: $('source-status'), voice: $('voice'),
     btnCamera: $('btn-camera'), btnHold: $('btn-hold'), btnRecal: $('btn-recal'), btnFull: $('btn-fullscreen'),
     btnPain: $('btn-pain'), btnStop: $('btn-stop'), repsBody: $('reps-body'),
+    holdBadge: $('hold-badge'), holdLabel: $('hold-label'), holdNum: $('hold-num'), holdBar: $('hold-bar'),
   };
   const ctx = ui.canvas.getContext('2d');
 
   const st = {
     ex: null, spec: null, dose: null, tracker: null, map: null,
     running: false, raf: 0, landmarker: null, stream: null, lastVideoTime: -1, lowStreak: 0, lastMap: 0,
-    startedAt: null, ended: false, lastPartialSpoken: 0,
+    startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
     patient: null, item: null, lastSent: 0, inFlight: false, saved: false,
   };
 
@@ -113,14 +115,36 @@
     a.textContent = `${st.ex.source.org} · ${st.ex.source.title}`;
     src.append(a, ` (${st.ex.sourceName})`);
     st.map = B.render($('live-map'), { intensities: B.estimateLoad(st.ex, null, 0) });
+    mountGuides();
     ui.btnHold.hidden = st.spec.mode !== 'manual';
     ui.placeholder.hidden = false;
     ui.hud.hidden = true;
+    ui.holdBadge.hidden = true;
     hideAlert();
     renderReadouts(null);
     renderReps();
     setPhase('Esperando la cámara', 'Toca "Usar la cámara" para empezar.');
     setButtons(false);
+  }
+
+  /** Figura de referencia (TD-44): pequeña sobre el video y grande en "Cómo se hace", con el sostén de la dosis. */
+  function mountGuides() {
+    st.guides.forEach((g) => g.stop());
+    st.guides = [];
+    st.cues = GF ? GF.cuesFor(st.ex.id) : null;
+    if (!GF || !st.cues) return;
+    $('pip-view').textContent = `Referencia · ${st.cues.view}`;
+    st.guides.push(GF.mount($('pip-canvas'), st.ex.id, { hold: st.dose.hold, onCaption: (t) => { $('pip-caption').textContent = t; } }));
+    st.guides.push(GF.mount($('how-canvas'), st.ex.id, {
+      hold: st.dose.hold,
+      onCaption: (t) => {
+        const cap = $('how-caption');
+        cap.textContent = t;
+        const small = document.createElement('small');
+        small.textContent = `${st.cues.view} · figura de referencia, no es una medición`;
+        cap.appendChild(small);
+      },
+    }));
   }
 
   ui.select.addEventListener('change', () => {
@@ -251,6 +275,7 @@
       st.lowStreak = 0;
     }
     out.events.forEach(onEvent);
+    renderHold(out);
     renderReadouts(out);
     renderHud(out);
     renderPhase(out);
@@ -268,8 +293,16 @@
     switch (e.type) {
       case 'ready': announce('Listo. Empieza', { ms: 1800 }); break;
       case 'hold_start': if (e.seconds) speak('Sostén'); break;
-      case 'hold_done': speak('Suelta'); break;
-      case 'hold_short': showInfo(`Sostuviste ${e.seconds} s de ${tg.hold} s: no contó.`, 2500); break;
+      case 'hold_done':
+        st.holdFlashUntil = performance.now() + 1500;
+        speak(st.spec.mode === 'reps' ? 'Bien. Baja despacio' : 'Bien. Suelta');
+        break;
+      case 'hold_short': {
+        const now = performance.now();
+        showInfo(`Sostuviste ${e.seconds} s de ${e.needed || tg.hold} s: esa no contó. Mantén la posición hasta que la cuenta llegue a 0.`, 4000);
+        if (now - st.lastShortSpoken > 5000) { st.lastShortSpoken = now; speak('No contó. Sostén hasta llegar a cero'); }
+        break;
+      }
       case 'hold_lost': showInfo('Dejé de verte: ese sostén no contó.', 2500); break;
       case 'partial': {
         const now = performance.now();
@@ -279,7 +312,6 @@
       }
       case 'rep': {
         const n = e.index % tg.perSet || tg.perSet;
-        if (st.spec.mode === 'reps' && tg.hold && !e.holdOk) showInfo(`Contó, pero sostén ${tg.hold} s arriba la próxima.`, 2200);
         if (e.index < tg.total && n < tg.perSet) speak(String(n));
         renderReps();
         break;
@@ -292,6 +324,7 @@
   function finish(reason) {
     if (!st.tracker || st.ended) return;
     st.ended = true;
+    ui.holdBadge.hidden = true;
     st.tracker.end();
     stopCamera();
     const reps = st.tracker.reps.length;
@@ -326,12 +359,43 @@
     ui.phaseSub.textContent = sub;
   }
 
+  /** Qué hacer ahora, con los textos de la figura de referencia: posición inicial → movimiento → sostén → vuelta. */
   function renderPhase(out) {
     if (st.ended) return;
-    if (out.phase === 'setup') setPhase('Posición inicial', 'Quédate quieto 1 segundo para tomar la referencia.');
-    else if (st.spec.mode === 'reps') setPhase(st.ex.name, 'Muévete hasta llenar la barra y vuelve a la posición inicial.');
-    else if (st.spec.mode === 'hold') setPhase('Sostén la posición', `Cuenta mientras la mantienes: ${st.tracker.target.hold} s cada vez.`);
-    else setPhase('Toca "Sostener"', 'La cámara confirma que sigues en posición hasta el final.');
+    const c = st.cues || {};
+    const hold = st.tracker.target.hold;
+    const left = out.holdMs != null && hold ? Math.max(0, Math.ceil(hold - out.holdMs / 1000)) : null;
+    if (out.phase === 'setup') setPhase('Posición inicial', `${c.start || 'Ponte en la posición inicial'}. Quédate quieto 1 segundo.`);
+    else if (st.spec.mode === 'reps') {
+      if (out.state !== 'up') setPhase(c.go || st.ex.name, 'Hasta llenar la barra.');
+      else if (left != null) setPhase(`Sostén: ${left} s`, 'No bajes hasta que la cuenta llegue a 0.');
+      else if (out.holdDone || !hold) setPhase(c.back || 'Vuelve a la posición inicial', 'Vuelve hasta vaciar la barra: ahí cuenta.');
+      else setPhase(c.go || st.ex.name, 'Vuelve a llenar la barra para seguir sosteniendo.');
+    } else if (st.spec.mode === 'hold') {
+      setPhase(left != null ? `Sostén: ${left} s` : (c.go || 'Sostén la posición'), `Cuenta mientras la mantienes: ${hold} s cada vez.`);
+    } else {
+      setPhase(left != null ? `Sostén: ${left} s` : 'Toca "Sostener"', left != null ? (c.go || '') : 'La cámara confirma que sigues en posición hasta el final.');
+    }
+  }
+
+  function renderHold(out) {
+    const hold = st.tracker.target.hold;
+    const flash = performance.now() < st.holdFlashUntil;
+    const counting = hold && out.holdMs != null && !out.lowConfidence;
+    const done = (st.spec.mode === 'reps' && out.state === 'up' && out.holdDone) || flash;
+    ui.holdBadge.hidden = st.ended || !(counting || done);
+    if (ui.holdBadge.hidden) return;
+    ui.holdBadge.classList.toggle('done', Boolean(done && !counting));
+    if (done && !counting) {
+      ui.holdLabel.textContent = st.spec.mode === 'reps' ? '¡Bien! Ahora baja' : '¡Bien! Suelta';
+      ui.holdNum.textContent = '0';
+      ui.holdBar.style.width = '100%';
+    } else {
+      const elapsed = out.holdMs / 1000;
+      ui.holdLabel.textContent = 'Sostén';
+      ui.holdNum.textContent = String(Math.max(0, Math.ceil(hold - elapsed)));
+      ui.holdBar.style.width = `${Math.min(100, (elapsed / hold) * 100).toFixed(0)}%`;
+    }
   }
 
   function renderHud(out) {
@@ -393,7 +457,7 @@
     ui.repsBody.replaceChildren(...reps.slice().reverse().map((r) => {
       const tr = document.createElement('tr');
       const cells = [String(r.index), sideText(r.side), r.peak != null ? fmt(r.peak, unit) : '—',
-        hold ? `${r.holdSec ?? 0} s${r.holdOk ? '' : ' (corto)'}` : '—', `${r.seconds} s`];
+        hold ? `${r.holdSec ?? 0} s ✓` : '—', `${r.seconds} s`];
       cells.forEach((c, i) => {
         const td = document.createElement('td');
         if (i === 0 || i >= 2) td.className = 'num';

@@ -28,7 +28,7 @@
     settleMs: 1000,       // tiempo quieto en la posición inicial para tomar la referencia
     releaseRatio: 0.35,   // vuelta a la posición inicial: menos del 35 % del recorrido pedido
     partialRatio: 0.5,    // un recorrido entre el 50 % y el 100 % que vuelve sin llegar = repetición incompleta
-    holdZone: 0.85,       // dentro del 85 % del recorrido pedido cuenta como sostener arriba
+    holdZone: 0.8,        // dentro del 80 % del recorrido pedido cuenta como sostener arriba
     holdGraceMs: 400,     // cortes breves (ruido de la pose) no reinician un sostén
     lostAbortMs: 1500,    // en modo manual, sin ver a la persona este tiempo se cancela el sostén
     restFollow: 0.02,     // la referencia sigue despacio a la persona mientras está quieta en la posición inicial
@@ -244,6 +244,7 @@
       count: 0,
       reps: [],
       partials: 0,
+      shortHolds: 0,        // llegó arriba pero bajó antes de terminar el sostén: no cuenta
       lastSeen: null,
     };
 
@@ -321,7 +322,8 @@
       if (s.state === 'rest') {
         if (dev >= spec.delta) {
           s.state = 'up';
-          s.rep = { key: cur.key, sign: Math.sign(cur.value - cur.rest), start: t, peak: dev, holdStart: t, holdMax: 0 };
+          s.rep = { key: cur.key, sign: Math.sign(cur.value - cur.rest), start: t, peak: dev, holdStart: t, lastIn: t,
+            holdMax: 0, holdDone: !target.hold };
           s.excursion = 0;
           if (target.hold) events.push({ type: 'hold_start', seconds: target.hold });
         } else {
@@ -340,20 +342,36 @@
           }
         }
       } else {
+        // Sostener = quedarse arriba sin pausa hasta que la cuenta llegue a 0. Un corte breve (ruido) no la reinicia;
+        // bajar más tiempo sí, y la cuenta vuelve a empezar al subir otra vez.
         const rep = s.rep;
         rep.peak = Math.max(rep.peak, dev);
         if (dev >= spec.delta * cfg.holdZone) {
-          if (rep.holdStart == null) rep.holdStart = t;
+          if (rep.holdStart == null) {
+            rep.holdStart = t;
+            if (target.hold && !rep.holdDone) events.push({ type: 'hold_start', seconds: target.hold });
+          }
+          rep.lastIn = t;
           rep.holdMax = Math.max(rep.holdMax, t - rep.holdStart);
-        } else {
+          if (!rep.holdDone && rep.holdMax >= target.hold * 1000) {
+            rep.holdDone = true;
+            events.push({ type: 'hold_done' });
+          }
+        } else if (rep.holdStart != null && t - rep.lastIn > cfg.holdGraceMs) {
           rep.holdStart = null;
         }
         if (dev <= spec.delta * cfg.releaseRatio) {
           s.state = 'rest';
           s.rep = null;
           const holdSec = r1(rep.holdMax / 1000);
-          count(events, { side: sideOf(rep.key) || (spec.dir === 0 ? (rep.sign > 0 ? '+' : '-') : null), peak: r1(rep.peak),
-            holdSec, holdOk: !target.hold || holdSec >= target.hold - 0.3, seconds: r1((t - rep.start) / 1000) });
+          if (!rep.holdDone) {
+            // Llegó arriba pero bajó antes de que la cuenta del sostén llegara a 0: no cuenta.
+            s.shortHolds += 1;
+            events.push({ type: 'hold_short', seconds: holdSec, needed: target.hold });
+          } else {
+            count(events, { side: sideOf(rep.key) || (spec.dir === 0 ? (rep.sign > 0 ? '+' : '-') : null), peak: r1(rep.peak),
+              holdSec, holdOk: true, seconds: r1((t - rep.start) / 1000) });
+          }
         }
       }
       return { pick: cur };
@@ -447,11 +465,12 @@
 
     function snapshot(picked, t) {
       const progress = !picked ? 0 : picked.dev != null ? clamp(picked.dev / spec.delta, 0, 1) : picked.progress || 0;
-      const holding = spec.mode === 'reps' ? (s.rep && s.rep.holdStart != null ? t - s.rep.holdStart : null)
+      const holding = spec.mode === 'reps' ? (s.rep && s.rep.holdStart != null && !s.rep.holdDone ? t - s.rep.holdStart : null)
         : spec.mode === 'hold' ? (s.hold && !s.hold.counted ? t - s.hold.start : null)
           : (s.manual ? t - s.manual.start : null);
       return {
-        phase: s.phase, state: s.state, count: s.count, partials: s.partials,
+        phase: s.phase, state: s.state, count: s.count, partials: s.partials, shortHolds: s.shortHolds,
+        holdDone: spec.mode === 'reps' ? Boolean(s.rep && s.rep.holdDone && target.hold) : false,
         set: Math.min(target.sets, Math.floor(s.count / target.perSet) + 1), setCount: s.count % target.perSet,
         target, value: picked ? picked.value : null, side: picked ? sideOf(picked.key) : null,
         rest: picked && picked.rest != null ? picked.rest : null, progress,

@@ -9,7 +9,7 @@
   const B = window.AxonBodyMap;
   const A = window.AxonApi;
   const $ = (id) => document.getElementById(id);
-  const state = { me: null, guided: null, stream: null, holdTimer: 0 };
+  const state = { me: null, guided: null, stream: null, holdTimer: 0, guide: null };
 
   function show(view) {
     $('join').hidden = view !== 'join';
@@ -109,7 +109,7 @@
         guided.addEventListener('click', () => startGuided(item, ex));
         actions.appendChild(guided);
       }
-      grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item) }));
+      grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item), hold: item.hold_seconds }));
     });
   }
 
@@ -125,6 +125,10 @@
     state.guided = { item, ex, setsDone: 0, startedAt: new Date().toISOString() };
     $('g-title').textContent = ex.name;
     B.render($('g-map'), { intensities: B.staticLoad(ex), caption: `Trabajas: ${B.muscleNames(ex.muscles).join(', ')}. Huesos: ${ex.bones.join(', ')}.` });
+    if (state.guide) state.guide.stop();
+    if (window.AxonGuide && $('g-guide')) {
+      state.guide = AxonGuide.mount($('g-guide'), ex.id, { hold: item.hold_seconds, onCaption: (t) => { $('g-guide-cap').textContent = t; } });
+    }
     const steps = $('g-steps');
     steps.innerHTML = '';
     ex.steps.forEach((s) => { const li = document.createElement('li'); li.textContent = s; steps.appendChild(li); });
@@ -148,6 +152,7 @@
     const g = state.guided;
     if (!g) return;
     clearInterval(state.holdTimer);
+    if (state.guide) { state.guide.stop(); state.guide = null; }
     publish({ ended: reason });
     state.guided = null;
     try {

@@ -7,8 +7,8 @@
   const state = { theme: 'all', query: '' };
   const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-  /** Tarjeta de un ejercicio. La reutilizan doctor.js y patient.js con `extra` (botones) y `doseText` propio. */
-  function exerciseCard(e, { extra = null, doseText = null } = {}) {
+  /** Tarjeta de un ejercicio. La reutiliza patient.js con `extra` (botones), `doseText` y `hold` del plan. */
+  function exerciseCard(e, { extra = null, doseText = null, hold = null } = {}) {
     const theme = C.THEMES.find((t) => t.id === e.theme);
     const card = document.createElement('article');
     card.className = 'ex-card';
@@ -24,6 +24,19 @@
     const goal = document.createElement('p');
     goal.className = 'muted';
     goal.textContent = e.goal;
+    // Figura de referencia animada (TD-44): cómo se hace, con dibujo propio. Se anima solo mientras se ve.
+    let guide = null;
+    if (window.AxonGuide && AxonGuide.GUIDES[e.id]) {
+      guide = document.createElement('figure');
+      guide.className = 'ex-guide';
+      const canvas = document.createElement('canvas');
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', `Figura de referencia: ${e.name}`);
+      const cap = document.createElement('figcaption');
+      guide.append(canvas, cap);
+      const holdS = hold == null ? e.dose.hold : hold;
+      queueMicrotask(() => AxonGuide.mount(canvas, e.id, { hold: holdS, autoplay: 'visible', onCaption: (t) => { cap.textContent = t; } }));
+    }
     const map = document.createElement('div');
     const dose = document.createElement('p');
     dose.className = 'dose';
@@ -61,7 +74,7 @@
     a.rel = 'noopener';
     a.textContent = `${e.source.org} · ${e.source.title}`;
     source.append(a, ` (${e.sourceName})`);
-    card.append(badges, title, goal, map, dose, facts, details, source);
+    card.append(badges, title, goal, ...(guide ? [guide] : []), map, dose, facts, details, source);
     if (extra) card.appendChild(extra);
     B.render(map, { intensities: B.staticLoad(e) });
     return card;

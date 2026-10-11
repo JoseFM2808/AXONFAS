@@ -75,8 +75,8 @@ Cuentas de demostración (ADR-012): `doctor.html` (fisioterapeuta) y `paciente.h
 contraseñas y solo datos de prueba con seudónimo; la base vive en `~/.axonfas/staging.sqlite3`, nunca en el repo. La
 galería sale de `catalog.js`: todo ejercicio nuevo cita una fuente pública (URL https), su dosis y sus precauciones, con
 descripción propia (no copiar textos de la fuente). Solo `monitoring: 'auto'` si el motor de reglas lo vigila (ADR-009).
-Todo ejercicio nuevo necesita además su entrada en `SPECS` de `tracker.js` (seguimiento con cámara, ADR-014; un test lo
-exige). El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
+Todo ejercicio nuevo necesita además su entrada en `SPECS` de `tracker.js` (seguimiento con cámara, ADR-014) y su
+figura en `GUIDES` de `guide-figure.js` (dibujo propio, nunca imágenes de las fuentes); los tests lo exigen. El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
 La carga muscular del mapa es una estimación educativa: nunca se presenta como medición ni diagnóstico (ADR-013).
 
 El prototipo de validación (`src/frontend/validation-prototype/`) se abre con doble clic en `index.html` o con

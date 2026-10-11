@@ -428,6 +428,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   min-width: 0;
 }
 .ex-card h3 { font: 800 1.05rem/1.2 var(--font-display); color: #FFFFFF; }
+/* Figura de referencia animada de cada ejercicio (guide-figure.js, TD-44) */
+.ex-guide canvas { display: block; width: 100%; aspect-ratio: 3 / 2; background: #030712; border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-border); }
+.ex-guide figcaption { font: 600 0.82rem/1.3 var(--font-body); color: var(--ink); margin-top: 6px; min-height: 2.6em; }
 .ex-card .dose { font: 600 0.8rem/1.4 var(--font-mono); color: var(--tape); }
 .ex-card details summary { cursor: pointer; font: 700 0.85rem var(--font-display); color: var(--tape); }
 .ex-card ol, .ex-card ul { padding-left: 1.2em; display: grid; gap: 4px; font-size: 0.88rem; color: var(--ink-secondary); margin-top: 6px; }
@@ -525,14 +529,14 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
-.viewport video, .viewport canvas {
+.viewport > video, .viewport > canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-.viewport.mirror video, .viewport.mirror canvas {
+.viewport.mirror > video, .viewport.mirror > canvas {
   transform: scaleX(-1);
 }
 
