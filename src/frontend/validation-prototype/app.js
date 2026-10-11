@@ -11,6 +11,8 @@
   const LOW_CONFIDENCE_FRAMES_BEFORE_HINT = 15;
 
   const $ = (id) => document.getElementById(id);
+  // Eventos para módulos externos (patient-link.js manda la sesión al fisioterapeuta). app.js no sabe de la red.
+  const emit = (name, detail) => window.dispatchEvent(new CustomEvent(`axon:${name}`, { detail }));
   const ui = {
     viewport: $('viewport'), video: $('video'), canvas: $('overlay'), placeholder: $('placeholder'),
     alert: $('alert'), alertText: $('alert-text'), alertMeta: $('alert-meta'),
@@ -106,6 +108,7 @@
     renderHud(session.snapshot());
     const cal = session.config.calibrationReps;
     announce(`Empieza la calibración: ${cal} repeticiones con tu técnica normal`, { ms: 4000 });
+    emit('session-start', { source, startedAt: new Date().toISOString(), config: session.config });
   }
 
   function setButtons(active) {
@@ -226,6 +229,8 @@
 
   function handleFrame(frame, image, t0, draw) {
     const out = session.update(frame);
+    emit('frame', { out, image, source, mirror: source === 'camera' });
+    if (out.newEvents.length) emit('event', { events: out.newEvents });
     if (out.lowConfidence) {
       lowStreak += 1;
       if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo('No te veo bien: que se vean caderas, rodillas y tobillos');
@@ -562,6 +567,8 @@
   function onEnded() {
     endedShown = true;
     const reason = session.snapshot().endReason;
+    emit('session-end', { source, endReason: reason, endedAt: new Date().toISOString(), reps: session.reps,
+      events: session.events, baseline: session.snapshot().baseline, config: session.config });
     stopSource();
     if (reason === 'pain_stop') {
       ui.announce.hidden = true;

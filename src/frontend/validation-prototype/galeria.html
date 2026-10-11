@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Galería de ejercicios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Galería de ejercicios</span></h1>
+      <p>Prototipo sin conexión: material educativo con fuentes citadas.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html" aria-current="page">Galería</a>
+    <a href="doctor.html">Fisioterapeuta</a>
+    <a href="paciente.html">Paciente</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <h2 class="page-title">Ejercicios por temática de salud</h2>
+  <p class="page-lede">Cada ejercicio viene de un programa público (AAOS, NHS o CDC STEADI), con la dosis que indica esa
+    fuente, los músculos y huesos que trabaja y sus precauciones. Tu fisioterapeuta decide cuáles hacer y cuánto.</p>
+  <p class="notice" style="margin-bottom:18px;">Material educativo, no es una prescripción. Solo <strong>Sentarse y
+    pararse</strong> tiene monitoreo automático por cámara; los demás se hacen guiados por pasos y temporizador.</p>
+
+  <div class="row-between" style="margin-bottom:16px;">
+    <div class="chips" id="themes" role="group" aria-label="Temática"></div>
+    <input class="search" id="search" type="search" placeholder="Buscar por nombre o músculo" aria-label="Buscar ejercicio" style="max-width:20rem;">
+  </div>
+  <p class="muted" id="count" style="margin-bottom:12px;"></p>
+  <div class="card-grid" id="grid"></div>
+
+  <footer>
+    Fuentes: AAOS OrthoInfo (programas de acondicionamiento de rodilla, cadera, columna y hombro), NHS WWL Teaching
+    Hospitals (cuello y espalda alta, nivel 1) y CDC STEADI (pruebas de levantarse de la silla y de equilibrio). Las
+    descripciones son del equipo de AXONFAS. Mapa muscular: react-body-highlighter (licencia MIT). El mapa muestra
+    músculos de referencia; no es una medición. No es un dispositivo médico.
+  </footer>
+</div>
+
+<script src="body-map-data.js"></script>
+<script src="body-map.js"></script>
+<script src="catalog.js"></script>
+<script src="gallery.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 04 · Decisiones (ADRs)
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-06
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-11
 > Solo decisiones formales, técnicas o de negocio con impacto técnico. Nada de conversaciones exploratorias.
 > Formato: `ADR-NNN` consecutivo · fecha · estado (Propuesta | Aceptada | Reemplazada) · contexto → decisión → consecuencias.
 
@@ -16,6 +16,9 @@
 | 008 | 2026-09-28 | Aceptada | Salida clínica en FHIR R4 (Observation) + borrador SOAP |
 | 009 | 2026-09-28 | Aceptada | Alcance del demo: 1 ejercicio y 2 compensaciones |
 | 010 | 2026-09-28 | Aceptada | Todo el hackathon vive en Staging con datos sintéticos |
+| 011 | 2026-10-11 | Aceptada | Galería de ejercicios desde fuentes documentadas; solo sentarse-pararse con monitoreo automático |
+| 012 | 2026-10-11 | Aceptada | Cuentas de demostración de fisioterapeuta y paciente en Staging, con API local y SQLite fuera del repo |
+| 013 | 2026-10-11 | Aceptada | Vista corporal 2D en vivo con carga muscular estimada; el modelo 3D anatómico queda para la nube |
 
 ---
 
@@ -88,6 +91,48 @@
 - **Contexto:** no hay validación clínica ni permisos para datos reales.
 - **Decisión:** durante el hackathon solo existe Staging, con datos sintéticos o del propio equipo con consentimiento.
 - **Consecuencias:** Producción queda bloqueada por los puntos de [05-tech-debt.md](05-tech-debt.md) (TD-12 a TD-16).
+
+## ADR-011 · Galería de ejercicios desde fuentes documentadas — Aceptada
+
+- **Fecha:** 2026-10-11
+- **Contexto:** el owner pidió ejercicios reales, de fuentes documentadas, agrupados por temática de salud: rodilla y
+  cadera, columna lumbar y cervical, hombro, y equilibrio y caídas. El ADR-009 limita el monitoreo automático a un
+  ejercicio.
+- **Decisión:** catálogo único en `src/frontend/validation-prototype/catalog.js` con 24 ejercicios. Cada uno trae la
+  fuente pública (AAOS OrthoInfo, NHS WWL, CDC STEADI), la dosis que esa fuente indica, músculos, huesos, articulaciones
+  y precauciones. Las descripciones son del equipo; no se copia el texto de las fuentes. Solo sentarse-pararse lleva
+  monitoreo automático por cámara (coherente con el ADR-009); los demás son guiados (pasos, series y temporizador).
+- **Consecuencias:** galería navegable por temática y planes armados desde el mismo catálogo. La API lee los ids del
+  mismo archivo. Monitorear más ejercicios sigue siendo TD-17.
+
+## ADR-012 · Cuentas de demostración de fisioterapeuta y paciente en Staging — Aceptada
+
+- **Fecha:** 2026-10-11
+- **Contexto:** el owner pidió que el fisioterapeuta afilie pacientes, les envíe ejercicios personalizados y vea su
+  cumplimiento y efectividad a partir de las alertas. Hay que construirlo ahora sobre el prototipo, sin nube y sin datos
+  reales (ADR-010).
+- **Decisión:** API de Staging en Python estándar (`src/backend/staging_api.py`), servida por `serve.py` en el mismo
+  origen. SQLite en `~/.axonfas/staging.sqlite3`, fuera del repo y de Drive. Cuentas sin contraseña: el fisioterapeuta se
+  crea con su nombre y cada dispositivo recibe un token bearer aleatorio. El paciente se afilia con un código de un solo
+  uso (o el QR que lo contiene) y acepta el consentimiento. Sin consentimiento y sin plan para ese ejercicio no se
+  registran sesiones. Cada fisioterapeuta ve solo a sus pacientes.
+- **Consecuencias:** sirve para demos y para las entrevistas con fisioterapeutas (TD-06). No es autenticación de
+  Producción: contraseñas o SSO, verificación de matrícula y expiración de tokens quedan en TD-41. La versión de la nube
+  reemplazará SQLite por PostgreSQL con el modelo de [03](03-database.md).
+
+## ADR-013 · Vista corporal 2D en vivo con carga muscular estimada — Aceptada
+
+- **Fecha:** 2026-10-11
+- **Contexto:** el owner pidió que el fisioterapeuta vea en tiempo real el estado del cuerpo del paciente (huesos y
+  músculos) durante el ejercicio y que sirva para enseñarle qué trabaja. Eligió un mapa 2D ahora y el 3D después, en la
+  nube.
+- **Decisión:** mapa muscular frontal y posterior con los polígonos de react-body-highlighter (MIT) y un esqueleto en vivo
+  con los huesos rotulados. El paciente manda unas 5 veces por segundo ángulos, fase, repeticiones, eventos y 9 puntos 2D
+  (nunca video). El servidor los reenvía al fisioterapeuta por Server-Sent Events. La carga muscular es una
+  **estimación educativa** a partir de los ángulos, no una medición ni un diagnóstico. El fisioterapeuta puede señalar un
+  músculo o un ejercicio, y al paciente le aparece en su pantalla.
+- **Consecuencias:** funciona en la red local sin GPU. En la nube, el gateway de AMD hará de relevo en lugar de
+  `serve.py`. Validar la estimación de carga es TD-43, y el modelo 3D anatómico es TD-42.
 
 ---
 

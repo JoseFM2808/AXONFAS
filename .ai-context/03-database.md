@@ -1,6 +1,6 @@
 # 03 · Base de datos
 
-> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-06
+> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-11
 > Estado de implementación: modelo diseñado, sin migraciones todavía. En Staging solo hay pacientes ficticios ([ADR-010](04-decisions-adr.md)).
 
 ## Diagrama entidad-relación
@@ -157,3 +157,24 @@ erDiagram
 - `compensation_event.rep_metric_id` debe pertenecer a la misma `session_id`.
 - `agent_decision.outcome = 'applied'` solo si `within_envelope = true`.
 - `clinical_report.fhir_bundle` solo se exporta fuera de Staging si `reviewed_by` no es null.
+
+## Staging local: SQLite de las cuentas de demostración (ADR-012)
+
+`src/backend/staging_api.py` guarda un subconjunto del modelo anterior en SQLite, en `~/.axonfas/staging.sqlite3`, fuera
+del repo y de Drive. Solo datos sintéticos o del equipo con consentimiento (ADR-010).
+
+| Tabla SQLite | Equivale a | Diferencia con el modelo PostgreSQL |
+|---|---|---|
+| `therapist` | `THERAPIST` | Sin `clinic_id` ni `license_number`: una sola clínica implícita |
+| `patient` | `PATIENT` | Agrega `invite_code` (6 caracteres, un solo uso) y `joined_at`; `consent_given` lo marca el propio paciente al afiliarse |
+| `token` | — | Tokens bearer de las cuentas de demostración (`role` = `therapist` o `patient`). No existe en Producción (TD-41) |
+| `plan_exercise` | `CARE_PLAN` + `PLAN_EXERCISE` | El plan se aplana por paciente: `exercise_id` del catálogo, `sets`, `reps`, `hold_seconds`, `per_week`, `safety_envelope` (JSON `{trunk_margin, valgus_margin, max_reps}` solo en monitoreados), `notes`, `active` |
+| `session` | `SESSION` + `REP_METRIC` | `mode` (`monitored`/`guided`), `source` (`camera`/`demo`/`guided`), `reps_done`; las métricas por repetición van como JSON en `reps` |
+| `compensation_event` | `COMPENSATION_EVENT` | Agrega `side`, `value`, `peak` y `threshold`; `rep` es el índice de la repetición |
+
+Reglas que aplica la API:
+
+- Una sesión solo se registra si el paciente dio su consentimiento y el ejercicio está en su plan activo (I-3, I-9).
+- `mode = 'monitored'` solo para ejercicios con monitoreo automático en el catálogo.
+- Guardar un plan desactiva el anterior (`active = 0`) en vez de borrarlo, así el historial no pierde referencias.
+- Los indicadores (01 · Lógica) se calculan al consultar; no se guardan.

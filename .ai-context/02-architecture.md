@@ -1,7 +1,8 @@
 # 02 · Arquitectura
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-06
-> Estado de implementación: diseño. En `src/` solo hay el prototipo de validación del navegador y el generador del panel
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-11
+> Estado de implementación: diseño. En `src/` hay el prototipo de validación (con cuentas de demostración y vista en vivo
+> en la red local, sección "Staging local") y el generador del panel
 > de contexto; la arquitectura de abajo todavía no tiene código.
 
 ## Tecnologías (explicadas simple)
@@ -127,10 +128,11 @@ Estructura de `_Plantilla Proyecto IA`. Cada componente del diagrama tiene una c
 |---|---|
 | `.ai-context/` | Estas seis pestañas, `README.md` y `llms.txt` |
 | `src/frontend/` | UI del paciente (MediaPipe 2D, micrófono, avatar 3D y metas) y panel del fisioterapeuta |
-| `src/frontend/validation-prototype/` | Prototipo de validación (TD-28): página estática con MediaPipe Pose 1.1.0 desde jsDelivr, motor de reglas (`engine.js`), generador de sesiones sintéticas (`synthetic.js`) e interfaz (`app.js`: guía animada del ejercicio, contador y avisos con voz legibles a 2–3 m, pantalla completa). `index.html` usa el design system "HUD Biónico" y toma sus tokens de una sola fuente, `docs/design-system/tokens.css` (enlace relativo `../../../docs/design-system/tokens.css`; `serve.py` sirve esa carpeta en `/docs/design-system/`). En escritorio los tacómetros flotan sobre el video; en tablet y celular pasan a una grilla debajo, la botonera usa botones grandes y el video toma la forma de la cámara. `preview.html` es una copia vieja de `index.html`, pendiente de borrar (TD-37). `serve.py` lo publica en la red local con QR (sección Entornos), y `lanzar-prototipo.cmd` lo arranca con doble clic; también funciona abriendo `index.html` con doble clic, sin QR. Lógica en [01](01-logic.md) |
-| `tests/validation-prototype/` | Tests del motor con `node --test` (sin dependencias), sobre sesiones sintéticas |
+| `src/frontend/validation-prototype/` | Prototipo de validación y demo de cuentas. Páginas: `index.html` (cámara y motor de reglas; con `?plan=` entra en modo paciente vía `patient-link.js`), `galeria.html` (catálogo, ADR-011), `doctor.html` (fisioterapeuta, ADR-012/013) y `paciente.html`. Módulos: `engine.js` (reglas), `synthetic.js` (sesiones sintéticas), `app.js` (cámara, MediaPipe Pose 1.1.0, guía, contador y avisos legibles a 2–3 m; emite eventos `axon:*`), `catalog.js` (24 ejercicios con fuente), `body-map.js` + `body-map-data.js` (mapa muscular 2D, polígonos MIT), `api-client.js`, `teach-toast.js`, `share.js` (QR), `gallery.js`, `doctor.js`, `patient.js`. Estilos: tokens de `docs/design-system/tokens.css` y componentes compartidos en `hud.css`; cada página solo agrega lo suyo. En celular los tacómetros pasan debajo del video. `serve.py` sirve todo en la red local con QR y la API de Staging; `lanzar-prototipo.cmd` lo arranca con doble clic. `preview.html` es una copia vieja pendiente de borrar (TD-37). Lógica en [01](01-logic.md) |
+| `tests/validation-prototype/` | Tests del motor, del catálogo y de la estimación de carga con `node --test` (sin dependencias), sobre sesiones sintéticas |
+| `tests/backend/` | Tests de la API de Staging con `unittest` y SQLite en memoria |
 | `src/frontend/context-panel/` | Generador del panel de contexto: `build_panel.py` (solo biblioteca estándar) convierte estas seis pestañas en una página HTML con `template.html`. La salida va a `dist/` (no se versiona) y se publica como artifact |
-| `src/backend/` | Gateway FastAPI + WebSocket, servicio de pose (lifter 3D), motor biomecánico de reglas, servicios STT/TTS, acceso a PostgreSQL y export FHIR R4 + PDF |
+| `src/backend/` | Hoy: `staging_api.py`, la API de Staging (cuentas de demostración, planes, sesiones, indicadores y canal en vivo; ADR-012/013). Planificado: gateway FastAPI + WebSocket, servicio de pose (lifter 3D), motor biomecánico de reglas, servicios STT/TTS, acceso a PostgreSQL y export FHIR R4 + PDF |
 | `src/agents/` | Orquestador y prompts de los tres agentes LLM (clínico, conversacional, reporte) y cliente de vLLM |
 | `tests/` | Pruebas del motor de reglas y del sobre de seguridad, benchmark de latencia y concurrencia, validación FHIR |
 | `config/` | Plantillas de entorno sin valores: `config/.env.staging.example` y `config/.env.prod.example` |
@@ -140,6 +142,39 @@ Estructura de `_Plantilla Proyecto IA`. Cada componente del diagrama tiene una c
 
 Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `.gitignore` y `.gitattributes` (LF en todo el repo, CRLF en
 `.cmd`). Repo público: https://github.com/JoseFM2808/AXONFAS, rama `main`.
+
+## Staging local: cuentas y vista en vivo (ADR-012, ADR-013)
+
+```mermaid
+flowchart LR
+    subgraph pac [Celular del paciente]
+        CAMP[Cámara + MediaPipe] --> APP[app.js + patient-link.js]
+        GUI[patient.js: guiados]
+    end
+    subgraph pc [PC de la clínica: serve.py]
+        API[staging_api.py]
+        HUB[LiveHub en memoria]
+        DB[(SQLite ~/.axonfas/staging.sqlite3)]
+        API --> DB
+        API --> HUB
+    end
+    subgraph fis [Fisioterapeuta]
+        DOC[doctor.js: indicadores, plan, en vivo]
+    end
+    APP -->|POST /api/live ~5/s: ángulos y 9 puntos| API
+    APP -->|POST /api/sessions| API
+    GUI -->|POST /api/sessions| API
+    HUB -->|SSE /api/patients/id/live| DOC
+    DOC -->|POST /api/patients/id/highlight| API
+    HUB -->|SSE /api/me/stream| APP
+```
+
+- Todo va en el mismo origen que el prototipo (HTTP 8091 en el PC, HTTPS 8443 en la red local). Contrato en
+  [06 · API y MCP](06-api-mcp.md) y tablas en [03 · Base de datos](03-database.md).
+- Los canales en vivo se leen con `fetch`, con el token en la cabecera `Authorization` y nunca en la URL. Si el servidor
+  se reinicia, se reconectan solos.
+- **En la nube** (fase siguiente), el gateway FastAPI en AMD Developer Cloud ocupa el lugar de `serve.py`, PostgreSQL el
+  de SQLite y el canal en vivo pasa por WebSocket. Las páginas y el contrato de datos no cambian.
 
 ## Entornos
 

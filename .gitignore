@@ -38,6 +38,7 @@ data/**
 **/*.csv
 **/*.parquet
 **/*.sqlite
+**/*.sqlite3
 **/*.db
 **/*.dump
 **/exports/

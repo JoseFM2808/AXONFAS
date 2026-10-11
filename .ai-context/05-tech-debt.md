@@ -1,6 +1,6 @@
 # 05 · Deuda técnica y pendientes
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-08
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-11
 > Prioridad: **P1** entregable del hackathon (fecha límite fija) · **P2** bloqueante para pasar a Producción · **P3** mejora futura.
 > Cada pendiente tiene un ID único `TD-NN`. Lo resuelto pasa a "Hechos" con fecha; los IDs no se reutilizan.
 
@@ -35,7 +35,7 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 |---|---|---|---|
 | TD-07 | P1 | Bucle rápido funcionando con alerta < 250 ms medida en `alert_latency_ms` | ADR-004 |
 | TD-08 | P1 | Benchmark de sesiones concurrentes en 1× MI300X (gráfico latencia vs. sesiones) | ADR-006 |
-| TD-09 | P1 | Panel del terapeuta mínimo: ver sesión, eventos y aprobar borrador SOAP | ADR-002, ADR-008 |
+| TD-09 | P1 | Panel del terapeuta: aprobar el borrador SOAP. Ver sesiones, eventos, indicadores y la sesión en vivo ya funciona en Staging (`doctor.html`, ADR-012/013) | ADR-002, ADR-008, ADR-012 |
 | TD-10 | P1 | Export FHIR R4 validado con un validador público | ADR-008 |
 | TD-11 | P1 | Entrega en lablab: repo público, video demo, slides, imagen de portada, prototipo con URL funcionando, descripciones y tags. Confirmar si se exige app en contenedor (el brief de Evolus lo cita como regla de entrega) | — |
 | TD-23 | P1 | URL del demo para los jueces. La evaluación es en línea y probablemente dura hasta mediados de noviembre: Evolus deja sus espacios gratis hasta el 2026-11-15 "so it stays up through judging". La GPU encendida cuesta ~USD 48 al día (más de USD 1,300 si quedara prendida del 18 de octubre al 15 de noviembre) y los créditos dan ~50 h. Propuesta: la URL vive en un hosting barato con un modo "repetición" de una sesión real grabada en la GPU, con latencias medidas, y el modo en vivo se enciende en ventanas avisadas. El droplet se destruye al final de cada jornada | ADR-006, TD-27 |
@@ -53,17 +53,22 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 | TD-15 | P2 | Consentimiento informado digital y política de retención de datos | ADR-010, 03 |
 | TD-16 | P2 | Pruebas de sesgo: distintas contexturas, edades, iluminación y ángulos de cámara | ADR-010 |
 | TD-29 | P2 | Pesos del lifter con licencia clara: revisión legal, licencia comercial de los datasets o reentrenar con datos propios o con licencia (ver [02](02-architecture.md)) | TD-05 |
+| TD-41 | P2 | Autenticación real antes de Producción: contraseña o SSO, verificación de la matrícula del fisioterapeuta, expiración y revocación de tokens, y no guardarlos en localStorage. Hoy son cuentas de demostración (ADR-012) | ADR-012, TD-14 |
+| TD-43 | P2 | Validar con fisioterapeutas o con literatura de electromiografía la estimación de carga muscular de la vista en vivo, antes de mostrarla como algo más que educativa | ADR-013, TD-06 |
 
 ## Mejoras futuras
 
 | ID | P | Pendiente | Relación |
 |---|---|---|---|
-| TD-17 | P3 | Más ejercicios (hombro, cadera, marcha) | ADR-009 |
+| TD-17 | P3 | Monitoreo automático de más ejercicios. La galería ya tiene 24 (ADR-011), pero solo sentarse y pararse tiene reglas de compensación con cámara | ADR-009, ADR-011 |
 | TD-18 | P3 | Ajuste fino (fine-tuning) del LLM en ROCm con notas SOAP de ejemplo escritas por fisioterapeutas | ADR-006, ADR-008 |
 | TD-19 | P3 | Modo offline con pose 3D en el propio dispositivo (Ryzen AI / NPU) para zonas con mala conexión | ADR-003, ADR-006 |
 | TD-20 | P3 | Integración con sistemas de historia clínica vía FHIR | ADR-008 |
 | TD-21 | P3 | Voz en quechua para pacientes de zonas andinas | — |
 | TD-37 | P3 | Borrar `src/frontend/validation-prototype/preview.html`: es una copia vieja de `index.html` (no tiene nada propio, le falta el indicador de fase y falla al iniciar una sesión). Espera la aprobación del owner, porque borrar archivos la requiere | TD-35 |
+| TD-42 | P3 | Vista 3D anatómica (huesos y músculos) en la nube, con three.js y un modelo abierto. Revisar licencias: muchos son CC BY-SA, a contrastar con la regla "MIT-compliant" | ADR-013 |
+| TD-44 | P3 | Ilustración o video propio de cada ejercicio de la galería (hoy hay pasos y mapa muscular; las fuentes tienen imágenes con copyright) | ADR-011 |
+| TD-45 | P3 | Pasar la API de Staging al gateway de la nube: FastAPI, PostgreSQL con el modelo de 03 y WebSocket para el canal en vivo, con el mismo contrato | ADR-012, ADR-006 |
 
 ## Hechos
 
@@ -79,3 +84,6 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 | TD-34 | 2026-10-10 | Textos que atribuían el prototipo a la GPU, ROCm o la IA | Cabecera, insignia del video, título y pie dicen ahora que es un prototipo sin conexión: no usa servidor, GPU ni agente de IA, la pose se estima en el navegador y las alertas salen de reglas fijas |
 | TD-35 | 2026-10-10 | Design system copiado en varios lugares | `index.html` ya no copia los tokens: enlaza `docs/design-system/tokens.css`, que funciona con doble clic y con `serve.py` (ruta `/docs/design-system/`, sin salir de esa carpeta). Queda borrar `preview.html` (TD-37) |
 | TD-36 | 2026-10-10 | Vista móvil del prototipo | En tablet y celular los tacómetros salen del video a una grilla, la botonera usa botones de 44 px (cámara y "Dolor: detener" a todo el ancho), el video toma la forma de la cámara (vertical en celular) y el demo usa un recuadro cuadrado para que la fase y el contador no tapen la figura. Pantalla completa ahora toma el escenario entero, con la botonera. Verificado a 375 px y 1280 px |
+| TD-38 | 2026-10-11 | Galería de ejercicios desde fuentes documentadas | `catalog.js` con 24 ejercicios en rodilla y cadera, columna lumbar y cervical, hombro, y equilibrio y caídas. Cada uno cita AAOS OrthoInfo, NHS WWL o CDC STEADI con su dosis. `galeria.html` filtra por temática y busca por nombre o músculo, con mapa muscular por ejercicio. 4 tests de catálogo |
+| TD-39 | 2026-10-11 | Cuentas de fisioterapeuta y paciente | API de Staging (`staging_api.py`, 10 tests): afiliación con código o QR y consentimiento, plan desde el catálogo con sobre de seguridad, sesiones monitoreadas y guiadas, e indicadores de cumplimiento y efectividad. Verificado de punta a punta en el navegador |
+| TD-40 | 2026-10-11 | Vista corporal en vivo y enseñanza | Mapa muscular 2D (polígonos MIT) con carga estimada, esqueleto con huesos rotulados, ángulos y alertas en vivo por Server-Sent Events; el fisioterapeuta señala músculos o ejercicios al paciente. Verificado: llegan los marcos, las alertas y las sesiones guardadas |

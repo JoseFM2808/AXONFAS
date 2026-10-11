@@ -1,6 +1,6 @@
 # 01 · Lógica del sistema
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-06
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-11
 > Estado de implementación: diseño. Solo existe el prototipo de validación del navegador (sección al final); el sistema
 > completo todavía no tiene código.
 
@@ -99,6 +99,9 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-6 | La nota SOAP solo usa campos de la BD; nunca cifras inventadas | Esta pestaña |
 | I-7 | Dolor agudo, mareo o pérdida de fuerza súbita detienen la sesión; el agente no intenta resolverlo | Esta pestaña |
 | I-8 | Un reporte sin `reviewed_by` es borrador y no se exporta fuera de Staging | ADR-008, 03 |
+| I-9 | No se registra una sesión de un ejercicio que no esté en el plan activo del paciente; en los monitoreados, el sobre lo fija el fisioterapeuta y el paciente no lo puede cambiar | ADR-005, ADR-012 |
+| I-10 | Un fisioterapeuta solo ve y modifica a sus propios pacientes; a cualquier otro la API le responde "no existe" | ADR-012 |
+| I-11 | El canal en vivo lleva ángulos, fase, repeticiones, eventos y 9 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -135,3 +138,57 @@ No usa GPU, LLM ni voz de entrada, y no guarda nada.
 El proxy de valgo mide cuánto se desplaza la rodilla hacia la línea media respecto de la línea cadera-tobillo, solo en el
 eje horizontal, y lo expresa en grados contra la longitud de la pierna. Así no le afecta que el muslo apunte a la cámara
 al estar sentado, pero necesita ver a la persona de frente o casi.
+
+## Galería de ejercicios (ADR-011)
+
+24 ejercicios en cuatro temáticas: rodilla y cadera, columna lumbar y cervical, hombro, y equilibrio y caídas. Cada uno
+cita su fuente pública y la dosis que esa fuente indica; el fisioterapeuta la ajusta al armar el plan.
+
+| Monitoreo | Ejercicios | Qué hace el sistema |
+|---|---|---|
+| Automático | Sentarse y pararse (la prueba de 30 s de CDC STEADI) | Cámara, motor de reglas, línea base y alertas (secciones anteriores) |
+| Guiado | Los otros 23 | Muestra pasos, músculos y huesos; cuenta series y el tiempo de sostén; el paciente marca cada serie. Sin detección de compensaciones |
+
+## Cuentas y seguimiento (ADR-012)
+
+```mermaid
+sequenceDiagram
+    participant F as Fisioterapeuta
+    participant S as serve.py + API de Staging
+    participant P as Paciente (celular)
+    F->>S: crea su cuenta de demostración
+    F->>S: afilia un paciente (seudónimo)
+    S-->>F: código de un solo uso + QR
+    P->>S: abre el QR, acepta el consentimiento
+    F->>S: arma el plan desde el catálogo (dosis, veces por semana, sobre)
+    P->>S: ve su plan y hace los ejercicios
+    P->>S: sesión terminada (repeticiones, eventos, motivo de fin)
+    S-->>F: indicadores de cumplimiento y efectividad
+```
+
+Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
+
+| Indicador | Cálculo |
+|---|---|
+| Cumplimiento (7 días) | Por ejercicio del plan: sesiones completadas en 7 días ÷ veces por semana indicadas, con tope 1. Se promedia entre ejercicios |
+| Calidad | En la última sesión monitoreada: repeticiones de ejercicio (sin las de calibración) sin compensación ÷ repeticiones de ejercicio |
+| Tendencia de calidad | Promedio de las 3 últimas sesiones monitoreadas menos el de las 3 primeras; requiere 4 o más |
+| Rodilla (ROM) | Flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada |
+| Detenciones por dolor | Sesiones con `end_reason = 'pain_stop'` en 30 días: bandera roja para el fisioterapeuta |
+
+## Vista corporal en vivo (ADR-013)
+
+El paciente publica cada ~200 ms los ángulos, la fase, las repeticiones y 9 puntos 2D (nariz, hombros, caderas, rodillas
+y tobillos). El fisioterapeuta ve:
+
+- **Mapa muscular** (frente y espalda) con la carga **estimada**. En sentarse-pararse, la flexión de rodilla carga el
+  cuádriceps y los glúteos, la inclinación del tronco carga los isquiotibiales y la zona lumbar, y el valgo pone en foco a
+  los abductores (glúteo medio). En los ejercicios guiados se encienden los músculos del catálogo. Ante una compensación
+  se marcan en rojo durante 3 s los músculos donde mirar: zona lumbar y glúteos para el tronco, abductores y glúteos para
+  el valgo.
+- **Esqueleto** con los huesos rotulados (fémur, tibia y peroné, pelvis, columna, clavículas y escápulas), los ángulos,
+  la fase, el conteo de repeticiones y el registro de alertas.
+- **Enseñanza:** al tocar un músculo o enviar un ejercicio, al paciente le aparece en su pantalla el mapa con lo que
+  trabaja y los huesos que mueve.
+
+La estimación de carga es educativa: no hay electromiografía y no es un diagnóstico (TD-43).

@@ -16,7 +16,9 @@ Toda la parte pesada (pose 3D, LLM, voz) corre junta en **una sola GPU AMD Insti
 | Lógica, arquitectura, BD y ADRs | ✅ diseñados ([`.ai-context/`](.ai-context/llms.txt)) |
 | Bucle rápido de seguridad (< 250 ms) | ⏳ hackathon |
 | Benchmark de sesiones concurrentes en 1× MI300X | ⏳ hackathon |
-| Panel del fisioterapeuta + export FHIR R4 | ⏳ hackathon |
+| Galería de 24 ejercicios con fuentes (AAOS, NHS, CDC STEADI) | ✅ prototipo |
+| Cuentas de fisioterapeuta y paciente, plan, indicadores y vista en vivo (red local) | ✅ prototipo (Staging) |
+| Panel del fisioterapeuta en la nube + export FHIR R4 | ⏳ hackathon |
 
 ## Estructura
 

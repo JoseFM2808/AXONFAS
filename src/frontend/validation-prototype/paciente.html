@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Paciente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+<style>
+/* Propio de la página del paciente: modo guiado legible a distancia */
+.guided-big { font: 900 clamp(2.4rem, 9vw, 4.5rem)/1 var(--font-display); color: #FFFFFF; text-align: center; font-variant-numeric: tabular-nums; }
+.guided-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px; }
+.guided-actions .btn { justify-content: center; min-height: 48px; }
+</style>
+</head>
+<body>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Paciente</span></h1>
+      <p>Prototipo de prueba: tus ejercicios y lo que trabajas en cada uno.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html">Galería</a>
+    <a href="doctor.html">Fisioterapeuta</a>
+    <a href="paciente.html" aria-current="page">Paciente</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <!-- AFILIACIÓN -->
+  <section id="join" class="panel-card" hidden style="max-width:34rem;">
+    <h2>Unirme a mi fisioterapeuta</h2>
+    <form id="join-form">
+      <div class="field">
+        <label for="join-code">Código de afiliación (6 caracteres)</label>
+        <input id="join-code" type="text" maxlength="12" required autocomplete="off" style="text-transform:uppercase; letter-spacing:0.2em; font-family:var(--font-mono);">
+      </div>
+      <label class="check" style="align-items:flex-start;">
+        <input type="checkbox" id="join-consent" required>
+        <span>Entiendo que es un <strong>prototipo de prueba</strong>, no un dispositivo médico. Acepto que mis
+          repeticiones, ángulos y alertas se compartan con mi fisioterapeuta en esta red. El video de mi cámara nunca sale
+          de este equipo.</span>
+      </label>
+      <button class="btn primary" type="submit" style="margin-top:14px;">Unirme</button>
+      <p class="status-line" id="join-error" style="margin-top:10px;"></p>
+    </form>
+  </section>
+
+  <!-- MI PLAN -->
+  <section id="plan" hidden class="stack">
+    <div class="row-between">
+      <div>
+        <h2 class="page-title" id="hello"></h2>
+        <p class="muted" id="therapist"></p>
+      </div>
+      <button class="btn" id="btn-forget" type="button">Olvidar este equipo</button>
+    </div>
+    <p class="notice">Si algo te duele, te mareas o pierdes fuerza de golpe, detente y avísale a tu fisioterapeuta.</p>
+    <div class="card-grid" id="plan-grid"></div>
+  </section>
+
+  <!-- EJERCICIO GUIADO -->
+  <section id="guided" hidden class="panel-card stack">
+    <div class="row-between">
+      <h2 id="g-title"></h2>
+      <span class="live-dot on" title="Tu fisioterapeuta ve tu avance"></span>
+    </div>
+    <div id="g-map"></div>
+    <ol class="facts" id="g-steps" style="padding-left:1.2em;"></ol>
+    <p class="muted" id="g-dose"></p>
+    <div class="guided-big" id="g-big"></div>
+    <p class="muted" id="g-sub" style="text-align:center;"></p>
+    <div class="guided-actions">
+      <button class="btn" id="g-hold" type="button">Contar el sostén</button>
+      <button class="btn primary" id="g-set" type="button">Terminé la serie</button>
+      <button class="btn danger" id="g-pain" type="button">Me dolió: detener</button>
+      <button class="btn" id="g-quit" type="button">Salir sin terminar</button>
+    </div>
+    <p class="status-line" id="g-status"></p>
+  </section>
+
+  <footer>
+    AXONFAS es un prototipo de validación (Staging): no es un dispositivo médico ni reemplaza a tu fisioterapeuta. Los
+    ejercicios vienen de programas públicos (AAOS, NHS, CDC STEADI). Mapa muscular: react-body-highlighter (MIT).
+  </footer>
+</div>
+
+<script src="body-map-data.js"></script>
+<script src="body-map.js"></script>
+<script src="catalog.js"></script>
+<script src="api-client.js"></script>
+<script src="teach-toast.js"></script>
+<script src="gallery.js"></script>
+<script src="patient.js"></script>
+</body>
+</html>

@@ -1,9 +1,41 @@
 # 06 · API y MCP
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-06
-> Estado de implementación: no hay endpoints todavía. Esta pestaña fija las interfaces que ya se deducen de
-> [01 · Lógica](01-logic.md), [02 · Arquitectura](02-architecture.md) y [03 · Base de datos](03-database.md).
-> Las rutas y los mensajes concretos se documentan aquí cuando se construya el gateway (TD-07, TD-09).
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-11
+> Estado de implementación: existe la **API de Staging** local (sección siguiente, ADR-012/013), servida por `serve.py`.
+> El gateway de la nube (FastAPI + WebSocket en AMD) sigue siendo un plan: sus interfaces previstas y los contratos ya
+> fijados van después. Se deducen de [01 · Lógica](01-logic.md), [02 · Arquitectura](02-architecture.md) y
+> [03 · Base de datos](03-database.md).
+
+## API de Staging (local, ADR-012)
+
+Código: `src/backend/staging_api.py`; tests: `tests/backend/test_staging_api.py`. JSON en el mismo origen que el prototipo.
+Autenticación de demostración: `Authorization: Bearer <token>`, que devuelven `POST /api/therapists` y `POST /api/join`.
+Errores: `{"error": "mensaje en español"}` con 400 (datos inválidos), 401 (sin token o token inválido), 403 (rol
+equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejercicio fuera del plan, I-9) o 413.
+
+| Método y ruta | Rol | Cuerpo → respuesta |
+|---|---|---|
+| `POST /api/therapists` | — | `{name}` → 201 `{token, therapist}` |
+| `GET /api/therapists/me` | fisioterapeuta | → `{therapist, patients: [{id, alias, birth_year, consent_given, joined_at, invite_code, plan_size, metrics, live}]}` |
+| `POST /api/patients` | fisioterapeuta | `{alias, birth_year?}` → 201 `{patient}` con `invite_code` |
+| `GET /api/patients/{id}` | fisioterapeuta | → `{patient, plan, sessions (30), events (60), metrics, live}` |
+| `PUT /api/patients/{id}/plan` | fisioterapeuta | `{exercises: [{exercise_id, sets, reps, hold_seconds, per_week, safety_envelope?, notes?}]}` → `{plan}`; reemplaza el plan activo |
+| `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code}` nuevo |
+| `POST /api/patients/{id}/highlight` | fisioterapeuta | `{muscle?, exercise_id?, note?}` → 202 `{delivered_to}` |
+| `GET /api/patients/{id}/live` | fisioterapeuta | Server-Sent Events con lo que publica ese paciente |
+| `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir |
+| `GET /api/me` | paciente | → `{patient, therapist, plan: [... , done_7d]}` |
+| `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?}` → 201 `{session_id}` |
+| `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
+| `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`) y `plan_updated` |
+
+**Marco en vivo** (`POST /api/live`; el servidor descarta todo campo que no esté en esta lista, I-11):
+`{exercise_id, source, phase, posture, reps_done, reps_total, angles: {knee, trunk, valgusL, valgusR, confidence},
+points: {"0"|"11"|"12"|"23"|"24"|"25"|"26"|"27"|"28": [x, y]}, mirror, event?, ended?}`. `points` son coordenadas
+normalizadas de imagen (0–1). Al fisioterapeuta le llega con `kind: "frame"`; además recibe `kind: "session_saved"`
+cuando el paciente guarda una sesión.
+
+**Mensajes al paciente:** `{kind: "highlight", muscle?, exercise_id?, note?, from, at}` y `{kind: "plan_updated"}`.
 
 ## Interfaces previstas
 

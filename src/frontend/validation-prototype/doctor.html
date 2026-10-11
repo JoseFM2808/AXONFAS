@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Fisioterapeuta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+<style>
+/* Propio del panel del fisioterapeuta: rejillas del detalle y vista en vivo */
+.patient-card { text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.patient-card[aria-current="true"] { border-color: var(--tape); box-shadow: var(--accent-glow); }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.live-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.skeleton { width: 100%; aspect-ratio: 3 / 4; background: var(--stage); border: 1px solid var(--surface-border); border-radius: var(--radius-sm); display: block; }
+.angles { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: 8px; margin-top: 10px; }
+.feed { display: grid; gap: 6px; margin-top: 10px; font-size: 0.85rem; max-height: 12rem; overflow-y: auto; }
+.code-big { font: 800 2.2rem/1 var(--font-mono); letter-spacing: 0.18em; color: var(--tape); text-align: center; }
+.invite { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); gap: 16px; align-items: center; }
+.plan-ex { border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
+.plan-ex[data-on="false"] .plan-fields { display: none; }
+.plan-fields { margin-top: 10px; }
+@media (max-width: 900px) {
+  .detail-grid, .live-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) { .invite { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Fisioterapeuta</span></h1>
+      <p>Prototipo sin conexión a la nube: cuentas de demostración y datos de prueba en esta red local.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html">Galería</a>
+    <a href="doctor.html" aria-current="page">Fisioterapeuta</a>
+    <a href="paciente.html">Paciente</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <!-- CUENTA DE DEMOSTRACIÓN -->
+  <section id="login" class="panel-card" hidden style="max-width:34rem;">
+    <h2>Cuenta de demostración</h2>
+    <p class="notice" style="margin-bottom:14px;">Staging: sin contraseña y solo datos de prueba (seudónimos, nada de nombres
+      reales). La cuenta queda guardada en este navegador.</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="login-name">Tu nombre como fisioterapeuta</label>
+        <input id="login-name" type="text" maxlength="80" required placeholder="Lic. Demo" autocomplete="off">
+      </div>
+      <button class="btn primary" type="submit">Crear cuenta de demostración</button>
+      <p class="status-line" id="login-error" style="margin-top:10px;"></p>
+    </form>
+  </section>
+
+  <!-- TABLERO -->
+  <section id="dashboard" hidden class="stack">
+    <div class="row-between">
+      <div>
+        <h2 class="page-title">Mis pacientes</h2>
+        <p class="muted">Sesión de <strong id="doctor-name"></strong>. Cumplimiento de los últimos 7 días y calidad de la
+          última sesión monitoreada.</p>
+      </div>
+      <div class="chips">
+        <button class="btn primary" id="btn-invite" type="button">Afiliar paciente</button>
+        <button class="btn" id="btn-logout" type="button">Olvidar cuenta en este equipo</button>
+      </div>
+    </div>
+    <div class="card-grid" id="patients"></div>
+
+    <!-- DETALLE DEL PACIENTE -->
+    <section id="patient" hidden class="stack">
+      <div class="row-between">
+        <h2 class="page-title" id="p-title"></h2>
+        <span class="muted" id="p-status"></span>
+      </div>
+      <div id="p-invite" class="panel-card" hidden></div>
+      <div class="kpis" id="p-kpis"></div>
+
+      <div class="detail-grid">
+        <div class="stack">
+          <section class="panel-card">
+            <h2>En vivo <span class="muted" id="live-status"><span class="live-dot" id="live-dot"></span> Sin datos</span></h2>
+            <div class="live-grid">
+              <div>
+                <div id="live-map"></div>
+                <p class="bodymap-note">Carga muscular <strong>estimada</strong> a partir de los ángulos: es educativa, no una
+                  medición. En rojo, dónde mirar ante una compensación. Toca un músculo para señalárselo al paciente.</p>
+              </div>
+              <div>
+                <canvas class="skeleton" id="live-skeleton" width="480" height="640" role="img" aria-label="Esqueleto del paciente en vivo con los huesos rotulados"></canvas>
+                <div class="angles" id="live-angles"></div>
+              </div>
+            </div>
+            <p class="muted" id="live-info" style="margin-top:10px;"></p>
+            <div class="feed" id="live-feed"></div>
+          </section>
+
+          <section class="panel-card">
+            <h2>Enseñar al paciente</h2>
+            <div class="field">
+              <label for="teach-select">Ejercicio de su plan</label>
+              <select id="teach-select"></select>
+            </div>
+            <div id="teach-map"></div>
+            <div class="facts" id="teach-facts" style="margin:10px 0;"></div>
+            <div class="field">
+              <label for="teach-note">Mensaje opcional</label>
+              <input id="teach-note" type="text" maxlength="200" placeholder="Este es el músculo que vas a fortalecer">
+            </div>
+            <div class="chips">
+              <button class="btn primary" id="teach-send" type="button">Enviar el ejercicio al paciente</button>
+              <span class="status-line" id="teach-status"></span>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="panel-card">
+            <h2>Plan de ejercicios <button class="btn" id="btn-plan" type="button">Editar plan</button></h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Ejercicio</th><th>Dosis</th><th>Semana</th><th>Sobre</th></tr></thead>
+              <tbody id="p-plan"></tbody>
+            </table></div>
+          </section>
+          <section class="panel-card">
+            <h2>Historial de sesiones</h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Fecha</th><th>Ejercicio</th><th>Fuente</th><th>Reps</th><th>Fin</th><th>Alertas</th></tr></thead>
+              <tbody id="p-sessions"></tbody>
+            </table></div>
+          </section>
+          <section class="panel-card">
+            <h2>Compensaciones recientes</h2>
+            <div class="feed" id="p-events" style="max-height:none;"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <footer>
+    Indicadores descriptivos para seguimiento, no resultados clínicos. Cumplimiento = sesiones completadas en 7 días
+    sobre las indicadas por semana. Calidad = repeticiones de ejercicio sin compensación en la última sesión monitoreada.
+    Prototipo de Staging: no es un dispositivo médico. Mapa muscular: react-body-highlighter (MIT).
+  </footer>
+</div>
+
+<!-- AFILIAR PACIENTE -->
+<dialog class="share-dialog" id="invite-dialog" aria-labelledby="invite-title">
+  <div class="share-head">
+    <h2 id="invite-title">Afiliar paciente</h2>
+    <button class="btn" id="invite-close" type="button">Cerrar</button>
+  </div>
+  <form id="invite-form">
+    <div class="field">
+      <label for="invite-alias">Seudónimo del paciente (no uses su nombre real)</label>
+      <input id="invite-alias" type="text" maxlength="60" required placeholder="Paciente 07" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="invite-year">Año de nacimiento (opcional)</label>
+      <input id="invite-year" type="number" min="1900" max="2026" placeholder="1952">
+    </div>
+    <button class="btn primary" type="submit">Crear código de afiliación</button>
+    <p class="status-line" id="invite-error" style="margin-top:10px;"></p>
+  </form>
+</dialog>
+
+<!-- EDITAR PLAN -->
+<dialog class="share-dialog" id="plan-dialog" aria-labelledby="plan-title">
+  <div class="share-head">
+    <h2 id="plan-title">Plan de ejercicios</h2>
+    <button class="btn" id="plan-close" type="button">Cerrar</button>
+  </div>
+  <p class="muted" style="margin-bottom:10px;">Marca los ejercicios y ajusta la dosis. En los de monitoreo automático, el
+    sobre de seguridad (márgenes sobre la línea base) lo fijas tú y el paciente no lo puede cambiar.</p>
+  <div id="plan-list"></div>
+  <div class="row-between" style="margin-top:12px;">
+    <span class="status-line" id="plan-error"></span>
+    <button class="btn primary" id="plan-save" type="button">Guardar plan</button>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="body-map-data.js"></script>
+<script src="body-map.js"></script>
+<script src="catalog.js"></script>
+<script src="api-client.js"></script>
+<script src="doctor.js"></script>
+</body>
+</html>

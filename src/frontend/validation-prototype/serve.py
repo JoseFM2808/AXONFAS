@@ -20,6 +20,7 @@ import ipaddress
 import json
 import os
 import posixpath
+import queue
 import shutil
 import socket
 import ssl
@@ -32,6 +33,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parents[1] / "backend"))
+from staging_api import StagingApi, Stream, load_catalog  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
+
+DEFAULT_DB = Path.home() / ".axonfas" / "staging.sqlite3"   # fuera del repo y de Drive (ADR-012)
 DESIGN_DIR = HERE.parents[2] / "docs" / "design-system"    # index.html enlaza ../../../docs/design-system/tokens.css
 DESIGN_PREFIX = "/docs/design-system/"
 CERT_DIR = Path.home() / ".axonfas" / "certs"
@@ -80,6 +85,66 @@ class Handler(SimpleHTTPRequestHandler):
     """Archivos de esta carpeta, sin listar directorios, más /lan.json con las direcciones para el QR y el design
     system del proyecto en /docs/design-system/ (fuente única de tokens, TD-35)."""
     lan_info: dict = {}
+    api: StagingApi | None = None
+
+    # ------------------------------------------------------------------ API de Staging (/api/...)
+    def _api(self, method: str):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > 256 * 1024:
+            self.send_error(413, "Demasiado grande")
+            return
+        body = self.rfile.read(length) if length else b""
+        result = self.api.handle(method, self.path, self.headers, body)
+        if isinstance(result, Stream):
+            self._stream(result)
+            return
+        status, payload = result
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else b""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _sse(self, message: dict):
+        self.wfile.write(b"data: " + json.dumps(message, ensure_ascii=False).encode("utf-8") + b"\n\n")
+        self.wfile.flush()
+
+    def _stream(self, stream: Stream):
+        """Server-Sent Events: el cliente lee con fetch (lleva el token en la cabecera, nunca en la URL)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        q = self.api.hub.subscribe(stream.channel)
+        try:
+            self._sse(stream.hello)
+            while True:
+                try:
+                    message = q.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")         # mantiene viva la conexión y detecta cierres
+                    self.wfile.flush()
+                    continue
+                self._sse(message)
+        except OSError:                                      # el navegador cerró la pestaña o perdió la red
+            pass
+        finally:
+            self.api.hub.unsubscribe(stream.channel, q)
+            self.close_connection = True
+
+    def do_POST(self):
+        if self.path.startswith("/api/") and self.api:
+            self._api("POST")
+        else:
+            self.send_error(405, "Método no permitido")
+
+    def do_PUT(self):
+        if self.path.startswith("/api/") and self.api:
+            self._api("PUT")
+        else:
+            self.send_error(405, "Método no permitido")
 
     def translate_path(self, path):
         clean = urllib.parse.unquote(path.split("?", 1)[0].split("#", 1)[0])
@@ -91,6 +156,9 @@ class Handler(SimpleHTTPRequestHandler):
         return super().translate_path(path)
 
     def do_GET(self):
+        if self.path.startswith("/api/") and self.api:
+            self._api("GET")
+            return
         if self.path.split("?", 1)[0] == "/lan.json":
             body = json.dumps(self.lan_info).encode("utf-8")
             self.send_response(200)
@@ -126,7 +194,9 @@ def main() -> int:
     ap.add_argument("--http-port", type=int, default=8091)
     ap.add_argument("--https-port", type=int, default=8443)
     ap.add_argument("--local-only", action="store_true", help="escucha solo en 127.0.0.1 (sin red local ni QR)")
+    ap.add_argument("--db", default=str(DEFAULT_DB), help="base SQLite de las cuentas de demostración (fuera del repo)")
     args = ap.parse_args()
+    Handler.api = StagingApi(args.db, load_catalog(HERE / "catalog.js"))
 
     ip = None if args.local_only else lan_ip()
     bind = "127.0.0.1" if args.local_only else "0.0.0.0"
@@ -163,6 +233,7 @@ def main() -> int:
         print(f"  Otros equipos:      {info['lan_https']}   (cámara; aceptar el aviso del certificado)")
     if info["lan_http"]:
         print(f"  Otros, sin cámara:  {info['lan_http']}   (solo demo)")
+    print(f"  Cuentas de demostración (fisioterapeuta / paciente): {args.db}")
     if not args.local_only:
         print("  Si Windows pregunta, permite Python en redes privadas. Ctrl+C para detener.")
     for s in servers:
