@@ -1,0 +1,54 @@
+/* AXONFAS · Design System Tokens
+ * Tema Seleccionado: HUD Biónico (Sci-Fi / F1 Telemetry)
+ * Optimizado para visión a distancia (2-3 m), bucle biomecánico <250 ms y visualización en tiempo real.
+ */
+
+:root {
+  /* Fondo Espacial & Superficies Glassmorphic */
+  --bg: #030712;
+  --bg-gradient: radial-gradient(circle at 50% 15%, #0B1933 0%, #030712 80%);
+  --surface: #0B1325;
+  --surface-2: #101B33;
+  --surface-border: rgba(0, 242, 254, 0.22);
+  --surface-border-bright: rgba(0, 242, 254, 0.55);
+  
+  /* Tintas de Alta Definición */
+  --ink: #F1F5F9;
+  --ink-secondary: #CBD5E1;
+  --muted: #94A3B8;
+  
+  /* Acentos de Telemetría Láser */
+  --tape: #00F2FE;                    /* Cian neón principal */
+  --tape-hover: #38BDF8;
+  --tape-soft: rgba(0, 242, 254, 0.14);
+  --accent-glow: 0 0 25px rgba(0, 242, 254, 0.45);
+  
+  /* Semántica Clínica & Biomecánica */
+  --safe: #00FF88;                    /* Verde Matrix óptimo */
+  --safe-soft: rgba(0, 255, 136, 0.15);
+  
+  --alert: #FF0055;                   /* Carmesí láser (compensación / dolor) */
+  --alert-soft: rgba(255, 0, 85, 0.16);
+  --alert-glow: 0 0 25px rgba(255, 0, 85, 0.55);
+  
+  --hold: #FFB800;                    /* Ámbar de aviso / calibración */
+  --hold-soft: rgba(255, 184, 0, 0.15);
+  
+  /* Escenario de Cámara y Skeleton */
+  --stage: #020617;
+  --stage-ink: #F8FAFC;
+  
+  /* Tipografía */
+  --font-display: 'Space Grotesk', -apple-system, sans-serif;
+  --font-body: 'Outfit', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  
+  /* Geometría y Sombras */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.8);
+  
+  color-scheme: dark;
+}

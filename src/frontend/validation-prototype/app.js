@@ -1,0 +1,675 @@
+/* AXONFAS · interfaz del prototipo de validación (TD-28).
+ * Conecta la cámara (MediaPipe Pose en el navegador) o el demo sintético con el motor de engine.js. No guarda nada:
+ * ni video, ni imágenes, ni datos en el navegador. Lo único que sale a internet es la descarga del modelo y de MediaPipe.
+ */
+(() => {
+  'use strict';
+
+  const MP_VERSION = '1.1.0';
+  const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+  const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+  const LOW_CONFIDENCE_FRAMES_BEFORE_HINT = 15;
+
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    viewport: $('viewport'), video: $('video'), canvas: $('overlay'), placeholder: $('placeholder'),
+    alert: $('alert'), alertText: $('alert-text'), alertMeta: $('alert-meta'),
+    btnCamera: $('btn-camera'), btnDemo: $('btn-demo'), sourceStatus: $('source-status'),
+    phase: $('phase'), phaseSub: $('phase-sub'),
+    trunkMargin: $('trunk-margin'), valgusMargin: $('valgus-margin'), romTarget: $('rom-target'), romAuto: $('rom-auto'),
+    maxReps: $('max-reps'), minConf: $('min-conf'), voice: $('voice'),
+    btnPain: $('btn-pain'), btnStop: $('btn-stop'), btnNew: $('btn-new'), btnCopy: $('btn-copy'),
+    copyStatus: $('copy-status'), copyFallback: $('copy-fallback'),
+    baseline: $('baseline'), repsBody: $('reps-body'), eventsBody: $('events-body'),
+    guide: $('guide'), guideCanvas: $('guide-canvas'), guideCaption: $('guide-caption'),
+    guideRest: $('guide-rest'), guideTotal: $('guide-total'),
+    hud: $('hud'), hudPhase: $('hud-phase'), hudDone: $('hud-done'), hudTotal: $('hud-total'), hudBar: $('hud-bar'),
+    announce: $('announce'), btnFullscreen: $('btn-fullscreen'),
+  };
+  const ctx = ui.canvas.getContext('2d');
+
+  const PHRASES = {
+    trunk_flexion: 'Tronco más erguido',
+    knee_valgus_left: 'Rodilla izquierda hacia afuera',
+    knee_valgus_right: 'Rodilla derecha hacia afuera',
+  };
+  const NAMES = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
+  const SIDES = { left: 'izquierda', right: 'derecha' };
+  const END_TEXT = { completed: 'Sesión completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano' };
+  const BONES = [[11, 12], [23, 24], [11, 23], [12, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
+
+  let session = null;
+  let source = null;              // 'camera' | 'demo'
+  let running = false;
+  let rafId = 0;
+  let landmarker = null;
+  let stream = null;
+  let lastVideoTime = -1;
+  let demo = null;                // { frames, start, idx }
+  let lowStreak = 0;
+  let alertTimer = 0;
+  let activeAlert = null;         // { key, until } para pintar en rojo el segmento
+  let endedShown = false;
+  let announceTimer = 0;
+
+  // ---------------------------------------------------------------- sobre de seguridad (controles del terapeuta)
+  function readConfig() {
+    return {
+      trunkMarginDeg: Number(ui.trunkMargin.value),
+      valgusMarginDeg: Number(ui.valgusMargin.value),
+      romTargetDeg: ui.romAuto.checked ? null : Number(ui.romTarget.value),
+      maxReps: Number(ui.maxReps.value),
+      minConfidence: Number(ui.minConf.value),
+    };
+  }
+
+  function renderControls() {
+    $('trunk-margin-out').textContent = `+${ui.trunkMargin.value}°`;
+    $('valgus-margin-out').textContent = `+${ui.valgusMargin.value}°`;
+    ui.romTarget.disabled = ui.romAuto.checked;
+    const auto = session && session.snapshot().thresholds;
+    $('rom-target-out').textContent = ui.romAuto.checked
+      ? (auto ? `≥ ${auto.romTarget.toFixed(0)}° (auto)` : 'auto') : `≥ ${ui.romTarget.value}°`;
+    $('max-reps-out').textContent = ui.maxReps.value;
+    $('min-conf-out').textContent = Number(ui.minConf.value).toFixed(2);
+    const total = Number(ui.maxReps.value);
+    ui.guideTotal.textContent = total;
+    ui.guideRest.textContent = total - AxonEngine.DEFAULTS.calibrationReps;
+    if (session) renderHud(session.snapshot());
+  }
+
+  [ui.trunkMargin, ui.valgusMargin, ui.romTarget, ui.romAuto, ui.maxReps, ui.minConf].forEach((el) =>
+    el.addEventListener('input', () => {
+      if (session) session.setConfig(readConfig());
+      renderControls();
+    }));
+
+  // ---------------------------------------------------------------- fuentes
+  function stopSource() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    ui.video.srcObject = null;
+  }
+
+  function newSession() {
+    session = AxonEngine.createSession(readConfig());
+    lowStreak = 0;
+    endedShown = false;
+    hideAlert();
+    renderReps();
+    renderEvents();
+    renderControls();
+    setButtons(true);
+    ui.guide.open = false;                                   // la guía se cierra para dejar el video a la vista
+    ui.hud.hidden = false;
+    renderHud(session.snapshot());
+    const cal = session.config.calibrationReps;
+    announce(`Empieza la calibración: ${cal} repeticiones con tu técnica normal`, { ms: 4000 });
+  }
+
+  function setButtons(active) {
+    ui.btnPain.disabled = !active;
+    ui.btnStop.disabled = !active;
+    ui.btnNew.disabled = !source;
+    ui.btnCopy.disabled = !session || session.reps.length === 0;
+  }
+
+  async function loadLandmarker() {
+    if (landmarker) return landmarker;
+    const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
+    const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+    const options = (delegate) => ({ baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numPoses: 1 });
+    try {
+      landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('GPU'));
+    } catch (gpuError) {
+      console.warn('GPU no disponible para MediaPipe, uso CPU', gpuError);
+      landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('CPU'));
+    }
+    return landmarker;
+  }
+
+  async function startCamera() {
+    stopSource();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      ui.sourceStatus.textContent = 'Este navegador no permite la cámara aquí. Ábrelo con Chrome o Edge, con doble clic en '
+        + 'index.html o desde http://localhost (ver README).';
+      return;
+    }
+    ui.sourceStatus.textContent = 'Cargando el modelo de pose (~9 MB la primera vez)…';
+    try {
+      await loadLandmarker();
+    } catch (err) {
+      console.error(err);
+      ui.sourceStatus.textContent = 'No se pudo cargar el modelo de pose. Revisa la conexión a internet y vuelve a intentar.';
+      return;
+    }
+    ui.sourceStatus.textContent = 'Pidiendo permiso para la cámara…';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false,
+      });
+    } catch (err) {
+      ui.sourceStatus.textContent = err && err.name === 'NotAllowedError'
+        ? 'El navegador no dio permiso para la cámara. Permítelo en la barra de direcciones y vuelve a intentar.'
+        : err && err.name === 'NotFoundError' ? 'No se encontró ninguna cámara.'
+          : 'No se pudo abrir la cámara.';
+      return;
+    }
+    ui.video.srcObject = stream;
+    await ui.video.play();
+    ui.canvas.width = ui.video.videoWidth || 1280;
+    ui.canvas.height = ui.video.videoHeight || 720;
+    ui.viewport.style.setProperty('--src-ratio', `${ui.canvas.width} / ${ui.canvas.height}`);   // vertical en celular
+    source = 'camera';
+    lastVideoTime = -1;
+    ui.viewport.classList.add('mirror');
+    ui.placeholder.hidden = true;
+    ui.sourceStatus.textContent = 'Cámara activa. El video no sale de este equipo.';
+    newSession();
+    running = true;
+    loop();
+  }
+
+  function startDemo() {
+    stopSource();
+    ui.canvas.width = 1280;
+    ui.canvas.height = 720;
+    // Solo lo usa la vista de celular: un recuadro cuadrado deja franjas arriba y abajo del demo (16:9) para la fase y
+    // el contador, sin tapar la figura. En escritorio el video es 16:9 fijo.
+    ui.viewport.style.setProperty('--src-ratio', '1 / 1');
+    demo = { frames: AxonSynthetic.generateSession({ seed: 1 + Math.floor(Math.random() * 1000) }), start: performance.now(), idx: 0 };
+    source = 'demo';
+    ui.viewport.classList.remove('mirror');
+    ui.placeholder.hidden = true;
+    ui.sourceStatus.textContent = 'Demo sintético: 3 de calibración, una compensación de tronco (rep 5), un valgo izquierdo (rep 7) '
+      + 'y una repetición mal vista (rep 8).';
+    newSession();
+    running = true;
+    loop();
+  }
+
+  // ---------------------------------------------------------------- bucle
+  function loop() {
+    if (!running) return;
+    rafId = requestAnimationFrame(loop);
+    if (source === 'camera') {
+      if (ui.video.readyState < 2 || ui.video.currentTime === lastVideoTime) return;
+      lastVideoTime = ui.video.currentTime;
+      const t0 = performance.now();
+      const result = landmarker.detectForVideo(ui.video, t0);
+      const world = result.worldLandmarks && result.worldLandmarks[0];
+      const image = result.landmarks && result.landmarks[0];
+      if (world && image) handleFrame({ t: t0, world, visibility: image }, image, t0, true);
+      else handleNoPose();
+      if (typeof result.close === 'function') result.close();
+    } else if (source === 'demo' && demo) {
+      // Se procesan todos los frames que ya tocaban (si la pestaña se ralentiza no se pierden repeticiones) y se dibuja el último.
+      const elapsed = performance.now() - demo.start;
+      while (demo.idx < demo.frames.length && demo.frames[demo.idx].t <= elapsed && running) {
+        const f = demo.frames[demo.idx++];
+        const isLast = demo.idx >= demo.frames.length || demo.frames[demo.idx].t > elapsed;
+        handleFrame({ t: f.t, world: f.world, visibility: f.image }, f.image, performance.now(), isLast);
+      }
+      if (running && demo.idx >= demo.frames.length && session.snapshot().phase !== 'ended') {
+        session.end('completed');
+        onEnded();
+      }
+    }
+  }
+
+  function handleNoPose() {
+    lowStreak += 1;
+    ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+    if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo('No veo a nadie: aléjate hasta que se vea el cuerpo entero');
+  }
+
+  function handleFrame(frame, image, t0, draw) {
+    const out = session.update(frame);
+    if (out.lowConfidence) {
+      lowStreak += 1;
+      if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo('No te veo bien: que se vean caderas, rodillas y tobillos');
+    } else {
+      if (lowStreak >= LOW_CONFIDENCE_FRAMES_BEFORE_HINT && ui.alert.classList.contains('info')) hideAlert();
+      lowStreak = 0;
+    }
+    if (draw) { drawPose(image, out); renderLive(out); }
+    if (out.newEvents.length) {
+      showEventAlert(out.newEvents[0]);
+      measureLatency(out.newEvents, t0);
+    }
+    if (out.completed) {
+      renderReps();
+      renderControls();
+      announceProgress(out);
+    }
+    if (out.phase === 'ended' && !endedShown) onEnded();
+  }
+
+  // ---------------------------------------------------------------- TD-31 · avisos de progreso legibles a 2-3 m
+  /** Cartel grande en el centro del video, con voz. */
+  function announce(text, { ms = 2600, tone = '', voice = true } = {}) {
+    clearTimeout(announceTimer);
+    ui.announce.textContent = text;
+    ui.announce.className = `announce${tone ? ` ${tone}` : ''}`;
+    ui.announce.hidden = false;
+    announceTimer = setTimeout(() => { ui.announce.hidden = true; }, ms);
+    if (voice) speak(text, 'info');
+  }
+
+  /** Al cerrar cada repetición: cuenta de calibración, fin de calibración, conteo, aviso de la última. */
+  function announceProgress(out) {
+    const { rep, discarded } = out.completed;
+    if (discarded) {
+      announce('Esa no contó: no te vi bien. Repítela');
+      return;
+    }
+    if (out.phase === 'ended') return;                       // el cierre lo anuncia onEnded
+    const cfg = session.config;
+    const done = out.repsDone;
+    if (rep.calibration && out.phase === 'exercising') {
+      announce('Calibración lista. Desde ahora te aviso si compensas', { ms: 3600 });
+    } else if (rep.calibration) {
+      announce(`Calibración: ${done} de ${cfg.calibrationReps}`);
+    } else if (done === cfg.maxReps - 1) {
+      announce(`${done} de ${cfg.maxReps}. Va la última`);
+    } else {
+      announce(`${done} de ${cfg.maxReps}`);
+    }
+  }
+
+  /** Contador fijo en una esquina del video: fase, repeticiones hechas y barra (calibración, hechas, con alerta). */
+  function renderHud(snap) {
+    const cfg = session.config;
+    ui.hudPhase.textContent = snap.phase === 'ended' ? (END_TEXT[snap.endReason] || 'Terminada')
+      : snap.phase === 'calibrating' ? 'Calibración · técnica normal' : 'Con alertas';
+    ui.hudDone.textContent = snap.repsDone;
+    ui.hudTotal.textContent = cfg.maxReps;
+    const flagged = new Set(session.reps.filter((r) => r.events.length).map((r) => r.index));
+    ui.hudBar.innerHTML = Array.from({ length: cfg.maxReps }, (_, i) => {
+      const n = i + 1;
+      const cls = [n <= cfg.calibrationReps ? 'cal' : '', n <= snap.repsDone ? 'done' : '', flagged.has(n) ? 'flag' : '']
+        .filter(Boolean).join(' ');
+      return `<span class="${cls}"></span>`;
+    }).join('');
+  }
+
+  // ---------------------------------------------------------------- TD-30 · guía animada del ejercicio
+  /** Animación de referencia vista de lado, con la misma cinemática del demo sintético (lo que el sistema espera ver). */
+  const guideAnim = (() => {
+    const g = ui.guideCanvas.getContext('2d');
+    const FPS = 30;
+    const frames = AxonSynthetic.generateSession({ script: [{}], seed: 5, fps: FPS });
+    const duration = (frames.length / FPS) * 1000;
+    let raf = 0;
+    let start = 0;
+    let prevKnee = null;
+
+    function side(frame) {                                  // metros respecto del tobillo: f = adelante, u = arriba
+      const a = frame.world[27];
+      return (i) => ({ f: -(frame.world[i].z - a.z), u: -(frame.world[i].y - a.y) });
+    }
+
+    const SEATED = frames[0];
+    const STANDING = frames[Math.round(3.5 * FPS)];          // en la pausa de pie del guion (3.2 s a 3.9 s)
+
+    function sizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(ui.guideCanvas.clientWidth * dpr) || 600;
+      const h = Math.round(w * 2 / 3);
+      if (ui.guideCanvas.width !== w) { ui.guideCanvas.width = w; ui.guideCanvas.height = h; }
+      g.clearRect(0, 0, w, h);
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      return { w, h };
+    }
+
+    /** Silla, suelo y figura de un frame dentro de la franja horizontal [x0, x0 + width] del lienzo. */
+    function drawScene(frame, x0, width, h, label) {
+      const s = h * 0.47;                                    // 1.75 m de pie caben con margen arriba
+      const ox = x0 + width * 0.6;
+      const oy = h * 0.88;
+      const P = (q) => [ox + q.f * s, oy - q.u * s];
+      const at = side(frame);
+      const lw = (k) => Math.max(2, (h * 1.5) / k);
+      g.strokeStyle = cssVar('--muted');
+      g.lineWidth = lw(300);
+      g.beginPath(); g.moveTo(x0 + width * 0.06, oy); g.lineTo(x0 + width * 0.94, oy); g.stroke();
+      const chair = [[[-0.06, 0.47], [-0.5, 0.47]], [[-0.5, 0.47], [-0.53, 0.95]], [[-0.09, 0.47], [-0.09, 0]], [[-0.48, 0.47], [-0.48, 0]]];
+      g.lineWidth = lw(160);
+      for (const [a, b] of chair) {
+        g.beginPath(); g.moveTo(...P({ f: a[0], u: a[1] })); g.lineTo(...P({ f: b[0], u: b[1] })); g.stroke();
+      }
+      const hip = { f: (at(23).f + at(24).f) / 2, u: (at(23).u + at(24).u) / 2 };
+      const sh = { f: (at(11).f + at(12).f) / 2, u: (at(11).u + at(12).u) / 2 };
+      const chest = { f: hip.f + (sh.f - hip.f) * 0.7 + 0.11, u: hip.u + (sh.u - hip.u) * 0.7 };
+      const path = (pts) => { g.beginPath(); g.moveTo(...P(pts[0])); pts.slice(1).forEach((q) => g.lineTo(...P(q))); g.stroke(); };
+      const ankle = at(27);
+      g.strokeStyle = cssVar('--tape');
+      g.lineWidth = lw(90);
+      path([{ f: ankle.f + 0.2, u: 0 }, ankle, at(25), hip, sh, at(0)]);   // pie (hacia dónde mira), pierna, tronco, cuello
+      g.lineWidth = lw(120);
+      path([sh, chest]);                                     // brazos cruzados sobre el pecho
+      g.fillStyle = cssVar('--tape');
+      const head = P(at(0));
+      g.beginPath(); g.arc(head[0], head[1], 0.085 * s, 0, Math.PI * 2); g.fill();
+      g.fillStyle = cssVar('--ink');                         // cadera y rodilla marcadas
+      for (const q of [hip, at(25)]) {
+        const [x, y] = P(q);
+        g.beginPath(); g.arc(x, y, Math.max(3, 0.028 * s), 0, Math.PI * 2); g.fill();
+      }
+      if (label) {
+        g.fillStyle = cssVar('--ink');
+        g.font = `600 ${Math.round(h * 0.06)}px ${cssVar('--font-body')}`;
+        g.textAlign = 'center';
+        g.fillText(label, x0 + width / 2, h * 0.97);
+      }
+    }
+
+    function caption(text, detail) {
+      if (ui.guideCaption.firstChild?.textContent !== text) ui.guideCaption.innerHTML = `${text}<small></small>`;
+      ui.guideCaption.querySelector('small').textContent = detail;
+    }
+
+    function drawAnimated(frame) {
+      const { w, h } = sizeCanvas();
+      drawScene(frame, 0, w, h);
+      const knee = AxonEngine.computeAngles(frame.world).knee;
+      const trend = prevKnee == null ? 0 : knee - prevKnee;
+      prevKnee = knee;
+      caption(knee >= 65 ? 'Posición inicial: sentado, espalda recta y brazos cruzados'
+        : knee <= 25 ? 'Posición final: de pie, con rodillas y caderas estiradas'
+          : trend < 0 ? 'Levántate sin impulsarte con los brazos' : 'Vuelve a sentarte despacio', `rodilla ${knee.toFixed(0)}°`);
+    }
+
+    /** Sin animación (movimiento reducido): las dos posiciones lado a lado. */
+    function drawStill() {
+      const { w, h } = sizeCanvas();
+      drawScene(SEATED, 0, w / 2, h, '1 · Inicial');
+      drawScene(STANDING, w / 2, w / 2, h, '2 · Final');
+      caption('Empieza sentado (1) y termina de pie (2). Levántate sin impulsarte con los brazos y vuelve a sentarte despacio.', '');
+    }
+
+    function tick(ts) {
+      if (!start) start = ts;
+      const idx = Math.min(frames.length - 1, Math.floor((((ts - start) % duration) / 1000) * FPS));
+      drawAnimated(frames[idx]);
+      raf = requestAnimationFrame(tick);
+    }
+
+    return {
+      start() { if (!raf) { start = 0; prevKnee = null; raf = requestAnimationFrame(tick); } },
+      stop() { cancelAnimationFrame(raf); raf = 0; },
+      still: drawStill,
+    };
+  })();
+
+  function syncGuide() {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (ui.guide.open && !reduce) guideAnim.start();
+    else { guideAnim.stop(); if (ui.guide.open) guideAnim.still(); }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      // El escenario entero (video, tacómetros y botonera), para que "Dolor: detener" siga a mano.
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await ($('stage') || ui.viewport).requestFullscreen();
+    } catch (err) {
+      ui.sourceStatus.textContent = 'Este navegador no permitió la pantalla completa.';
+    }
+  }
+
+  /** Latencia del bucle rápido en el navegador: del frame a la alerta pintada (aprox.: rAF + tarea siguiente). */
+  function measureLatency(events, t0) {
+    requestAnimationFrame(() => setTimeout(() => {
+      const ms = Math.round(performance.now() - t0);
+      events.forEach((e) => { e.alertLatencyMs = ms; });
+      renderEvents();
+    }, 0));
+  }
+
+  // ---------------------------------------------------------------- dibujo y lecturas
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function drawPose(image, out) {
+    const w = ui.canvas.width, h = ui.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!image) return;
+    const now = performance.now();
+    const alertOn = activeAlert && activeAlert.until > now ? activeAlert.key : null;
+    const ok = out.lowConfidence ? cssVar('--muted') : '#56B6E6';
+    const bad = '#F07A6F';
+    const isBad = (a, b) => alertOn && (
+      (alertOn === 'trunk_flexion' && ((a === 11 && b === 23) || (a === 12 && b === 24) || (a === 11 && b === 12)))
+      || (alertOn === 'knee_valgus_left' && (a === 23 || a === 25) && (b === 25 || b === 27))
+      || (alertOn === 'knee_valgus_right' && (a === 24 || a === 26) && (b === 26 || b === 28)));
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(4, w / 220);
+    for (const [a, b] of BONES) {
+      const p = image[a], q = image[b];
+      if (!p || !q) continue;
+      ctx.strokeStyle = isBad(a, b) ? bad : ok;
+      ctx.globalAlpha = Math.min(p.visibility, q.visibility) < 0.5 ? 0.35 : 1;
+      ctx.beginPath();
+      ctx.moveTo(p.x * w, p.y * h);
+      ctx.lineTo(q.x * w, q.y * h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#E0E9EC';
+    for (const i of [11, 12, 23, 24, 25, 26, 27, 28]) {
+      const p = image[i];
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, Math.max(5, w / 200), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function setReadout(id, value, threshold, over, low) {
+    const el = $(id);
+    el.querySelector('.v').textContent = value;
+    el.querySelector('.th').textContent = threshold || '';
+    el.classList.toggle('over', Boolean(over));
+    el.classList.toggle('low', Boolean(low));
+  }
+
+  function renderLive(out) {
+    const a = out.angles;
+    const th = out.thresholds;
+    const low = out.lowConfidence;
+    const f = (v) => (Number.isFinite(v) ? `${v.toFixed(0)}°` : '—');
+    if (a) {
+      setReadout('ro-knee', f(a.knee), th ? `pedida ≥ ${th.romTarget.toFixed(0)}°` : 'calibrando', false, low);
+      setReadout('ro-trunk', f(a.trunk), th ? `umbral ${th.trunk.toFixed(0)}°` : 'calibrando', th && a.trunk > th.trunk, low);
+      setReadout('ro-valgus-l', f(a.valgusL), th ? `umbral ${th.valgusL.toFixed(0)}°` : 'calibrando', th && a.valgusL > th.valgusL, low);
+      setReadout('ro-valgus-r', f(a.valgusR), th ? `umbral ${th.valgusR.toFixed(0)}°` : 'calibrando', th && a.valgusR > th.valgusR, low);
+      setReadout('ro-conf', a.confidence.toFixed(2), low ? 'baja: no se evalúa' : 'suficiente', false, low);
+    }
+    renderPhase(out);
+  }
+
+  function renderPhase(out) {
+    const cfg = session.config;
+    if (out.phase === 'ended') {
+      ui.phase.textContent = END_TEXT[out.endReason] || 'Sesión terminada';
+      ui.phaseSub.textContent = `${session.reps.length} repeticiones, ${session.events.length} alertas.`;
+      return;
+    }
+    const current = out.repInProgress ? out.repInProgress.index : out.repsDone + 1;
+    if (out.phase === 'calibrating') {
+      ui.phase.textContent = `Calibrando: ${out.calibrationDone} de ${cfg.calibrationReps}`;
+      ui.phaseSub.textContent = out.posture === 'seated' ? 'Sentado. Levántate con tu técnica normal.'
+        : out.posture === 'standing' ? 'De pie. Vuelve a sentarte.' : 'Esperando ver a la persona.';
+    } else {
+      ui.phase.textContent = `Repetición ${Math.min(current, cfg.maxReps)} de ${cfg.maxReps}`;
+      ui.phaseSub.textContent = 'Las alertas están activas.';
+    }
+  }
+
+  // ---------------------------------------------------------------- alertas
+  function hideAlert() {
+    clearTimeout(alertTimer);
+    ui.alert.hidden = true;
+    ui.alert.className = 'alert';
+  }
+
+  function showInfo(text) {
+    clearTimeout(alertTimer);
+    ui.alertText.textContent = text;
+    ui.alertMeta.textContent = '';
+    ui.alert.className = 'alert info';
+    ui.alert.hidden = false;
+  }
+
+  function showEventAlert(e) {
+    const key = e.type + (e.side ? `_${e.side}` : '');
+    const phrase = PHRASES[key] || NAMES[e.type];
+    clearTimeout(alertTimer);
+    ui.alertText.textContent = phrase;
+    ui.alertMeta.textContent = `rep ${e.rep} · ${e.value.toFixed(0)}° > ${e.threshold.toFixed(0)}°`;
+    ui.alert.className = `alert${e.severity === 1 ? ' sev1' : ''}`;
+    ui.alert.hidden = false;
+    activeAlert = { key, until: performance.now() + 2500 };
+    alertTimer = setTimeout(hideAlert, 2500);
+    speak(phrase, 'alert');
+  }
+
+  /** Voz en español. Una alerta corta lo que se estaba diciendo; un aviso de progreso espera su turno. */
+  function speak(text, priority) {
+    if (!ui.voice.checked || !('speechSynthesis' in window)) return;
+    try {
+      if (priority === 'alert') window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const voice = window.speechSynthesis.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith('es'));
+      if (voice) u.voice = voice;
+      u.lang = voice ? voice.lang : 'es-PE';
+      u.rate = 1.05;
+      window.speechSynthesis.speak(u);
+    } catch (err) {
+      console.warn('Sin voz', err);
+    }
+  }
+
+  // ---------------------------------------------------------------- fin de sesión
+  function endSession(reason) {
+    if (!session) return;
+    session.end(reason);
+    onEnded();
+  }
+
+  function onEnded() {
+    endedShown = true;
+    const reason = session.snapshot().endReason;
+    stopSource();
+    if (reason === 'pain_stop') {
+      ui.announce.hidden = true;
+      showStop('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
+      speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.', 'alert');
+    } else {
+      hideAlert();
+      if (reason === 'completed') announce('¡Listo! Sesión completada', { ms: 5000, tone: 'done' });
+      else announce('Sesión terminada', { ms: 3000 });
+    }
+    renderHud(session.snapshot());
+    renderPhase(session.snapshot());
+    renderReps();
+    renderEvents();
+    setButtons(false);
+    ui.btnNew.disabled = false;
+    ui.sourceStatus.textContent = source === 'camera' ? 'Cámara apagada.' : 'Demo terminado.';
+  }
+
+  function showStop(text) {
+    clearTimeout(alertTimer);
+    ui.alertText.textContent = text;
+    ui.alertMeta.textContent = '';
+    ui.alert.className = 'alert stop';
+    ui.alert.hidden = false;
+  }
+
+  // ---------------------------------------------------------------- tablas y resumen
+  const deg1 = (v) => (Number.isFinite(v) ? v.toFixed(1) : '—');
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const eventName = (e) => `${NAMES[e.type]}${e.side ? ` ${SIDES[e.side]}` : ''}`;
+
+  function renderReps() {
+    const snap = session ? session.snapshot() : null;
+    const b = snap && snap.baseline;
+    ui.baseline.textContent = b
+      ? `Línea base (3 repeticiones): rodilla ${deg1(b.knee)}°, tronco ${deg1(b.trunk)}°, valgo izq. ${deg1(b.valgusL)}°, `
+        + `valgo der. ${deg1(b.valgusR)}°.`
+      : 'La línea base aparece al terminar las 3 repeticiones de calibración.';
+    const reps = session ? session.reps : [];
+    ui.repsBody.innerHTML = reps.length ? reps.map((r) => `<tr>
+      <td class="num">${r.index}</td>
+      <td>${r.calibration ? '<span class="tag cal">Calibración</span>' : 'Ejercicio'}</td>
+      <td class="num">${deg1(r.kneeRom)}</td><td class="num">${deg1(r.peakTrunk)}</td>
+      <td class="num">${deg1(r.peakValgusL)}</td><td class="num">${deg1(r.peakValgusR)}</td>
+      <td>${r.romReached === null ? '—' : r.romReached ? '<span class="tag ok">Alcanzado</span>' : '<span class="tag warn">No alcanzado</span>'}</td>
+      <td>${r.lowConfidenceRatio > 0.2 ? `<span class="tag warn">Baja (${Math.round(r.lowConfidenceRatio * 100)} %)</span>` : '<span class="tag ok">Buena</span>'}</td>
+      <td>${r.events.length ? r.events.map((e) => `<span class="tag bad">${esc(eventName(e))}</span>`).join(' ') : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="9" class="empty">Todavía no hay repeticiones.</td></tr>';
+    ui.btnCopy.disabled = reps.length === 0;
+  }
+
+  function renderEvents() {
+    const events = session ? session.events : [];
+    ui.eventsBody.innerHTML = events.length ? events.map((e) => `<tr>
+      <td class="num">${e.rep}</td><td>${esc(eventName(e))}</td>
+      <td class="num">${deg1(e.value)}</td><td class="num">${deg1(e.peak)}</td><td class="num">${deg1(e.threshold)}</td>
+      <td class="num">${e.severity}</td><td class="num">${e.alertLatencyMs == null ? '…' : e.alertLatencyMs}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty">Sin alertas.</td></tr>';
+  }
+
+  function summaryText() {
+    const snap = session.snapshot();
+    const cfg = session.config;
+    const b = snap.baseline;
+    const th = snap.thresholds;
+    const lines = [
+      `AXONFAS · prototipo de validación · ${new Date().toLocaleString('es-PE')}`,
+      `Fuente: ${source === 'demo' ? 'demo sintético' : 'cámara'} · Estado: ${END_TEXT[snap.endReason] || 'en curso'}`,
+      b ? `Línea base: rodilla ${deg1(b.knee)}°, tronco ${deg1(b.trunk)}°, valgo izq. ${deg1(b.valgusL)}°, der. ${deg1(b.valgusR)}°`
+        : 'Línea base: sin completar',
+      `Sobre: tronco +${cfg.trunkMarginDeg}°, valgo +${cfg.valgusMarginDeg}°, rodilla pedida ${th ? `≥ ${deg1(th.romTarget)}°` : 'auto'}, `
+        + `confianza mínima ${cfg.minConfidence}`,
+      '',
+      ...session.reps.map((r) => `Rep ${r.index} (${r.calibration ? 'calibración' : 'ejercicio'}): rodilla ${deg1(r.kneeRom)}°, `
+        + `tronco ${deg1(r.peakTrunk)}°, valgo ${deg1(r.peakValgusL)}° / ${deg1(r.peakValgusR)}°`
+        + `${r.lowConfidenceRatio > 0.2 ? ', visibilidad baja' : ''}${r.romReached === false ? ', rango no alcanzado' : ''}`),
+      '',
+      ...(session.events.length ? session.events.map((e) => `Alerta rep ${e.rep}: ${eventName(e)} ${deg1(e.value)}° (pico ${deg1(e.peak)}°, `
+        + `umbral ${deg1(e.threshold)}°, severidad ${e.severity}, latencia ${e.alertLatencyMs ?? '?'} ms)`) : ['Sin alertas.']),
+    ];
+    return lines.join('\n');
+  }
+
+  async function copySummary() {
+    const text = summaryText();
+    try {
+      await navigator.clipboard.writeText(text);
+      ui.copyStatus.textContent = 'Resumen copiado.';
+      ui.copyFallback.hidden = true;
+    } catch {
+      ui.copyFallback.value = text;
+      ui.copyFallback.hidden = false;
+      ui.copyFallback.select();
+      ui.copyStatus.textContent = 'No se pudo copiar solo: el texto está seleccionado abajo, cópialo con Ctrl+C.';
+    }
+  }
+
+  // ---------------------------------------------------------------- eventos de la página
+  ui.btnCamera.addEventListener('click', startCamera);
+  ui.btnDemo.addEventListener('click', startDemo);
+  ui.btnPain.addEventListener('click', () => endSession('pain_stop'));
+  ui.btnStop.addEventListener('click', () => endSession('user_quit'));
+  ui.btnNew.addEventListener('click', () => (source === 'camera' ? startCamera() : startDemo()));
+  ui.btnCopy.addEventListener('click', copySummary);
+  ui.btnFullscreen.addEventListener('click', toggleFullscreen);
+  ui.guide.addEventListener('toggle', syncGuide);
+  if ('speechSynthesis' in window) window.speechSynthesis.getVoices();     // precarga la lista de voces
+  renderControls();
+  syncGuide();
+})();

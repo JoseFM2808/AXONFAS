@@ -1,0 +1,350 @@
+<title>Panel AXONFAS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap">
+<!-- Plantilla del panel. build_panel.py reemplaza los marcadores entre llaves dobles; no edites el HTML generado. -->
+<style>
+/* Concepto: hoja clínica de goniometría. Resumen arriba, pestañas numeradas como en .ai-context/, columna de lectura.
+   Acento = azul de cinta kinesiológica; semánticos = sobre seguro (verde), alerta (rojo), en espera (ámbar). */
+:root {
+  --ground: #F2F6F7;
+  --surface: #FFFFFF;
+  --surface-2: #E8EFF1;
+  --ink: #12232A;
+  --muted: #536770;
+  --line: #D0DCE0;
+  --tape: #0A6A9E;
+  --tape-soft: #DAECF5;
+  --safe: #1B7655;
+  --safe-soft: #DCF0E6;
+  --alert: #B9372D;
+  --alert-soft: #F7E0DC;
+  --hold: #8F5D00;
+  --hold-soft: #F4EAD2;
+  --diagram-bg: #FFFFFF;
+  --diagram-ink: #12232A;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --measure: 70ch;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0C1418; --surface: #121E23; --surface-2: #19282E; --ink: #E0E9EC; --muted: #91A3AA; --line: #273840;
+    --tape: #56B6E6; --tape-soft: #0F3247; --safe: #4FC59A; --safe-soft: #113326; --alert: #F07A6F; --alert-soft: #3A1916;
+    --hold: #E3AB48; --hold-soft: #362810; --diagram-bg: #F4F8F9; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0C1418; --surface: #121E23; --surface-2: #19282E; --ink: #E0E9EC; --muted: #91A3AA; --line: #273840;
+  --tape: #56B6E6; --tape-soft: #0F3247; --safe: #4FC59A; --safe-soft: #113326; --alert: #F07A6F; --alert-soft: #3A1916;
+  --hold: #E3AB48; --hold-soft: #362810; --diagram-bg: #F4F8F9; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font: 400 1rem/1.6 var(--font-body); }
+.wrap { max-width: 76rem; margin-inline: auto; padding-inline: clamp(16px, 4vw, 40px); padding-block: 28px 56px; }
+a { color: var(--tape); text-underline-offset: 0.18em; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--font-mono); }
+
+/* ── cabecera ─────────────────────────────────────────── */
+.masthead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 40px; align-items: end; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tag { font: 600 0.75rem/1 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); }
+.tag.env { color: var(--hold); border-color: currentColor; background: var(--hold-soft); }
+h1 { font: 700 clamp(2.5rem, 7vw, 4rem)/0.95 var(--font-display); letter-spacing: 0.03em; margin: 0; }
+.lede { max-width: 60ch; margin: 12px 0 0; color: var(--muted); font-size: 1.0625rem; text-wrap: pretty; }
+.gonio-box { margin: 0; display: grid; gap: 4px; justify-items: center; }
+.gonio { width: min(240px, 60vw); height: auto; max-width: 100%; }
+.gonio .scale { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.gonio .tick { stroke: var(--muted); stroke-width: 1.2; }
+.gonio .band { fill: none; stroke: var(--safe); stroke-width: 10; stroke-linecap: round; opacity: 0.35; }
+.gonio .needle { stroke: var(--tape); stroke-width: 3; stroke-linecap: round; }
+.gonio .needle.old { stroke: var(--muted); stroke-width: 2; stroke-dasharray: 3 4; }
+.gonio .pivot { fill: var(--ink); }
+.gonio .base { stroke: var(--line); stroke-width: 1; }
+.gonio .deg { fill: var(--ink); font: 600 11px var(--font-mono); }
+.gonio .deg.old { fill: var(--muted); font-weight: 400; }
+.gonio-box figcaption { font-size: 0.8125rem; color: var(--muted); text-align: center; max-width: 30ch; }
+
+/* ── resumen ──────────────────────────────────────────── */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr)); gap: 12px; margin-top: 28px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 16px;
+  display: grid; gap: 4px; align-content: start; min-width: 0; }
+.stat .label { font: 600 0.75rem/1.2 var(--font-body); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.stat .value { font: 700 2rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+.stat .sub { font-size: 0.875rem; color: var(--muted); }
+.prio-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin: 6px 0 2px; background: var(--surface-2); }
+.prio-bar .seg { display: block; min-width: 4px; }
+.seg.p1, .key.p1 { background: var(--alert); }
+.seg.p2, .key.p2 { background: var(--hold); }
+.seg.p3, .key.p3 { background: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.key { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* ── pestañas ─────────────────────────────────────────── */
+.tabbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--ground);
+  margin-top: 32px; border-bottom: 1px solid var(--line); }
+.tablist { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: thin; }
+.tablist button { appearance: none; border: 0; background: none; color: var(--muted); cursor: pointer; white-space: nowrap;
+  font: 600 0.9375rem/1 var(--font-body); padding: 14px 14px 12px; border-bottom: 3px solid transparent; display: inline-flex;
+  align-items: baseline; gap: 7px; }
+.tablist button:hover { color: var(--ink); }
+.tablist button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--tape); }
+.tablist .num { font: 400 0.75rem/1 var(--font-mono); color: var(--muted); }
+
+.panels { position: relative; }
+.panel { padding-top: 8px; min-width: 0; }
+.panel.is-off { position: absolute; inset: 0 auto auto 0; width: 100%; visibility: hidden; pointer-events: none; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px;
+  margin: 24px 0 8px; }
+.panel-head h2 { font: 700 1.75rem/1.15 var(--font-display); letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+.panel-head .src { font: 400 0.8125rem/1.3 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+
+/* ── contenido de las pestañas ────────────────────────── */
+.panel h3 { font: 700 1.375rem/1.2 var(--font-display); letter-spacing: 0.01em; margin: 36px 0 10px; text-wrap: balance;
+  scroll-margin-top: 72px; }
+.panel h4 { font: 600 1.0625rem/1.3 var(--font-body); margin: 24px 0 8px; scroll-margin-top: 72px; }
+.panel p, .panel ul, .panel ol { max-width: var(--measure); }
+.panel p { margin: 0 0 12px; text-wrap: pretty; }
+.panel ul, .panel ol { padding-left: 1.3em; margin: 0 0 14px; display: grid; gap: 6px; }
+.panel hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+.meta { font-size: 0.875rem; color: var(--muted); border-left: 2px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 16px;
+  max-width: var(--measure); }
+.panel code { font-size: 0.875em; background: var(--surface-2); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre.code { background: var(--surface-2); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; margin: 0 0 16px; }
+pre.code code { background: none; padding: 0; font-size: 0.875rem; }
+.file { font-family: var(--font-mono); font-size: 0.875em; border-bottom: 1px dotted var(--muted); }
+a.ref { font-family: var(--font-mono); font-size: 0.875em; white-space: nowrap; text-decoration: none;
+  border-bottom: 1px solid var(--tape-soft); }
+a.ref:hover { border-bottom-color: var(--tape); }
+
+.table-wrap { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font: 600 0.75rem/1.3 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  background: var(--surface-2); padding: 9px 12px; white-space: nowrap; }
+td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; min-width: 6ch; }
+td:first-child { white-space: nowrap; }
+tr { scroll-margin-top: 72px; }
+.chip { display: inline-block; font: 600 0.75rem/1 var(--font-body); letter-spacing: 0.04em; padding: 4px 7px; border-radius: 4px; }
+.chip.p1 { color: var(--alert); background: var(--alert-soft); }
+.chip.p2 { color: var(--hold); background: var(--hold-soft); }
+.chip.p3 { color: var(--muted); background: var(--surface-2); }
+.chip.ok { color: var(--safe); background: var(--safe-soft); }
+.chip.hold { color: var(--hold); background: var(--hold-soft); }
+.chip.off { color: var(--muted); background: var(--surface-2); text-decoration: line-through; }
+
+figure.diagram { margin: 0 0 20px; padding: 16px; background: var(--diagram-bg); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow-x: auto; }
+figure.diagram pre.mermaid { margin: 0; display: flex; justify-content: center; min-width: min-content; color: var(--diagram-ink); }
+
+/* ── script de lanzamiento del prototipo ──────────────── */
+.launch { margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+.launch h2 { font: 700 1.25rem/1.2 var(--font-display); letter-spacing: 0.01em; margin: 0 0 4px; }
+.launch-intro { margin: 0 0 12px; color: var(--muted); font-size: 0.9375rem; max-width: 80ch; }
+.launch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 14px 20px; }
+.launch-item { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.launch-item .label { font: 600 0.75rem/1.2 var(--font-body); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.launch-item pre.code { margin: 0; font-size: 0.8125rem; }
+.launch-item .note { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+.copy { justify-self: start; appearance: none; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  border-radius: 6px; padding: 6px 12px; font: 600 0.8125rem var(--font-body); cursor: pointer; }
+.copy:hover { border-color: var(--tape); }
+.copy:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--tape-soft); } to { background: transparent; } }
+
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 0.8125rem; color: var(--muted);
+  display: grid; gap: 4px; max-width: var(--measure); }
+
+@media (max-width: 640px) {
+  .masthead { grid-template-columns: minmax(0, 1fr); }
+  .gonio-box { justify-items: start; }
+  .gonio-box figcaption { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <div class="tags">
+        <span class="tag env">Staging · datos sintéticos</span>
+        <span class="tag">AMD Developer Hackathon: ACT III</span>
+        <span class="tag">Pista 2 · Health and Wellbeing</span>
+      </div>
+      <h1>AXONFAS</h1>
+      <p class="lede">Fisioterapia en casa supervisada por la clínica, con toda la inferencia en una AMD Instinct MI300X.
+        Este panel reúne las seis pestañas de contexto del proyecto.</p>
+    </div>
+    <figure class="gonio-box">
+      {{GONIOMETER}}
+      <figcaption>Sobre de seguridad del terapeuta y una meta de ROM que baja de 90° a 70° (ejemplo del turno de voz)</figcaption>
+    </figure>
+  </header>
+
+  <section class="summary" aria-label="Resumen">
+    <div class="stat" id="countdown" data-start="{{HACK_START}}" data-end="{{HACK_END}}">
+      <span class="label">Hackathon</span>
+      <span class="value" data-role="value">{{HACK_START}}</span>
+      <span class="sub" data-role="sub">fase online hasta el {{HACK_END}}</span>
+    </div>
+    <div class="stat">
+      <span class="label">Pendientes abiertos</span>
+      <span class="value">{{OPEN}}</span>
+      <div class="prio-bar" aria-hidden="true">{{PRIO_BAR}}</div>
+      <div class="legend">
+        <span><i class="key p1"></i>P1 hackathon {{P1}}</span>
+        <span><i class="key p2"></i>P2 Producción {{P2}}</span>
+        <span><i class="key p3"></i>P3 futuro {{P3}}</span>
+      </div>
+      <a class="sub" href="#pending">{{DONE}} hechos · ver pendientes</a>
+    </div>
+    <div class="stat">
+      <span class="label">Decisiones</span>
+      <span class="value">{{ADRS}}</span>
+      <span class="sub">ADRs, {{ACCEPTED}} aceptadas</span>
+      <a class="sub" href="#decisions">ver decisiones</a>
+    </div>
+    <div class="stat">
+      <span class="label">Invariantes</span>
+      <span class="value">{{INVARIANTS}}</span>
+      <span class="sub">reglas de seguridad que el código nunca puede violar</span>
+      <a class="sub" href="#logic-invariantes">ver invariantes</a>
+    </div>
+  </section>
+
+  <section class="launch" id="launch" aria-labelledby="launch-title">
+    <h2 id="launch-title">Script de lanzamiento</h2>
+    <p class="launch-intro">Publica el prototipo de validación en la red local. Este equipo entra a
+      <span class="mono">http://localhost:8091</span>; los celulares y laptops de la misma red escanean el QR de la página
+      (<span class="mono">https://IP:8443</span>).</p>
+    <div class="launch-grid">
+      <div class="launch-item">
+        <span class="label">Doble clic en Windows</span>
+        <span class="mono">{{LAUNCH_FILE}}</span>
+        <pre class="code"><code id="launch-script">{{LAUNCH_SCRIPT}}</code></pre>
+        <button type="button" class="copy" data-copy="launch-script">Copiar script</button>
+      </div>
+      <div class="launch-item">
+        <span class="label">O en PowerShell</span>
+        <pre class="code"><code id="launch-cmd">{{LAUNCH_CMD}}</code></pre>
+        <button type="button" class="copy" data-copy="launch-cmd">Copiar comando</button>
+        <p class="note">Ctrl+C lo detiene. La primera vez, Windows puede pedir permiso para Python en redes privadas, y
+          cada celular muestra un aviso por el certificado local: hay que aceptarlo para usar la cámara.</p>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabbar" id="tabs" aria-label="Pestañas de contexto">
+    <div class="tablist" role="tablist">{{NAV}}</div>
+  </nav>
+
+  <main class="panels">
+{{PANELS}}
+  </main>
+
+  <footer>
+    <span>Generado el {{BUILT}} desde <span class="mono">.ai-context/</span> (última actualización de una pestaña: {{UPDATED}}).
+      Los archivos .md son la fuente de verdad; este panel se regenera con <span class="mono">build_panel.py</span>.</span>
+    <span>AXONFAS no es un dispositivo médico ni sustituye la evaluación de un profesional.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+  const ids = tabs.map((t) => t.dataset.tab);
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const store = {
+    get() { try { return localStorage.getItem('axonfas-panel-tab'); } catch { return null; } },
+    set(v) { try { localStorage.setItem('axonfas-panel-tab', v); } catch { /* sin almacenamiento */ } },
+  };
+
+  function activate(id, { focus = false, remember = true } = {}) {
+    if (!ids.includes(id)) return;
+    tabs.forEach((t) => {
+      const on = t.dataset.tab === id;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      if (on && focus) t.focus();
+    });
+    panels.forEach((p) => {
+      const on = p.id === id;
+      p.classList.toggle('is-off', !on);
+      p.inert = !on;
+    });
+    if (remember) store.set(id);
+  }
+
+  function reveal(targetId) {
+    const el = targetId && document.getElementById(targetId);
+    if (!el) return false;
+    const panel = el.closest('[role="tabpanel"]');
+    if (!panel) return false;
+    activate(panel.id);
+    const target = el === panel ? document.getElementById('tabs') : el;
+    target.scrollIntoView({ block: el === panel ? 'start' : 'center', behavior: reduce ? 'auto' : 'smooth' });
+    if (el !== panel) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+    return true;
+  }
+
+  tabs.forEach((t) => t.addEventListener('click', () => activate(t.dataset.tab)));
+  document.querySelector('[role="tablist"]').addEventListener('keydown', (e) => {
+    const i = ids.indexOf(document.activeElement?.dataset?.tab);
+    if (i < 0) return;
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: ids.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    activate(ids[(next + ids.length) % ids.length], { focus: true });
+  });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (a && reveal(a.getAttribute('href').slice(1))) e.preventDefault();
+  });
+
+  // Botones de copiar del script de lanzamiento: portapapeles dentro del clic; si el visor lo niega, se selecciona.
+  document.querySelectorAll('.copy[data-copy]').forEach((btn) => btn.addEventListener('click', async () => {
+    const code = document.getElementById(btn.dataset.copy);
+    const label = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      btn.textContent = 'Copiado';
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btn.textContent = 'Seleccionado: Ctrl+C';
+    }
+    setTimeout(() => { btn.textContent = label; }, 2000);
+  }));
+
+  const hash = decodeURIComponent(location.hash.slice(1));
+  if (!reveal(hash)) { const saved = store.get(); if (saved) activate(saved, { remember: false }); }
+
+  // Cuenta regresiva del hackathon (fechas de 05-tech-debt.md, hora local del visitante)
+  const card = document.getElementById('countdown');
+  const [ys, ms, ds] = card.dataset.start.split('-').map(Number);
+  const [ye, me, de] = card.dataset.end.split('-').map(Number);
+  const start = new Date(ys, ms - 1, ds), end = new Date(ye, me - 1, de);
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((start - today) / 864e5);
+  const fmt = new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short' });
+  const range = `${fmt.format(start)} – ${fmt.format(end)} ${ye}`;
+  const total = Math.round((end - start) / 864e5) + 1;
+  let value, sub;
+  if (days > 0) { value = days === 1 ? 'Falta 1 día' : `Faltan ${days} días`; sub = `para la fase online · ${range}`; }
+  else if (today <= end) { value = `Día ${1 - days} de ${total}`; sub = `fase online en curso · ${range}`; }
+  else { value = 'Terminado'; sub = `fase online · ${range}`; }
+  card.querySelector('[data-role="value"]').textContent = value;
+  card.querySelector('[data-role="sub"]').textContent = sub;
+})();
+</script>

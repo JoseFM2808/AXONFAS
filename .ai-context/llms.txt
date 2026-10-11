@@ -1,0 +1,26 @@
+# AXONFAS
+
+> Fisioterapia en casa supervisada por la clínica (B2B2C). El navegador extrae la pose 2D del paciente (el video no sale de casa), una GPU AMD Instinct MI300X la eleva a 3D, un motor de reglas determinista detecta compensaciones en menos de 250 ms y un agente clínico LLM ajusta la sesión dentro del sobre de seguridad que fija el fisioterapeuta. Cada sesión termina en un borrador de nota SOAP y una Observation FHIR R4. Entorno actual: Staging (AMD Developer Hackathon: ACT III en lablab.ai, pista Health and Wellbeing, 12–18 de octubre de 2026), solo datos sintéticos.
+
+Reglas no negociables: el LLM nunca decide una alerta de seguridad; ningún ajuste sale del `safety_envelope`; sin consentimiento ni sobre no hay sesión; nada de datos reales de pacientes. Las reglas para agentes están en [CLAUDE.md](../CLAUDE.md).
+
+## Contexto
+
+- [Lógica](01-logic.md): dos bucles, flujo de una repetición, cadena de compensación, turno de voz, reglas del agente, invariantes, reglas de seguridad de la pista
+- [Arquitectura](02-architecture.md): tecnologías, candidatos de lifter y licencias, costo por sesión, componentes en 1× MI300X, agentes, carpetas, entornos y operación del droplet
+- [Base de datos](03-database.md): diagrama ER, diccionario de datos, reglas de integridad
+- [Decisiones](04-decisions-adr.md): ADR-001…010 y anexo del modelo de negocio (hipótesis)
+- [Pendientes](05-tech-debt.md): requisitos del hackathon y TD-01…29 con prioridad y fecha límite
+- [API y MCP](06-api-mcp.md): interfaces previstas, contratos JSON fijados, MCP N/A
+
+## Proyecto
+
+- [README](../README.md): qué es y estructura de carpetas
+- [Plantilla de entorno Staging](../config/.env.staging.example): variables sin valores
+
+## Referencias externas
+
+- [ROCm](https://rocm.docs.amd.com): PyTorch y vLLM sobre GPUs AMD
+- [vLLM](https://docs.vllm.ai): servidor del LLM
+- [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker): 33 puntos 2D en el navegador
+- [FHIR R4 Observation](https://hl7.org/fhir/R4/observation.html): formato del reporte clínico

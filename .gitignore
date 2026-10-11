@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AXONFAS · .gitignore  (repositorio PÚBLICO con datos de salud: todo lo privado queda fuera)
+# Reglas: CLAUDE.md §Datos y privacidad · ADR-003 (el video no sale de casa) · ADR-010 (solo Staging)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─── 1. Secretos y credenciales ──────────────────────────────────────────────
+.env
+.env.*
+*.env
+!config/.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*secret*.json
+*credentials*.json
+service-account*.json
+secrets/
+.secrets/
+.npmrc
+
+# ─── 2. Material privado del equipo (vive en Drive) ──────────────────────────
+docs/meetings/
+docs/private/
+docs/legal/
+docs/finance/
+**/*.gdoc
+**/*.gsheet
+**/*.gslides
+.ai-context/private/
+
+# ─── 3. Datos de pacientes (Ley 29733 · HIPAA) — nunca en git, ni sintéticos ──
+data/**
+!data/*/
+!data/**/.gitkeep
+**/*.csv
+**/*.parquet
+**/*.sqlite
+**/*.db
+**/*.dump
+**/exports/
+**/fhir-out/
+backups/
+
+# ─── 4. Grabaciones de video y audio (ADR-003) ───────────────────────────────
+*.mp4
+*.webm
+*.mov
+*.avi
+*.mkv
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+
+# ─── 5. Pesos de modelos (grandes y con licencias propias) ───────────────────
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.bin
+models/
+hf-cache/
+.cache/
+
+# ─── 6. Python / notebooks ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+# Los notebooks se suben solo con las salidas limpias.
+
+# ─── 7. JavaScript / frontend ────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# ─── 8. Google Drive, SO y editores ──────────────────────────────────────────
+desktop.ini
+Thumbs.db
+.DS_Store
+.tmp.drivedownload/
+.tmp.driveupload/
+~$*
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.log
+logs/
+.claude/settings.local.json
