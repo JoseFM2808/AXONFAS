@@ -1,8 +1,8 @@
 /* AXONFAS · componentes compartidos del HUD Biónico (TD-35).
  * Los tokens (colores, tipografía, geometría) vienen de docs/design-system/tokens.css, que cada página carga antes.
  * Aquí van los componentes que usan todas las páginas: base, cabecera, botones, tarjetas, controles, tablas,
- * etiquetas, diálogo del QR, navegación, formularios, tarjetas de ejercicio, mapa corporal, indicadores y avisos.
- * Lo propio de cada pantalla (escenario de video, tacómetros) queda en su HTML. */
+ * etiquetas, diálogo del QR, navegación, formularios, tarjetas de ejercicio, mapa corporal, indicadores, avisos y el
+ * escenario de cámara (index.html y seguimiento.html). Lo propio de cada pantalla (tacómetros, guía) queda en su HTML. */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -500,4 +500,302 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   .panel-card { padding: 16px; }
   th, td { padding: 8px 10px; }
   .bodymap-svg { max-height: 220px; }
+}
+
+/* ==========================================================================
+   ESCENARIO DE CÁMARA (index.html y seguimiento.html): video, esqueleto, avisos, contador y botonera
+   ========================================================================== */
+.stage-wrapper {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 24px;
+}
+
+/* Viewport de Video / Esqueleto */
+.viewport {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--stage);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.viewport video, .viewport canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.viewport.mirror video, .viewport.mirror canvas {
+  transform: scaleX(-1);
+}
+
+/* Malla Táctica de Coordenadas Holográficas */
+.hud-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(0, 242, 254, 0.04) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(to bottom, rgba(0, 242, 254, 0.04) 1px, transparent 1px) 0 0 / 48px 48px;
+  z-index: 2;
+}
+.hud-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--tape);
+  pointer-events: none;
+  z-index: 3;
+}
+.hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+.hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+.hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+.hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+
+/* Placeholder */
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 32px;
+  color: var(--stage-ink);
+  z-index: 5;
+  background: radial-gradient(circle, rgba(11, 25, 51, 0.8) 0%, rgba(2, 6, 23, 0.95) 100%);
+}
+.placeholder strong {
+  font: 800 1.8rem/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+  color: #FFFFFF;
+}
+.placeholder span {
+  font-size: 0.95rem;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+/* Chip Superior de Estado */
+.hud-status-badge {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  background: rgba(11, 19, 37, 0.85);
+  border: 1px solid var(--tape);
+  box-shadow: var(--accent-glow);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--tape);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Alerta Biomecánica <250ms */
+.alert {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 18px;
+  padding: 16px 24px;
+  border-radius: var(--radius-sm);
+  font: 900 clamp(1.3rem, 3.2vw, 2.1rem)/1.15 var(--font-display);
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  background: var(--alert);
+  box-shadow: var(--alert-glow);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  z-index: 30;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.alert small {
+  font: 700 0.85rem/1 var(--font-mono);
+  opacity: 0.95;
+  letter-spacing: 0.04em;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.alert.sev1 { background: var(--hold); box-shadow: 0 0 25px rgba(255, 184, 0, 0.5); }
+.alert.info { background: #1E3A8A; box-shadow: 0 0 25px rgba(30, 58, 138, 0.5); }
+.alert.stop { background: #030712; border: 2px solid var(--alert); box-shadow: var(--alert-glow); }
+
+/* Indicador de Fase (Calibración / Ejercicio) */
+.phase-indicator {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  padding: 12px 18px;
+  border-radius: var(--radius-sm);
+  background: rgba(3, 7, 18, 0.88);
+  border: 1px solid var(--surface-border);
+  backdrop-filter: blur(14px);
+  z-index: 10;
+  max-width: min(22rem, 60%);
+  text-align: right;
+}
+.phase-label {
+  font: 800 clamp(0.8rem, 1.5vw, 0.95rem)/1.2 var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tape);
+}
+.phase-sub {
+  font: 500 0.82rem var(--font-body);
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* HUD Gigante a 2-3 Metros */
+.hud {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  padding: 16px 24px;
+  border-radius: var(--radius);
+  background: rgba(3, 7, 18, 0.88);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(14px);
+  color: #FFFFFF;
+  display: grid;
+  gap: 6px;
+  min-width: min(18rem, 65%);
+  z-index: 10;
+}
+.hud-phase {
+  font: 800 clamp(0.85rem, 1.8vw, 1.05rem)/1.2 var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tape);
+}
+.hud-count {
+  font: 900 clamp(3.2rem, 8vw, 5.2rem)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  color: #FFFFFF;
+  text-shadow: var(--accent-glow);
+}
+.hud-count .hud-total {
+  font-size: 0.48em;
+  opacity: 0.65;
+  margin-left: 6px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.hud-bar {
+  display: flex;
+  gap: 4px;
+  height: 10px;
+}
+.hud-bar span {
+  flex: 1;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: all 0.3s ease;
+}
+.hud-bar span.cal { background: rgba(0, 242, 254, 0.45); }
+.hud-bar span.done { background: var(--tape); box-shadow: var(--accent-glow); }
+.hud-bar span.done.flag { background: var(--alert); box-shadow: var(--alert-glow); }
+
+/* Cartel Grande Central */
+.announce {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90%, 42rem);
+  text-align: center;
+  padding: 24px 32px;
+  border-radius: var(--radius);
+  background: rgba(3, 7, 18, 0.92);
+  border: 1px solid var(--tape);
+  box-shadow: var(--accent-glow);
+  color: #FFFFFF;
+  backdrop-filter: blur(16px);
+  font: 900 clamp(1.8rem, 4.5vw, 3.2rem)/1.15 var(--font-display);
+  letter-spacing: -0.02em;
+  z-index: 35;
+}
+.announce.done { background: rgba(0, 255, 136, 0.92); color: #030712; }
+
+.pilot-dock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 18px;
+  background: rgba(11, 19, 37, 0.75);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+}
+.dock-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Pantalla completa: escenario entero (video, lecturas y botonera con "Dolor: detener") */
+.stage-wrapper:fullscreen {
+  margin: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-gradient);
+}
+.stage-wrapper:fullscreen .viewport { flex: 1 1 auto; aspect-ratio: auto; min-height: 0; max-height: none; }
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .viewport { max-height: 78svh; }                        /* celular girado: que entren video y botones */
+}
+@media (max-width: 640px) {
+  .stage-wrapper { padding: 8px; border-radius: var(--radius); margin-bottom: 16px; }
+  /* el video toma la forma de la cámara (vertical en celular) sin pasar del 70% de la altura */
+  .viewport { aspect-ratio: var(--src-ratio, 3 / 4); max-height: 70svh; border-radius: var(--radius-sm); }
+  .hud-status-badge, .hud-grid-overlay { display: none; }
+  .hud-corner { width: 10px; height: 10px; }
+  .hud-corner.tl, .hud-corner.tr { top: 6px; }
+  .hud-corner.bl, .hud-corner.br { bottom: 6px; }
+  .hud-corner.tl, .hud-corner.bl { left: 6px; }
+  .hud-corner.tr, .hud-corner.br { right: 6px; }
+  .placeholder { padding: 16px; }
+  .placeholder strong { font-size: 1.25rem; }
+  .placeholder span { font-size: 0.85rem; }
+  .phase-indicator { left: 8px; right: 8px; top: 8px; bottom: auto; max-width: none; text-align: left; padding: 6px 10px; }
+  .phase-label { font-size: 0.78rem; }
+  .phase-sub { font-size: 0.72rem; margin-top: 1px; }
+  .hud { left: 8px; bottom: 8px; padding: 6px 10px; min-width: 0; gap: 3px; }
+  .hud-phase { display: none; }                           /* la fase ya está arriba, en el indicador */
+  .hud-count { font-size: 1.9rem; }
+  .hud-bar { height: 5px; width: 8rem; gap: 3px; }
+  .alert { left: 8px; right: 8px; top: 8px; padding: 10px 12px; font-size: 1.15rem; flex-wrap: wrap; gap: 6px; }
+  .alert small { font-size: 0.72rem; }
+  .announce { width: 92%; padding: 14px 16px; font-size: 1.35rem; }
+  /* botonera: botones grandes para el dedo; cámara y "Dolor" a todo el ancho */
+  .pilot-dock { padding: 10px; gap: 10px; margin-top: 10px; }
+  .dock-group { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 8px; }
+  .dock-group .btn { justify-content: center; min-height: 44px; padding: 10px 12px; font-size: 0.85rem; }
+  .dock-group .btn.primary, .dock-group .btn.danger, .dock-group .status-line { grid-column: 1 / -1; }
+  .status-line { font-size: 0.75rem; }
 }

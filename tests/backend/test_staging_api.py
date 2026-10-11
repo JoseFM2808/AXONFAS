@@ -140,6 +140,29 @@ class StagingApiTest(unittest.TestCase):
         self.assertEqual(frame["points"], {"25": [0.5, 0.6]})
         self.assertNotIn("video", frame)
 
+    def test_seguimiento_de_la_galeria_en_vivo_y_sesion_con_conteo(self):
+        """ADR-014: un ejercicio guiado se puede hacer con la cámara (conteo, sin alertas) y queda como guided + camera."""
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "standing-row", "sets": 3, "reps": 8, "per_week": 3})
+        stream = self.doctor.call("GET", f"/api/patients/{self.patient_id}/live")
+        q = self.api.hub.subscribe(stream.channel)
+        patient.call("POST", "/api/live", {
+            "exercise_id": "standing-row", "source": "camera", "phase": "tracking", "reps_done": 4, "reps_total": 24,
+            "progress": 1.7, "metric": {"label": "Flexión de codo", "value": 92.46, "unit": "°", "extra": "x"},
+            "points": {"13": [0.4, 0.5], "15": [0.42, 0.6]}})
+        frame = q.get_nowait()
+        self.assertEqual(frame["progress"], 1.0, "el avance se recorta a 0-1")
+        self.assertEqual(frame["metric"], {"label": "Flexión de codo", "value": 92.5, "unit": "°"})
+        self.assertEqual(set(frame["points"]), {"13", "15"}, "codos y muñecas viajan para los ejercicios de brazo")
+        patient.call("POST", "/api/live", {"exercise_id": "standing-row", "metric": {"label": "x", "value": 1, "unit": "kg"}})
+        self.assertNotIn("metric", q.get_nowait(), "solo unidades conocidas")
+        status, _ = self.session(patient, exercise_id="standing-row", mode="guided", source="camera", reps=[], events=[],
+                                 reps_done=24)
+        self.assertEqual(status, 201)
+        _, detail = self.doctor.call("GET", f"/api/patients/{self.patient_id}")
+        self.assertEqual(detail["metrics"]["per_exercise"][0]["done_7d"], 1, "cuenta para el cumplimiento")
+        self.assertIsNone(detail["metrics"]["quality"], "sin alertas no hay indicador de calidad")
+
     def test_senalar_un_musculo_llega_al_paciente(self):
         patient = Client(self.api, self.join()[1]["token"])
         stream = patient.call("GET", "/api/me/stream")

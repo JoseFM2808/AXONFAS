@@ -16,7 +16,9 @@
     badges.className = 'badge-row';
     badges.innerHTML = `<span class="tag cal"></span><span class="tag ${e.monitoring === 'auto' ? 'ok' : 'warn'}"></span>`;
     badges.children[0].textContent = theme ? theme.name : e.theme;
-    badges.children[1].textContent = e.monitoring === 'auto' ? 'Monitoreo automático' : 'Guiado';
+    const track = window.AxonTracker && AxonTracker.SPECS[e.id];
+    badges.children[1].textContent = e.monitoring === 'auto' ? 'Alertas automáticas'
+      : track && track.quality === 'limited' ? 'Conteo con cámara (aprox.)' : 'Conteo con cámara';
     const title = document.createElement('h3');
     title.textContent = e.name;
     const goal = document.createElement('p');
@@ -89,12 +91,20 @@
       && (!q || norm(`${e.name} ${e.goal} ${B.muscleNames(e.muscles).join(' ')} ${e.bones.join(' ')}`).includes(q)));
     grid.innerHTML = '';
     list.forEach((e) => {
-      let extra = null;
+      // Todos se siguen con la cámara (ADR-014); sentarse y pararse además tiene alertas en el Prototipo (ADR-009).
+      const extra = document.createElement('div');
+      extra.className = 'row-between';
+      const track = document.createElement('a');
+      track.className = 'btn primary';
+      track.href = `seguimiento.html?ex=${encodeURIComponent(e.id)}`;
+      track.textContent = 'Seguir con la cámara';
+      extra.appendChild(track);
       if (e.monitoring === 'auto') {
-        extra = document.createElement('a');
-        extra.className = 'btn primary';
-        extra.href = 'index.html';
-        extra.textContent = 'Probar con la cámara';
+        const alerts = document.createElement('a');
+        alerts.className = 'btn';
+        alerts.href = 'index.html';
+        alerts.textContent = 'Con alertas (Prototipo)';
+        extra.appendChild(alerts);
       }
       grid.appendChild(exerciseCard(e, { extra }));
     });

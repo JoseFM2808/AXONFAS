@@ -2,8 +2,9 @@
  *
  * Cada ejercicio cita su fuente pública (AAOS OrthoInfo, NHS, CDC STEADI) y la dosis que esa fuente indica. Las
  * descripciones están escritas por el equipo; no copian el texto de las fuentes. `muscles` usa los nombres del mapa
- * corporal (body-map-data.js). `monitoring: 'auto'` = el motor de reglas lo vigila con la cámara (hoy solo sentarse y
- * pararse, ADR-009); `'guided'` = el paciente lo hace guiado por pasos y temporizador, sin detección de compensaciones.
+ * corporal (body-map-data.js). `monitoring: 'auto'` = el motor de reglas lo vigila con la cámara y avisa de compensaciones
+ * (hoy solo sentarse y pararse, ADR-009); `'guided'` = sin detección de compensaciones: se hace con la cámara, que cuenta
+ * repeticiones o sostenes (tracker.js, ADR-014), o guiado por pasos y temporizador.
  * Es material educativo para Staging: el fisioterapeuta ajusta dosis y elección por paciente. Navegador y Node.
  */
 (function (root, factory) {

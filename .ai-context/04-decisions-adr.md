@@ -134,6 +134,28 @@
 - **Consecuencias:** funciona en la red local sin GPU. En la nube, el gateway de AMD hará de relevo en lugar de
   `serve.py`. Validar la estimación de carga es TD-43, y el modelo 3D anatómico es TD-42.
 
+## ADR-014 · Seguimiento con cámara y conteo en todos los ejercicios de la galería — Aceptada
+
+- **Fecha:** 2026-10-11
+- **Contexto:** el owner probó la galería y solo veía imágenes de referencia: la cámara se usaba únicamente en sentarse y
+  pararse (ADR-009, ADR-011). Pidió ver su seguimiento corporal y contar repeticiones en todos los ejercicios.
+- **Decisión:** `tracker.js` define, para cada uno de los 24 ejercicios, una medida tomada de la pose de MediaPipe (un
+  ángulo, una distancia o un tiempo sostenido) y la cuenta en uno de tres modos. **Repeticiones:** ida y vuelta desde la
+  posición inicial, que se toma cuando la persona se queda quieta 1 s. **Sostén:** tiempo dentro de una condición, como
+  el pie levantado. **Manual:** para lo que la cámara no ve (abdomen, escápulas); la persona marca el sostén y la cámara
+  confirma que sigue en posición. `seguimiento.html` muestra el esqueleto, el valor junto a la articulación, el contador
+  grande, el mapa muscular según el avance y la tabla de repeticiones. **No emite alertas de compensación:** el motor
+  de reglas y sus alertas siguen siendo solo de sentarse y pararse (ADR-004, ADR-009). En modo paciente sigue la dosis
+  del plan y le manda al fisioterapeuta el esqueleto (15 puntos, ahora con brazos y orejas), la medida y el avance. La
+  sesión se guarda como `mode = 'guided'` y `source = 'camera'`.
+- **Consecuencias:**
+  - El cumplimiento de todo el plan puede venir de repeticiones contadas por la cámara.
+  - 14 de los 24 ejercicios se siguen de forma aproximada (acostados, de perfil o con profundidad estimada), y la
+    página lo avisa.
+  - Medidas y umbrales son valores de partida: validarlos es TD-48.
+  - La calidad se sigue midiendo solo en sesiones monitoreadas.
+  - Los estilos del escenario de cámara pasan a `hud.css`, compartidos por `index.html` y `seguimiento.html`.
+
 ---
 
 ## Anexo · Modelo de negocio acordado (hipótesis a validar, no es un ADR)

@@ -85,9 +85,10 @@ pacientes.
 | Página | Para quién | Qué hace |
 |---|---|---|
 | `index.html` | Validación con fisioterapeutas | Cámara, motor de reglas, guía, avisos y resultados. Con `?plan=sit-to-stand` y una cuenta de paciente entra en **modo paciente**: aplica el sobre del fisioterapeuta, transmite en vivo y guarda la sesión |
-| `galeria.html` | Todos | 24 ejercicios documentados por temática, con mapa muscular, huesos, dosis, precauciones y fuente (funciona también con doble clic) |
+| `galeria.html` | Todos | 24 ejercicios documentados por temática, con mapa muscular, huesos, dosis, precauciones y fuente (funciona también con doble clic). Cada tarjeta tiene "Seguir con la cámara" |
+| `seguimiento.html` | Todos | Cámara para cualquier ejercicio de la galería (ADR-014): esqueleto, el ángulo o la distancia que importa junto a la articulación, contador de repeticiones o de tiempo sostenido legible a 2–3 m, voz y mapa muscular que se enciende con el avance. **No avisa de compensaciones** (eso es solo sentarse y pararse en `index.html`). Con `?plan=1` y una cuenta de paciente sigue la dosis del plan, el fisioterapeuta lo ve en vivo y la sesión se guarda |
 | `doctor.html` | Fisioterapeuta | Cuenta de demostración, afiliar pacientes con código o QR, plan desde el catálogo, indicadores de cumplimiento y efectividad, sesión en vivo (mapa muscular estimado, esqueleto con huesos, alertas) y enseñar músculos al paciente |
-| `paciente.html` | Paciente | Afiliarse con el código o el QR y aceptar el consentimiento, ver el plan con lo que trabaja cada ejercicio, hacerlo (cámara o guiado) y recibir lo que señala su fisioterapeuta |
+| `paciente.html` | Paciente | Afiliarse con el código o el QR y aceptar el consentimiento, ver el plan con lo que trabaja cada ejercicio, hacerlo con la cámara (alertas en sentarse y pararse, conteo en los demás) o sin cámara (guiado) y recibir lo que señala su fisioterapeuta |
 
 Demo en un solo equipo: abre `doctor.html` en una pestaña y `paciente.html?code=<código>` en otra; en el modo paciente,
 "Ver el demo sintético" transmite una sesión completa sin pararse de la silla. Las cuentas son de prueba: sin
@@ -104,8 +105,10 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `share.js` | Botón "Probar en otro equipo" y QR (usa `/lan.json` de `serve.py`) |
 | `serve.py` | Servidor de red local: HTTP 8091 + HTTPS 8443 con certificado autofirmado, y la API de Staging (`src/backend/staging_api.py`) |
 | `catalog.js` | Catálogo de 24 ejercicios con fuente, dosis, músculos, huesos y precauciones (ADR-011) |
+| `tracker.js` | Seguimiento de cada ejercicio (ADR-014): qué medir con la pose, en qué modo contar (repeticiones, sostén o manual) y con qué valores de partida, no clínicos (TD-48). Funciones puras |
+| `seguimiento.html`, `seguimiento.js` | Página de seguimiento con la cámara y su modo paciente |
 | `body-map.js`, `body-map-data.js` | Mapa muscular 2D y estimación educativa de carga; polígonos de react-body-highlighter (MIT, atribución en el archivo) |
-| `hud.css` | Componentes compartidos del design system (cabecera, botones, tarjetas, tablas, mapa, indicadores) |
+| `hud.css` | Componentes compartidos del design system (cabecera, botones, tarjetas, tablas, mapa, indicadores y el escenario de cámara de `index.html` y `seguimiento.html`) |
 | `galeria.html`, `gallery.js` | Galería de ejercicios |
 | `doctor.html`, `doctor.js` | Panel del fisioterapeuta |
 | `paciente.html`, `patient.js` | Página del paciente y ejercicios guiados |
@@ -113,7 +116,7 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `engine.js` | Motor de reglas: ángulos, repeticiones, línea base, umbrales y eventos. Funciones puras |
 | `synthetic.js` | Sesiones sintéticas con la forma de la salida de MediaPipe (demo y tests) |
 
-Tests del motor, desde la carpeta del proyecto:
+Tests del motor, del catálogo y del seguimiento, desde la carpeta del proyecto:
 
 ```bash
 node --test "tests/validation-prototype/*.test.cjs"

@@ -31,9 +31,15 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 
 **Marco en vivo** (`POST /api/live`; el servidor descarta todo campo que no esté en esta lista, I-11):
 `{exercise_id, source, phase, posture, reps_done, reps_total, angles: {knee, trunk, valgusL, valgusR, confidence},
-points: {"0"|"11"|"12"|"23"|"24"|"25"|"26"|"27"|"28": [x, y]}, mirror, event?, ended?}`. `points` son coordenadas
-normalizadas de imagen (0–1). Al fisioterapeuta le llega con `kind: "frame"`; además recibe `kind: "session_saved"`
-cuando el paciente guarda una sesión.
+progress, metric: {label, value, unit}, points: {"0"|"7"|"8"|"11"|"12"|"13"|"14"|"15"|"16"|"23"|"24"|"25"|"26"|"27"|"28":
+[x, y]}, mirror, event?, ended?}`.
+- `points` son coordenadas normalizadas de imagen (0–1): nariz, orejas, hombros, codos, muñecas, caderas, rodillas y
+  tobillos.
+- `progress` (0–1, se recorta) y `metric` (`unit` = `°`, `cm` o `%`; `label` hasta 60 caracteres) los manda el
+  seguimiento de la galería (ADR-014). En ese caso `phase` es `setup` mientras toma la posición inicial y `tracking`
+  durante el conteo.
+- Al fisioterapeuta le llega con `kind: "frame"`; además recibe `kind: "session_saved"` cuando el paciente guarda una
+  sesión. Una sesión con conteo de cámara se guarda con `mode: "guided"` y `source: "camera"`.
 
 **Mensajes al paciente:** `{kind: "highlight", muscle?, exercise_id?, note?, from, at}` y `{kind: "plan_updated"}`.
 

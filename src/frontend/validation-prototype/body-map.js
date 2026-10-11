@@ -29,7 +29,9 @@
     { a: 23, b: 25, name: 'Fémur' }, { a: 24, b: 26, name: 'Fémur' },
     { a: 25, b: 27, name: 'Tibia y peroné' }, { a: 26, b: 28, name: 'Tibia y peroné' },
     { a: 23, b: 24, name: 'Pelvis' }, { a: 11, b: 12, name: 'Clavículas y escápulas' },
-    { a: 'hipMid', b: 'shoulderMid', name: 'Columna' },
+    { a: 'hipMid', b: 'shoulderMid', name: 'Columna' }, { a: 'shoulderMid', b: 0, name: 'Columna cervical' },
+    { a: 11, b: 13, name: 'Húmero' }, { a: 12, b: 14, name: 'Húmero' },
+    { a: 13, b: 15, name: 'Cúbito y radio' }, { a: 14, b: 16, name: 'Cúbito y radio' },
   ];
 
   const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
@@ -44,10 +46,14 @@
   /**
    * Estimación educativa en vivo. Para sentarse y pararse, la flexión de rodilla carga cuádriceps y glúteos y la
    * inclinación del tronco carga isquiotibiales y zona lumbar; el valgo pone en foco a los abductores (glúteo medio),
-   * que son los que la evitan. Para los demás ejercicios devuelve la carga fija del catálogo.
+   * que son los que la evitan. En los demás ejercicios, con `progress` (avance del movimiento de 0 a 1 que mide
+   * tracker.js, ADR-014) los músculos del catálogo se encienden a medida que la persona llega al recorrido pedido; sin
+   * él, devuelve la carga fija del catálogo.
    */
-  function estimateLoad(exercise, angles) {
-    if (!exercise || exercise.id !== 'sit-to-stand' || !angles) return staticLoad(exercise);
+  function estimateLoad(exercise, angles, progress) {
+    if (!exercise || exercise.id !== 'sit-to-stand' || !angles) {
+      return Number.isFinite(progress) ? staticLoad(exercise, 0.2 + 0.75 * clamp01(progress)) : staticLoad(exercise);
+    }
     const k = clamp01(angles.knee / 95);
     const t = clamp01(angles.trunk / 45);
     const v = clamp01(Math.max(angles.valgusL || 0, angles.valgusR || 0) / 15);

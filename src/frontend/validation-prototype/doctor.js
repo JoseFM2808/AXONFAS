@@ -172,7 +172,8 @@
       const env = item.safety_envelope;
       const dose = `${item.sets} × ${item.reps}${item.hold_seconds ? ` · ${item.hold_seconds} s` : ''}`;
       const week = perEx[item.exercise_id] ? `${perEx[item.exercise_id].done_7d} de ${item.per_week}` : `0 de ${item.per_week}`;
-      const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps` : 'guiado';
+      const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps`
+        : 'sin alertas: conteo con cámara o guiado';
       [ex ? ex.name : item.exercise_id, dose, week, envText].forEach((t) => tr.appendChild(el('td', null, t)));
       body.appendChild(tr);
     });
@@ -191,7 +192,8 @@
     d.sessions.forEach((s) => {
       const ex = C.get(s.exercise_id);
       const tr = el('tr');
-      [fmtDate(s.ended_at), ex ? ex.name : s.exercise_id, SOURCE[s.source] || s.source, String(s.reps_done)]
+      [fmtDate(s.ended_at), ex ? ex.name : s.exercise_id,
+        s.mode === 'guided' && s.source === 'camera' ? 'Cámara (conteo)' : SOURCE[s.source] || s.source, String(s.reps_done)]
         .forEach((t) => tr.appendChild(el('td', null, t)));
       const end = el('td');
       end.appendChild(el('span', `tag ${s.end_reason === 'completed' ? 'ok' : s.end_reason === 'pain_stop' ? 'bad' : 'warn'}`, END[s.end_reason] || s.end_reason));
@@ -360,12 +362,18 @@
       return;
     }
     setLiveStatus(true, `En sesión · ${ex ? ex.name : 'ejercicio'}`);
-    const phase = msg.phase === 'calibrating' ? 'calibrando' : msg.phase === 'exercising' ? 'con alertas' : msg.phase;
+    const phase = { calibrating: 'calibrando', exercising: 'con alertas', setup: 'tomando la posición inicial',
+      tracking: 'seguimiento y conteo (sin alertas)', guided: 'guiado' }[msg.phase] || msg.phase;
     $('live-info').textContent = `${SOURCE[msg.source] || ''} · ${phase || ''} · repeticiones ${msg.reps_done ?? 0}`
       + `${msg.reps_total ? ` de ${msg.reps_total}` : ''}`;
     const alerts = Date.now() < state.alertUntil ? state.alertMuscles : [];
-    state.liveMap.update({ intensities: B.estimateLoad(ex, msg.angles), alerts });
-    if (msg.angles) {
+    state.liveMap.update({ intensities: B.estimateLoad(ex, msg.angles, msg.progress), alerts });
+    if (msg.metric) {                                 // seguimiento de la galería (ADR-014): la medida de ese ejercicio
+      const m = msg.metric;
+      const unit = m.unit === '°' ? '°' : ` ${m.unit}`;
+      $('live-angles').replaceChildren(kpi(m.label, `${m.unit === 'cm' ? m.value.toFixed(1) : Math.round(m.value)}${unit}`,
+        msg.progress != null ? `${Math.round(msg.progress * 100)} % del recorrido pedido` : ''));
+    } else if (msg.angles) {
       const a = msg.angles;
       const items = [['Rodilla', a.knee], ['Tronco', a.trunk], ['Valgo izq.', a.valgusL], ['Valgo der.', a.valgusR]];
       $('live-angles').replaceChildren(...items.map(([k, v]) => kpi(k, v == null ? '—' : `${Math.round(v)}°`, '')));

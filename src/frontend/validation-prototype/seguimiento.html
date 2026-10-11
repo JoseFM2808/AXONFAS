@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Seguimiento con la cámara</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<!-- Tokens solo en docs/design-system/tokens.css (TD-35); componentes y escenario de cámara en hud.css. -->
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+<style>
+/* Propio de esta página: selector de ejercicio, lecturas bajo el video y columnas de abajo. */
+.track-head { align-items: flex-end; margin-bottom: 6px; }
+.track-head .field { min-width: min(100%, 22rem); }
+.track-notes { display: grid; gap: 8px; margin-bottom: 16px; }
+.track-readouts { margin-top: 12px; }
+.track-readouts .kpi.on { border-color: var(--tape); box-shadow: var(--accent-glow); }
+.track-meter { height: 10px; margin-top: 6px; }
+.track-meter > span { transition: width 0.12s linear; }
+.track-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-bottom: 24px; }
+.track-grid ol, .track-grid ul { padding-left: 1.2em; display: grid; gap: 6px; font-size: 0.92rem; }
+.track-grid h3 { font: 700 0.95rem var(--font-display); margin: 14px 0 6px; color: var(--ink); }
+.track-grid .source { font-size: 0.78rem; color: var(--muted); }
+.track-grid .source a { color: var(--tape); }
+.hud-sub { font: 600 0.85rem var(--font-mono); color: var(--muted); }
+@media (max-width: 900px) { .track-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .track-grid { gap: 16px; }
+  .hud-sub { font-size: 0.7rem; }
+}
+</style>
+</head>
+<body>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Seguimiento con la cámara</span></h1>
+      <p>Prototipo: la pose se estima en este navegador y el conteo sale de reglas fijas. No usa IA ni GPU.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html" aria-current="page">Galería</a>
+    <a href="doctor.html">Fisioterapeuta</a>
+    <a href="paciente.html">Paciente</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="row-between track-head">
+    <div>
+      <a class="link" id="back" href="galeria.html">← Volver a la galería</a>
+      <h2 class="page-title" id="ex-title">Seguimiento con la cámara</h2>
+    </div>
+    <div class="field">
+      <label for="ex-select">Ejercicio</label>
+      <select id="ex-select"></select>
+    </div>
+  </div>
+  <p class="page-lede" id="ex-goal"></p>
+  <div class="track-notes">
+    <p class="notice" id="ex-scope">Ves tu esqueleto, el ángulo que importa en este ejercicio y los músculos que trabaja. Cuenta
+      repeticiones o el tiempo sostenido con valores de partida, no clínicos. <strong>No avisa de compensaciones:</strong> eso
+      solo lo hace <a class="link" href="index.html">Sentarse y pararse</a>, en el Prototipo. El video no sale de este equipo.</p>
+    <p class="notice" id="ex-limited" hidden></p>
+    <section class="panel-card" id="patient-banner" hidden><p id="patient-text" class="muted"></p></section>
+  </div>
+
+  <main class="stage-wrapper" id="stage">
+    <div class="viewport" id="viewport">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay" width="1280" height="720"></canvas>
+      <div class="hud-grid-overlay"></div>
+      <div class="hud-corner tl"></div><div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div><div class="hud-corner br"></div>
+
+      <div class="phase-indicator">
+        <div class="phase-label" id="phase">Esperando la cámara</div>
+        <div class="phase-sub" id="phase-sub">Toca "Usar la cámara" para empezar.</div>
+      </div>
+
+      <div class="placeholder" id="placeholder">
+        <strong id="ph-title">Sigue tu ejercicio con la cámara</strong>
+        <span id="ph-camera"></span>
+      </div>
+
+      <div class="alert info" id="alert" role="status" hidden>
+        <span id="alert-text"></span>
+        <small id="alert-meta"></small>
+      </div>
+
+      <div class="hud" id="hud" hidden>
+        <div class="hud-phase" id="hud-phase">Serie 1 de 1</div>
+        <div class="hud-count"><span id="hud-done">0</span><span class="hud-total">/ <span id="hud-total">10</span></span></div>
+        <div class="hud-sub" id="hud-sub"></div>
+        <div class="hud-bar" id="hud-bar" aria-hidden="true"></div>
+      </div>
+
+      <div class="announce" id="announce" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <div class="kpis track-readouts" aria-live="off">
+      <div class="kpi" id="ro-value">
+        <span class="k" id="ro-label">Medida</span><span class="v">—</span><span class="s"></span>
+        <div class="meter track-meter"><span id="ro-meter" style="width:0%"></span></div>
+      </div>
+      <div class="kpi" id="ro-rest"><span class="k">Posición inicial</span><span class="v">—</span><span class="s">referencia de esta sesión</span></div>
+      <div class="kpi" id="ro-goal"><span class="k">Recorrido pedido</span><span class="v">—</span><span class="s"></span></div>
+      <div class="kpi" id="ro-hold"><span class="k">Sostener</span><span class="v">—</span><span class="s"></span></div>
+    </div>
+
+    <div class="pilot-dock">
+      <div class="dock-group">
+        <button class="btn primary" id="btn-camera" type="button">📹 Usar la cámara</button>
+        <button class="btn primary" id="btn-hold" type="button" hidden disabled>⏱ Sostener</button>
+        <button class="btn" id="btn-recal" type="button" disabled>↺ Recalibrar</button>
+        <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
+        <label class="check"><input type="checkbox" id="voice" checked> Voz</label>
+        <span class="status-line" id="source-status">Sin cámara.</span>
+      </div>
+      <div class="dock-group">
+        <button class="btn danger" id="btn-pain" type="button" disabled>🛑 Dolor: detener</button>
+        <button class="btn" id="btn-stop" type="button" disabled>Terminar</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="track-grid">
+    <section class="panel-card">
+      <h2>Músculos que trabajas</h2>
+      <div id="live-map"></div>
+      <p class="bodymap-note">Se encienden a medida que llegas al recorrido pedido. Es una estimación educativa a partir del
+        movimiento, no una medición de la fuerza ni un diagnóstico.</p>
+    </section>
+    <section class="panel-card">
+      <h2>Cómo se hace</h2>
+      <p class="muted" id="how-position"></p>
+      <ol id="how-steps"></ol>
+      <h3>Dónde va la cámara</h3>
+      <p class="muted" id="how-camera"></p>
+      <h3>Dosis</h3>
+      <p class="muted" id="how-dose"></p>
+      <h3>Precauciones</h3>
+      <ul id="how-prec"></ul>
+      <p class="source" id="how-source" style="margin-top:12px;"></p>
+    </section>
+  </div>
+
+  <section class="panel-card">
+    <h2>Repeticiones de esta sesión</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Lado</th><th>Recorrido máximo</th><th>Sostuvo</th><th>Duración</th></tr></thead>
+        <tbody id="reps-body"><tr><td colspan="5" class="empty">Todavía no hay repeticiones.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    AXONFAS · prototipo de validación. La pose se estima en este navegador con MediaPipe; el conteo y los umbrales son
+    valores de partida para validar con fisioterapeutas (TD-48). Solo Sentarse y pararse tiene alertas de compensación
+    (ADR-009). No es un dispositivo médico.
+  </footer>
+</div>
+
+<script src="body-map-data.js"></script>
+<script src="body-map.js"></script>
+<script src="catalog.js"></script>
+<script src="tracker.js"></script>
+<script src="api-client.js"></script>
+<script src="teach-toast.js"></script>
+<script src="seguimiento.js"></script>
+</body>
+</html>

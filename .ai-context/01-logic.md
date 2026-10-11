@@ -101,7 +101,8 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-8 | Un reporte sin `reviewed_by` es borrador y no se exporta fuera de Staging | ADR-008, 03 |
 | I-9 | No se registra una sesión de un ejercicio que no esté en el plan activo del paciente; en los monitoreados, el sobre lo fija el fisioterapeuta y el paciente no lo puede cambiar | ADR-005, ADR-012 |
 | I-10 | Un fisioterapeuta solo ve y modifica a sus propios pacientes; a cualquier otro la API le responde "no existe" | ADR-012 |
-| I-11 | El canal en vivo lleva ángulos, fase, repeticiones, eventos y 9 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013 |
+| I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
+| I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -147,7 +148,32 @@ cita su fuente pública y la dosis que esa fuente indica; el fisioterapeuta la a
 | Monitoreo | Ejercicios | Qué hace el sistema |
 |---|---|---|
 | Automático | Sentarse y pararse (la prueba de 30 s de CDC STEADI) | Cámara, motor de reglas, línea base y alertas (secciones anteriores) |
-| Guiado | Los otros 23 | Muestra pasos, músculos y huesos; cuenta series y el tiempo de sostén; el paciente marca cada serie. Sin detección de compensaciones |
+| Seguimiento con cámara | Los 24, incluido sentarse y pararse (ADR-014) | Esqueleto, medida del ejercicio, conteo de repeticiones o sostenes y mapa muscular según el avance. Sin detección de compensaciones (sección siguiente) |
+| Guiado sin cámara | Los otros 23, como alternativa | Muestra pasos, músculos y huesos; cuenta series y el tiempo de sostén; el paciente marca cada serie |
+
+## Seguimiento con la cámara (ADR-014)
+
+`tracker.js` mide un valor por frame con los puntos "world" de MediaPipe y cuenta según el modo del ejercicio. Todos los
+números son valores de partida, no clínicos (TD-48). Código y valores por ejercicio en `SPECS`; tests en
+`tests/validation-prototype/tracker.test.cjs`.
+
+| Modo | Ejercicios | Regla |
+|---|---|---|
+| Repeticiones | Sentadilla parcial, extensión y flexión de rodilla, elevación de talones y de pierna recta, abducción de cadera, almeja, rodilla al pecho, puente, perro de caza, retracción cervical, inclinación del cuello, rotación de tronco, péndulo, rotaciones con banda, remo, sentarse y pararse | Primero toma la posición inicial: el valor quieto durante 1 s. Una repetición cuenta al alejarse el recorrido pedido (`delta`) en el sentido del ejercicio y volver a menos del 35 % de ese recorrido. Si llega a la mitad pero no al total, es una repetición incompleta y no cuenta. Si la dosis pide sostener, se mide el tiempo dentro del 85 % del recorrido y se marca si fue corto |
+| Sostén | Postura en tándem, apoyo en un pie, estiramiento de isquiotibiales, estiramiento cruzado del hombro | Cuenta el tiempo mientras se cumple la condición (por ejemplo, el pie a 5 cm o más del suelo). Al llegar al tiempo de la dosis, suma uno. Los cortes de menos de 0,4 s no reinician el sostén |
+| Manual | Activación abdominal, retracción escapular | La cámara no ve el músculo. La persona toca "Sostener" y el sostén cuenta solo si la cámara la sigue viendo hasta el final; si la pierde más de 1,5 s, se cancela |
+
+- **De un lado o de los dos:** las medidas de un lado usan el lado que más se mueve (flexión de rodilla de pie) o el
+  promedio de los dos (sentadilla). Los ejercicios "por lado" (cuello, rotación de tronco, estiramiento cruzado) cuentan
+  ambos lados en la meta de cada serie.
+- **Incertidumbre:** si la visibilidad de los puntos de la medida baja de 0,5, el frame no cuenta y se avisa "no te
+  veo bien". Durante el reposo, la posición inicial sigue despacio a la persona, solo dentro del 15 % del recorrido
+  pedido.
+- **Aproximados:** 14 ejercicios se siguen peor porque se hacen acostados, de perfil o con la profundidad que estima
+  la cámara. La página lo avisa e indica dónde poner la cámara.
+- **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta
+  o, sin plan, de la fuente. Al cerrar cada serie se anuncia un descanso; al llegar al total, la sesión termina como
+  `completed`.
 
 ## Cuentas y seguimiento (ADR-012)
 
@@ -179,14 +205,17 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 ## Vista corporal en vivo (ADR-013)
 
 El paciente publica cada ~200 ms los ángulos, la fase, las repeticiones y 9 puntos 2D (nariz, hombros, caderas, rodillas
-y tobillos). El fisioterapeuta ve:
+y tobillos). Con el seguimiento de la galería (ADR-014) publica además la medida del ejercicio, el avance (0 a 1) y 15
+puntos (suma orejas, codos y muñecas). El fisioterapeuta ve:
 
 - **Mapa muscular** (frente y espalda) con la carga **estimada**. En sentarse-pararse, la flexión de rodilla carga el
   cuádriceps y los glúteos, la inclinación del tronco carga los isquiotibiales y la zona lumbar, y el valgo pone en foco a
-  los abductores (glúteo medio). En los ejercicios guiados se encienden los músculos del catálogo. Ante una compensación
+  los abductores (glúteo medio). En los demás ejercicios se encienden los músculos del catálogo, más intensos a medida
+  que la persona llega al recorrido pedido (con seguimiento) o fijos (guiado sin cámara). Ante una compensación
   se marcan en rojo durante 3 s los músculos donde mirar: zona lumbar y glúteos para el tronco, abductores y glúteos para
   el valgo.
-- **Esqueleto** con los huesos rotulados (fémur, tibia y peroné, pelvis, columna, clavículas y escápulas), los ángulos,
+- **Esqueleto** con los huesos rotulados (fémur, tibia y peroné, pelvis, columna, columna cervical, clavículas y
+  escápulas, húmero, cúbito y radio), los ángulos o la medida del ejercicio,
   la fase, el conteo de repeticiones y el registro de alertas.
 - **Enseñanza:** al tocar un músculo o enviar un ejercicio, al paciente le aparece en su pantalla el mapa con lo que
   trabaja y los huesos que mueve.

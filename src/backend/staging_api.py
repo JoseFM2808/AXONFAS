@@ -57,7 +57,9 @@ CREATE INDEX IF NOT EXISTS idx_session_patient ON session(patient_id, ended_at);
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"        # sin I, O, 0, 1 para dictarlo sin confusiones
 END_REASONS = {"completed", "pain_stop", "envelope_breach", "user_quit"}
 EVENT_TYPES = {"trunk_flexion", "knee_valgus"}
-LIVE_POINTS = {"0", "11", "12", "23", "24", "25", "26", "27", "28"}   # nariz, hombros, caderas, rodillas, tobillos
+# nariz, orejas, hombros, codos, muñecas, caderas, rodillas, tobillos (ADR-013; brazos y orejas para la galería, ADR-014)
+LIVE_POINTS = {"0", "7", "8", "11", "12", "13", "14", "15", "16", "23", "24", "25", "26", "27", "28"}
+METRIC_UNITS = {"°", "cm", "%"}
 MAX_BODY = 256 * 1024
 
 
@@ -507,6 +509,13 @@ class StagingApi:
                                and all(isinstance(x, (int, float)) for x in v)}
         if isinstance(data.get("mirror"), bool):
             frame["mirror"] = data["mirror"]
+        progress = data.get("progress")                    # avance del movimiento 0-1 en el seguimiento (ADR-014)
+        if isinstance(progress, (int, float)) and not isinstance(progress, bool):
+            frame["progress"] = round(min(1.0, max(0.0, float(progress))), 3)
+        metric = data.get("metric")
+        if (isinstance(metric, dict) and isinstance(metric.get("label"), str) and metric.get("unit") in METRIC_UNITS
+                and isinstance(metric.get("value"), (int, float)) and not isinstance(metric.get("value"), bool)):
+            frame["metric"] = {"label": metric["label"][:60], "value": round(float(metric["value"]), 1), "unit": metric["unit"]}
         event = data.get("event")
         if isinstance(event, dict) and event.get("type") in EVENT_TYPES:
             frame["event"] = {k: event.get(k) for k in ("type", "side", "rep", "value", "threshold", "severity")}

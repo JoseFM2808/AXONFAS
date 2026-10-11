@@ -52,3 +52,12 @@ test('los ejercicios guiados usan la carga fija del catálogo', () => {
   const ex = C.get('calf-raises');
   assert.deepEqual(Object.keys(B.estimateLoad(ex, { knee: 90 })).sort(), [...ex.muscles].sort());
 });
+
+test('con seguimiento, los músculos del catálogo se encienden con el avance del movimiento (ADR-014)', () => {
+  const ex = C.get('standing-row');
+  const rest = B.estimateLoad(ex, null, 0);
+  const top = B.estimateLoad(ex, null, 1);
+  assert.deepEqual(Object.keys(top).sort(), [...ex.muscles].sort());
+  for (const m of ex.muscles) assert.ok(top[m] > rest[m] && top[m] <= 1 && rest[m] > 0);
+  assert.ok(B.BONES.some((b) => b.name === 'Húmero'), 'el esqueleto en vivo incluye los brazos');
+});

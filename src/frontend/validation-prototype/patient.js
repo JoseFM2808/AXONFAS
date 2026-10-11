@@ -1,6 +1,7 @@
 /* AXONFAS · página del paciente (ADR-012, ADR-013): afiliación con consentimiento, plan con mapa muscular,
  * ejercicios guiados (series, sostén con temporizador) y avisos de enseñanza del fisioterapeuta.
- * El ejercicio monitoreado (sentarse y pararse) se hace en index.html?plan=sit-to-stand (patient-link.js).
+ * El ejercicio con alertas (sentarse y pararse) se hace en index.html?plan=sit-to-stand (patient-link.js); los demás
+ * también se pueden hacer con la cámara en seguimiento.html?ex=<id>&plan=1, que cuenta repeticiones (ADR-014).
  */
 (() => {
   'use strict';
@@ -94,17 +95,20 @@
         note.textContent = `Nota de tu fisioterapeuta: ${item.notes}`;
         actions.appendChild(note);
       }
-      const start = document.createElement(ex.monitoring === 'auto' ? 'a' : 'button');
+      const start = document.createElement('a');
       start.className = 'btn primary';
-      if (ex.monitoring === 'auto') {
-        start.href = `index.html?plan=${encodeURIComponent(ex.id)}`;
-        start.textContent = 'Empezar con la cámara';
-      } else {
-        start.type = 'button';
-        start.textContent = 'Empezar guiado';
-        start.addEventListener('click', () => startGuided(item, ex));
-      }
+      start.textContent = 'Empezar con la cámara';
+      start.href = ex.monitoring === 'auto' ? `index.html?plan=${encodeURIComponent(ex.id)}`      // con alertas
+        : `seguimiento.html?ex=${encodeURIComponent(ex.id)}&plan=1`;                                  // con conteo
       actions.appendChild(start);
+      if (ex.monitoring !== 'auto') {
+        const guided = document.createElement('button');
+        guided.type = 'button';
+        guided.className = 'btn';
+        guided.textContent = 'Sin cámara (guiado)';
+        guided.addEventListener('click', () => startGuided(item, ex));
+        actions.appendChild(guided);
+      }
       grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item) }));
     });
   }

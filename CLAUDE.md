@@ -67,7 +67,7 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 ```bash
 py ../.claude/context-sync/context_sync.py     # después de cada cambio técnico, desde esta carpeta
 py src/frontend/context-panel/build_panel.py   # regenera el panel de contexto desde .ai-context/
-node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo y estimación de carga (TD-28, ADR-011/013)
+node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada y seguimiento (TD-28, ADR-011/013/014)
 py -m unittest discover -s tests/backend              # API de Staging: cuentas, planes, sesiones, en vivo (ADR-012)
 ```
 
@@ -75,6 +75,8 @@ Cuentas de demostración (ADR-012): `doctor.html` (fisioterapeuta) y `paciente.h
 contraseñas y solo datos de prueba con seudónimo; la base vive en `~/.axonfas/staging.sqlite3`, nunca en el repo. La
 galería sale de `catalog.js`: todo ejercicio nuevo cita una fuente pública (URL https), su dosis y sus precauciones, con
 descripción propia (no copiar textos de la fuente). Solo `monitoring: 'auto'` si el motor de reglas lo vigila (ADR-009).
+Todo ejercicio nuevo necesita además su entrada en `SPECS` de `tracker.js` (seguimiento con cámara, ADR-014; un test lo
+exige). El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
 La carga muscular del mapa es una estimación educativa: nunca se presenta como medición ni diagnóstico (ADR-013).
 
 El prototipo de validación (`src/frontend/validation-prototype/`) se abre con doble clic en `index.html` o con
