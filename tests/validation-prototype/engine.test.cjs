@@ -120,3 +120,65 @@ test('el botón de dolor termina la sesión y deja de evaluar', () => {
   assert.equal(after.endReason, 'pain_stop');
   assert.equal(after.angles, null);
 });
+
+/** Sentado (rodillas a 90°) con la pierna izquierda estirada hacia adelante en una fracción `e` (0 = apoyada). */
+function seatedOneLeg(e) {
+  const pts = pose({ kneeFlex: 90 });
+  const s = Math.min(1, Math.max(0, e));
+  // la tibia izquierda gira desde vertical (tobillo en el suelo) hasta quedar en línea con el muslo (hacia la cámara)
+  const a = (s * Math.PI) / 2;
+  pts[27] = { x: 0.1, y: 0.45 + 0.43 * Math.cos(a), z: -0.43 * Math.sin(a), visibility: 0.95 };
+  return pts;
+}
+
+/** Sesión a mano: lista de [ms, pose] a 30 fps. */
+function runPoses(segments, config) {
+  const session = E.createSession(config);
+  const outs = [];
+  let t = 0;
+  segments.forEach(([ms, make]) => {
+    const n = Math.round(ms / 33);
+    for (let i = 0; i < n; i += 1) {
+      const pts = make(n > 1 ? i / (n - 1) : 1);
+      outs.push(session.update({ t, world: pts, visibility: pts }));
+      t += 33;
+    }
+  });
+  return { session, outs };
+}
+
+test('levantar una pierna sentado no cuenta como pararse (TD-55)', () => {
+  const a = E.computeAngles(seatedOneLeg(1));
+  assert.ok(a.knee < 65, 'el promedio de rodillas sí baja: por eso antes contaba');
+  assert.ok(a.hipHeight < 0.6 && a.feetLevel > 0.4, 'la cadera no sube y un tobillo queda en el aire');
+  const cycle = [[600, () => seatedOneLeg(0)], [600, (k) => seatedOneLeg(k)], [500, () => seatedOneLeg(1)], [600, (k) => seatedOneLeg(1 - k)]];
+  const { session, outs } = runPoses([...cycle, ...cycle, ...cycle]);
+  assert.equal(session.reps.length, 0, 'ninguna repetición');
+  const aborted = outs.filter((o) => o.aborted).map((o) => o.aborted.reason);
+  assert.deepEqual(aborted, ['one_leg', 'one_leg', 'one_leg'], 'avisa que fue con una pierna');
+});
+
+test('pararse a medias no cuenta y avisa que no llegó arriba', () => {
+  const half = (k) => pose({ kneeFlex: 90 - 45 * k });                   // sube solo hasta 45° de rodilla
+  const back = (k) => pose({ kneeFlex: 45 + 45 * k });
+  const { session, outs } = runPoses([[600, () => pose({ kneeFlex: 90 })], [700, half], [400, () => pose({ kneeFlex: 45 })], [700, back]]);
+  assert.equal(session.reps.length, 0);
+  assert.equal(outs.find((o) => o.aborted).aborted.reason, 'not_standing');
+});
+
+test('de pie de verdad exige las dos rodillas estiradas, la cadera arriba y los dos pies en el suelo', () => {
+  const standing = E.computeAngles(pose({ kneeFlex: 0 }));
+  near(standing.hipHeight, 1, 0.02, 'de pie, la cadera está a un largo de pierna de los tobillos');
+  near(standing.feetLevel, 0, 0.01, 'pies al mismo nivel');
+  const seated = E.computeAngles(pose({ kneeFlex: 90 }));
+  near(seated.hipHeight, 0.49, 0.03, 'sentado, a la mitad');
+  // la demo sigue contando sus 10 repeticiones reales
+  const { session } = run(S.DEFAULT_SCRIPT);
+  assert.equal(session.reps.length, 10);
+});
+
+test('una compensación que la cámara no ve bien no se evalúa (ADR-015)', () => {
+  const { session } = run(S.DEFAULT_SCRIPT, { disabled: { valgus: true } });
+  const events = session.events.map((e) => e.type);
+  assert.deepEqual(events, ['trunk_flexion'], 'el valgo no alerta con la cámara de lado; el tronco sí');
+});

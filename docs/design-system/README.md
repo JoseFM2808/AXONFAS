@@ -119,3 +119,17 @@ en el aviso de enseñanza.
 - Todo ejercicio nuevo del catálogo necesita su figura y su `FOCUS`, y al menos uno de sus músculos tiene que verse en
   la vista de su figura. Los tests lo exigen.
 
+---
+
+## 5. Componente: preparar la cámara (`.cam-setup` y `.cam-check`)
+
+Antes de cada sesión con cámara (`camera-setup.js`, ADR-015).
+
+- **Tarjetas de posición (`.cam-option`):** una por vista (en diagonal, de frente, de lado). Cada una lleva un diagrama
+  visto desde arriba (persona en `--muscle`, cámara y línea de visión en `--tape`), la indicación y la calidad de cada
+  medida (`.cam-q`): buena en `--safe`, regular en `--hold` y poco confiable en `--alert`. La recomendada lleva la
+  etiqueta "Recomendada" en `--safe`; la elegida, el borde y el brillo de `--tape`.
+- **Chequeo en vivo (`.cam-check`):** sobre el video, abajo a la izquierda (a todo el ancho en celular). Muestra una lista
+  con ✓ (`--safe`), ✗ (`--alert`) o ! (`--hold`) para cuerpo a la vista, distancia y ángulo, la calidad con la vista
+  real, una barra que se llena mientras la posición se mantiene y el botón "Empezar ya".
+

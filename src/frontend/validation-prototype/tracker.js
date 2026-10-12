@@ -60,33 +60,33 @@
   const conf = (v, ids) => Math.min(...ids.map(v));
 
   const METRICS = {
-    kneeFlex: { label: 'Flexión de rodilla', unit: '°', sided: true,
+    kneeFlex: { label: 'Flexión de rodilla', unit: '°', plane: 'sagittal', need: [23, 24, 25, 26, 27, 28], sided: true,
       fn: (p, v, s) => ({ value: 180 - angleAt(p(s.hip), p(s.kn), p(s.an)), conf: conf(v, [s.hip, s.kn, s.an]) }) },
-    hipFlex: { label: 'Flexión de cadera', unit: '°', sided: true,
+    hipFlex: { label: 'Flexión de cadera', unit: '°', plane: 'sagittal', need: [11, 12, 23, 24, 25, 26], sided: true,
       fn: (p, v, s) => ({ value: 180 - angleAt(p(s.sh), p(s.hip), p(s.kn)), conf: conf(v, [s.sh, s.hip, s.kn]) }) },
-    hipLine: { label: 'Alineación hombro-cadera-rodilla', unit: '°', sided: true,
+    hipLine: { label: 'Alineación hombro-cadera-rodilla', unit: '°', plane: 'sagittal', need: [11, 12, 23, 24, 25, 26], sided: true,
       fn: (p, v, s) => ({ value: angleAt(p(s.sh), p(s.hip), p(s.kn)), conf: conf(v, [s.sh, s.hip, s.kn]) }) },
-    straightLegRaise: { label: 'Elevación de la pierna estirada', unit: '°', sided: true,
+    straightLegRaise: { label: 'Elevación de la pierna estirada', unit: '°', plane: 'sagittal', need: [11, 12, 23, 24, 25, 26, 27, 28], sided: true,
       fn: (p, v, s) => {
         const knee = 180 - angleAt(p(s.hip), p(s.kn), p(s.an));
         return { value: knee <= 30 ? 180 - angleAt(p(s.sh), p(s.hip), p(s.kn)) : null, conf: conf(v, [s.sh, s.hip, s.kn, s.an]) };
       } },
-    kneeStraightRaised: { label: 'Rodilla estirada con la pierna arriba', unit: '°', sided: true,
+    kneeStraightRaised: { label: 'Rodilla estirada con la pierna arriba', unit: '°', plane: 'sagittal', need: [11, 12, 23, 24, 25, 26, 27, 28], sided: true,
       fn: (p, v, s) => {
         const hip = 180 - angleAt(p(s.sh), p(s.hip), p(s.kn));
         return { value: hip >= 50 ? angleAt(p(s.hip), p(s.kn), p(s.an)) : null, conf: conf(v, [s.sh, s.hip, s.kn, s.an]) };
       } },
-    shoulderElev: { label: 'Elevación del brazo', unit: '°', sided: true,
+    shoulderElev: { label: 'Elevación del brazo', unit: '°', plane: 'sagittal', need: [11, 12, 13, 14, 23, 24], sided: true,
       fn: (p, v, s) => ({ value: angleBetween(sub(p(s.el), p(s.sh)), sub(p(s.hip), p(s.sh))), conf: conf(v, [s.sh, s.el, s.hip]) }) },
-    elbowFlex: { label: 'Flexión de codo', unit: '°', sided: true,
+    elbowFlex: { label: 'Flexión de codo', unit: '°', plane: 'sagittal', need: [11, 12, 13, 14, 15, 16], sided: true,
       fn: (p, v, s) => ({ value: 180 - angleAt(p(s.sh), p(s.el), p(s.wr)), conf: conf(v, [s.sh, s.el, s.wr]) }) },
-    armHang: { label: 'Vaivén del brazo', unit: '°', sided: true,
+    armHang: { label: 'Vaivén del brazo', unit: '°', plane: 'sagittal', need: [11, 12, 15, 16], sided: true,
       fn: (p, v, s) => ({ value: angleBetween(sub(p(s.wr), p(s.sh)), DOWN), conf: conf(v, [s.sh, s.wr]) }) },
-    crossArm: { label: 'Brazo cruzado sobre el pecho', unit: '°', sided: true,
+    crossArm: { label: 'Brazo cruzado sobre el pecho', unit: '°', plane: 'frontal', need: [11, 12, 13, 14], sided: true,
       // 90° con el brazo colgando; se acerca a 180° cuando el brazo apunta al otro hombro.
       fn: (p, v, s) => ({ value: 180 - angleBetween(flat(sub(p(s.el), p(s.sh))), flat(sub(p(s.osh), p(s.sh)))),
         conf: conf(v, [s.sh, s.el, s.osh]) }) },
-    forearmRot: { label: 'Rotación del antebrazo (afuera +)', unit: '°', sided: true,
+    forearmRot: { label: 'Rotación del antebrazo (afuera +)', unit: '°', plane: 'transverse', need: [11, 12, 13, 14, 15, 16], sided: true,
       // Codo a 90° pegado al cuerpo y antebrazo hacia la cámara: girar hacia afuera aleja la muñeca de la línea media.
       fn: (p, v, s) => {
         const out = Math.sign(p(s.sh).x - p(s.osh).x) || 1;
@@ -94,36 +94,46 @@
         const forward = -((p(s.wr).z || 0) - (p(s.el).z || 0));
         return { value: deg(Math.atan2(lateral, Math.max(forward, 0.01))), conf: conf(v, [s.sh, s.el, s.wr]) };
       } },
-    heelRise: { label: 'Altura del talón sobre la punta', unit: 'cm', sided: true,
+    heelRise: { label: 'Altura del talón sobre la punta', unit: 'cm', plane: 'vertical', need: [27, 28, 29, 30, 31, 32], sided: true,
       fn: (p, v, s) => ({ value: (p(s.toe).y - p(s.heel).y) * 100, conf: conf(v, [s.heel, s.toe]) }) },
-    thighSpread: { label: 'Apertura entre muslos', unit: '°',
+    thighSpread: { label: 'Apertura entre muslos', unit: '°', plane: 'frontal', need: [23, 24, 25, 26],
       fn: (p, v) => ({ value: angleBetween(sub(p(25), p(23)), sub(p(26), p(24))), conf: conf(v, [23, 24, 25, 26]) }) },
-    trunkLean: { label: 'Inclinación del tronco', unit: '°',
+    trunkLean: { label: 'Inclinación del tronco', unit: '°', plane: 'sagittal', need: [11, 12, 23, 24],
       fn: (p, v) => ({ value: angleBetween(sub(mid(p(11), p(12)), mid(p(23), p(24))), UP), conf: conf(v, [11, 12, 23, 24]) }) },
-    trunkRot: { label: 'Giro de hombros sobre la cadera', unit: '°',
+    trunkRot: { label: 'Giro de hombros sobre la cadera', unit: '°', plane: 'transverse', need: [11, 12, 23, 24],
       fn: (p, v) => {
         const yaw = (a, b) => deg(Math.atan2((b.z || 0) - (a.z || 0), b.x - a.x));
         let d = yaw(p(11), p(12)) - yaw(p(23), p(24));
         d = ((d + 540) % 360) - 180;
         return { value: d, conf: conf(v, [11, 12, 23, 24]) };
       } },
-    neckTilt: { label: 'Inclinación lateral de la cabeza', unit: '°',
+    neckTilt: { label: 'Inclinación lateral de la cabeza', unit: '°', plane: 'frontal', need: [7, 8, 11, 12],
       fn: (p, v) => ({ value: signedFlat(flat(sub(p(12), p(11))), flat(sub(p(8), p(7)))), conf: conf(v, [7, 8, 11, 12]) }) },
-    headForward: { label: 'Cabeza adelantada', unit: '°',
+    headForward: { label: 'Cabeza adelantada', unit: '°', plane: 'sagittal', need: [7, 8, 11, 12],
       // De perfil: ángulo entre la vertical y la línea hombro-oreja del lado que mejor se ve. Baja al retraer el mentón.
       fn: (p, v) => {
         const s = v(7) + v(11) >= v(8) + v(12) ? SIDES.L : SIDES.R;
         return { value: angleBetween(flat(sub(p(s.ear), p(s.sh))), UP), conf: conf(v, [s.ear, s.sh]) };
       } },
-    footLift: { label: 'Pie levantado', unit: 'cm',
+    footLift: { label: 'Pie levantado', unit: 'cm', plane: 'vertical', need: [23, 24, 27, 28],
       fn: (p, v) => ({ value: Math.abs(p(27).y - p(28).y) * 100, conf: conf(v, [27, 28]) }) },
-    feetInLine: { label: 'Separación lateral de los pies (% de la cadera)', unit: '%',
+    feetInLine: { label: 'Separación lateral de los pies (% de la cadera)', unit: '%', plane: 'frontal', need: [23, 24, 27, 28],
       fn: (p, v) => {
         const hips = Math.abs(p(23).x - p(24).x) || 0.01;
         const lifted = Math.abs(p(27).y - p(28).y) * 100;
         return { value: lifted > 5 ? null : (Math.abs(p(27).x - p(28).x) / hips) * 100, conf: conf(v, [23, 24, 27, 28]) };
       } },
-    birdDog: { label: 'Brazo y pierna contraria estirados', unit: '°',
+    standHeight: { label: 'Altura de la cadera (% de la pierna)', unit: '%', plane: 'vertical', need: [23, 24, 25, 26, 27, 28],
+      // De pie, la cadera está a un largo de pierna sobre los tobillos (100 %); sentado, a la mitad. Con un pie en el
+      // aire no vale (estirar una pierna sentado no es pararse, TD-55).
+      fn: (p, v) => {
+        const len = (a, b) => norm(sub(p(a), p(b)));
+        const leg = ((len(23, 25) + len(25, 27)) + (len(24, 26) + len(26, 28))) / 2 || 1;
+        const ankleY = (p(27).y + p(28).y) / 2;
+        const lifted = Math.abs(p(27).y - p(28).y) / leg > 0.15;
+        return { value: lifted ? null : ((ankleY - mid(p(23), p(24)).y) / leg) * 100, conf: conf(v, [23, 24, 25, 26, 27, 28]) };
+      } },
+    birdDog: { label: 'Brazo y pierna contraria estirados', unit: '°', plane: 'sagittal', need: [11, 12, 13, 14, 23, 24, 25, 26],
       fn: (p, v) => {
         const arm = (s) => angleBetween(sub(p(s.el), p(s.sh)), sub(p(s.hip), p(s.sh)));
         const leg = (s) => angleAt(p(s.sh), p(s.hip), p(s.kn));
@@ -135,13 +145,14 @@
   // ------------------------------------------------------------------ cómo se sigue cada ejercicio
   // mode: 'reps' (ida y vuelta desde la posición inicial), 'hold' (sostener una condición) o 'manual' (la cámara no ve
   // el movimiento: la persona marca el sostén y la cámara solo confirma que sigue en posición).
-  // combine (medidas de un lado): 'mean' = promedio de ambos lados; 'active' = el lado que más se mueve.
+  // combine (medidas de un lado): 'mean' = promedio de ambos lados; 'active' = el lado que más se mueve; 'both' = los
+  // dos lados tienen que moverse (cuenta el que menos se movió, así una sola pierna no alcanza).
   // dir: +1 la medida sube con el esfuerzo, -1 baja, 0 cualquiera de los dos sentidos. delta: recorrido pedido desde la
   // posición inicial. threshold (modo hold): valor absoluto a sostener; from: valor de reposo típico, solo para pintar el
   // progreso. quality 'limited' = la cámara lo ve con
   // dificultad (acostado, de perfil o con profundidad) y la página lo avisa. Todos los números son de partida (TD-48).
   const SPECS = {
-    'sit-to-stand': { metric: 'kneeFlex', combine: 'mean', mode: 'reps', dir: -1, delta: 50, quality: 'good',
+    'sit-to-stand': { metric: 'standHeight', mode: 'reps', dir: 1, delta: 28, stable: 5, quality: 'good',
       camera: 'De frente o en diagonal, a 2–3 m, a la altura de la cadera, empezando sentado.' },
     'tandem-stance': { metric: 'feetInLine', mode: 'hold', dir: -1, threshold: 45, from: 100, quality: 'good',
       camera: 'De frente, a 2–3 m, con los pies a la vista.' },
@@ -149,7 +160,7 @@
       camera: 'De frente, a 2–3 m, con los pies a la vista.' },
     'calf-raises': { metric: 'heelRise', combine: 'mean', mode: 'reps', dir: 1, delta: 3, stable: 1.5, quality: 'good',
       camera: 'De costado o en diagonal, a 2 m, con los pies a la vista.' },
-    'half-squat': { metric: 'kneeFlex', combine: 'mean', mode: 'reps', dir: 1, delta: 35, quality: 'good',
+    'half-squat': { metric: 'kneeFlex', combine: 'both', mode: 'reps', dir: 1, delta: 35, quality: 'good',
       camera: 'De frente o en diagonal, a 2–3 m, a la altura de la cadera, empezando de pie.' },
     'leg-extension': { metric: 'kneeFlex', combine: 'active', mode: 'reps', dir: -1, delta: 45, quality: 'good',
       camera: 'De costado o en diagonal, a 2 m, sentado con las piernas a la vista.' },
@@ -259,6 +270,12 @@
 
     /** Lado que se mueve (o el promedio) y su desvío respecto de la referencia. */
     function pick(vals) {
+      if (metric.sided && spec.combine === 'both') {
+        if (['L', 'R'].some((k) => vals[k].value == null || s.rest[k] == null)) return null;
+        const devs = ['L', 'R'].map((k) => ({ k, dev: deviation(vals[k].value, s.rest[k]) }));
+        const low = devs[0].dev <= devs[1].dev ? devs[0] : devs[1];
+        return { key: null, value: vals[low.k].value, rest: s.rest[low.k], dev: low.dev };
+      }
       if (metric.sided && spec.combine === 'mean') {
         const ok = ['L', 'R'].filter((k) => vals[k].value != null && s.rest[k] != null);
         if (!ok.length) return null;

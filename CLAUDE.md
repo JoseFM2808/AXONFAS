@@ -67,7 +67,7 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 ```bash
 py ../.claude/context-sync/context_sync.py     # después de cada cambio técnico, desde esta carpeta
 py src/frontend/context-panel/build_panel.py   # regenera el panel de contexto desde .ai-context/
-node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada y seguimiento (TD-28, ADR-011/013/014)
+node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada, seguimiento y cámara (TD-28, ADR-011/013/014/015)
 py -m unittest discover -s tests/backend              # API de Staging: cuentas, planes, sesiones, en vivo (ADR-012)
 ```
 
@@ -80,7 +80,10 @@ figura en `GUIDES` y su `FOCUS` de `guide-figure.js` (dibujo propio, nunca imág
 Las figuras de ejercicios solo se muestran con el componente `.fig` (`AxonGuide.render`, design system §4): una
 marioneta muscular en 3D con los músculos del mapa (`SHAPES`). Las poses se escriben con ángulos anatómicos (flexión
 positiva = hacia adelante) y cada guía elige su cámara. Sus colores salen de los tokens `--muscle-*` (compartidos con
-el mapa muscular) y `--fig-*`: no dibujes figuras ni pongas colores por fuera de eso. El seguimiento solo cuenta: nunca emite alertas de compensación (I-12).
+el mapa muscular) y `--fig-*`: no dibujes figuras ni pongas colores por fuera de eso. El seguimiento solo cuenta:
+nunca emite alertas de compensación (I-12). Antes de cada sesión con cámara va el paso de preparación
+(`camera-setup.js`, ADR-015): toda medida nueva declara su plano y los puntos que necesita ver (`plane` y `need` en
+`METRICS`), y lo poco confiable desde la vista real no alerta.
 La carga muscular del mapa es una estimación educativa: nunca se presenta como medición ni diagnóstico (ADR-013).
 
 El prototipo de validación (`src/frontend/validation-prototype/`) se abre con doble clic en `index.html` o con

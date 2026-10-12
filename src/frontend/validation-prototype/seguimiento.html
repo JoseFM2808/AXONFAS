@@ -89,6 +89,8 @@
     <section class="panel-card" id="patient-banner" hidden><p id="patient-text" class="muted"></p></section>
   </div>
 
+  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
+
   <main class="stage-wrapper" id="stage">
     <div class="viewport" id="viewport">
       <video id="video" playsinline muted></video>
@@ -126,6 +128,8 @@
         <div class="hud-sub" id="hud-sub"></div>
         <div class="hud-bar" id="hud-bar" aria-hidden="true"></div>
       </div>
+
+      <div class="cam-check" id="cam-check" role="status" hidden></div>
 
       <div class="announce" id="announce" role="status" aria-live="polite" hidden></div>
     </div>
@@ -199,6 +203,7 @@
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>
 <script src="tracker.js"></script>
+<script src="camera-setup.js"></script>
 <script src="guide-figure.js"></script>
 <script src="api-client.js"></script>
 <script src="teach-toast.js"></script>

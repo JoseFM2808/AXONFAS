@@ -31,10 +31,11 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 
 **Marco en vivo** (`POST /api/live`; el servidor descarta todo campo que no esté en esta lista, I-11):
 `{exercise_id, source, phase, posture, reps_done, reps_total, angles: {knee, trunk, valgusL, valgusR, confidence},
-progress, metric: {label, value, unit}, points: {"0"|"7"|"8"|"11"|"12"|"13"|"14"|"15"|"16"|"23"|"24"|"25"|"26"|"27"|"28":
+progress, metric: {label, value, unit}, view, points: {"0"|"7"|"8"|"11"|"12"|"13"|"14"|"15"|"16"|"23"|"24"|"25"|"26"|"27"|"28":
 [x, y]}, mirror, event?, ended?}`.
 - `points` son coordenadas normalizadas de imagen (0–1): nariz, orejas, hombros, codos, muñecas, caderas, rodillas y
   tobillos.
+- `view` (`front`, `diagonal` o `side`): desde dónde mira la cámara según la preparación (ADR-015).
 - `progress` (0–1, se recorta) y `metric` (`unit` = `°`, `cm` o `%`; `label` hasta 60 caracteres) los manda el
   seguimiento de la galería (ADR-014). En ese caso `phase` es `setup` mientras toma la posición inicial y `tracking`
   durante el conteo.

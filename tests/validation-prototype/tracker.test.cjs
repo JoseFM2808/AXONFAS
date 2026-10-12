@@ -87,7 +87,7 @@ test('cada ejercicio del catálogo tiene cómo seguirse con la cámara', () => {
     assert.ok(['good', 'limited'].includes(spec.quality), `${e.id}: calidad inválida`);
     if (spec.quality === 'limited') assert.ok(spec.note, `${e.id}: limitado sin explicar por qué`);
     assert.ok(spec.camera, `${e.id}: sin indicación de cámara`);
-    if (T.METRICS[spec.metric].sided) assert.ok(['mean', 'active'].includes(spec.combine), `${e.id}: falta combinar lados`);
+    if (T.METRICS[spec.metric].sided) assert.ok(['mean', 'active', 'both'].includes(spec.combine), `${e.id}: falta combinar lados`);
   }
   assert.equal(Object.keys(T.SPECS).length, C.EXERCISES.length, 'hay especificaciones de ejercicios que no existen');
 });
@@ -209,4 +209,35 @@ test('recalibrar vuelve a tomar la referencia', () => {
   assert.equal(r.last.phase, 'setup');
   r = run(tr, [still({}, 1200)], r.t);
   assert.ok(types(r.events).includes('ready'));
+});
+
+test('sentarse y pararse en la galería: estirar una pierna no cuenta, pararse sí (TD-55)', () => {
+  const tr = T.createTracker(T.SPECS['sit-to-stand'], { sets: 1, reps: 1, hold: 0 });
+  const seated = { squat: 120 };
+  const r = run(tr, [
+    still(seated),
+    still({ squat: 120, liftL: 40 }, 900), still(seated, 600),               // pierna izquierda arriba y abajo
+    ramp('squat', 120, 0, 900), still({}, 500), ramp('squat', 0, 120, 900), still(seated, 400),
+  ]);
+  assert.equal(r.events.filter((e) => e.type === 'rep').length, 1, 'solo cuenta la vez que se paró');
+  const m = T.measure('standHeight', pose({ squat: 120, liftL: 40 }).world, pose({}).visibility);
+  assert.equal(m.value, null, 'con un pie en el aire la medida no vale');
+});
+
+test('sentadilla parcial: doblar una sola rodilla no cuenta', () => {
+  const tr = T.createTracker(T.SPECS['half-squat'], { sets: 1, reps: 5, hold: 0 });
+  const r = run(tr, [still(), ramp('curlR', 0, 80, 800), ramp('curlR', 80, 0, 800), still({}, 300)]);
+  assert.equal(r.last.count, 0);
+});
+
+test('cada medida dice en qué plano se mueve y qué puntos hay que ver (ADR-015)', () => {
+  for (const [id, m] of Object.entries(T.METRICS)) {
+    assert.ok(['sagittal', 'frontal', 'transverse', 'vertical'].includes(m.plane), `${id}: plano`);
+    assert.ok(Array.isArray(m.need) && m.need.length >= 2, `${id}: puntos`);
+  }
+});
+
+test('la página de seguimiento sabe qué articulaciones resaltar en cada medida', () => {
+  const src = require('node:fs').readFileSync(path.join(SRC, 'seguimiento.js'), 'utf8');
+  for (const id of Object.keys(T.METRICS)) assert.ok(src.includes(`${id}: (`), `seguimiento.js no resalta '${id}'`);
 });

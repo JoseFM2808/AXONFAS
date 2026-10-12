@@ -226,6 +226,8 @@
 <div class="wrap">
 
   <!-- ESCENARIO CENTRAL / VIDEO VIEWPORT -->
+  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
+
   <main class="stage-wrapper" id="stage">
     <div class="viewport" id="viewport">
       <video id="video" playsinline muted></video>
@@ -271,6 +273,8 @@
       </div>
 
       <!-- Gran Cartel de Aviso Central -->
+      <div class="cam-check" id="cam-check" role="status" hidden></div>
+
       <div class="announce" id="announce" role="status" aria-live="polite" hidden></div>
 
     </div>
@@ -520,6 +524,7 @@
 <script src="synthetic.js"></script>
 <script src="catalog.js"></script>
 <script src="guide-figure.js"></script>
+<script src="camera-setup.js"></script>
 <script src="app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="share.js"></script>

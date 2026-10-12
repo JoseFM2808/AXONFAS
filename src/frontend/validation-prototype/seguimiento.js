@@ -20,6 +20,7 @@
   const T = window.AxonTracker;
   const A = window.AxonApi;
   const GF = window.AxonGuide;
+  const CS = window.AxonCameraSetup;
   const S = T.SIDES;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
@@ -32,7 +33,7 @@
     crossArm: (s) => [s.osh, s.sh, s.el], forearmRot: (s) => [s.el, s.wr], heelRise: (s) => [s.an, s.heel, s.toe],
     thighSpread: () => [25, 23, 24, 26], trunkLean: () => [11, 12, 24, 23], trunkRot: () => [11, 12, 24, 23],
     neckTilt: () => [7, 8, 12, 11], headForward: () => [7, 8, 12, 11], footLift: () => [27, 28], feetInLine: () => [27, 28],
-    birdDog: () => [13, 11, 23, 25, 14, 12, 24, 26],
+    birdDog: () => [13, 11, 23, 25, 14, 12, 24, 26], standHeight: () => [23, 24, 28, 27],
   };
 
   const ui = {
@@ -47,6 +48,7 @@
   const ctx = ui.canvas.getContext('2d');
 
   const st = {
+    camOpts: null, camMeasures: null, setup: null, view: null, lastCheck: 0,
     ex: null, spec: null, dose: null, tracker: null, map: null,
     running: false, raf: 0, landmarker: null, stream: null, lastVideoTime: -1, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
@@ -116,6 +118,10 @@
     src.append(a, ` (${st.ex.sourceName})`);
     st.map = B.render($('live-map'), { intensities: B.estimateLoad(st.ex, null, 0) });
     mountGuides();
+    // 1 · Dónde va la cámara (ADR-015): alternativas con la calidad de la medida de este ejercicio
+    st.camMeasures = CS.measuresFor(st.ex.id, 'track', T);
+    st.camOpts = CS.renderOptions($('cam-setup'), st.camMeasures.measures, { hint: st.spec.camera });
+    st.view = null;
     ui.btnHold.hidden = st.spec.mode !== 'manual';
     ui.placeholder.hidden = false;
     ui.hud.hidden = true;
@@ -189,7 +195,7 @@
     ui.viewport.style.setProperty('--src-ratio', `${ui.canvas.width} / ${ui.canvas.height}`);
     ui.viewport.classList.add('mirror');
     ui.status.textContent = 'Cámara activa. El video no sale de este equipo.';
-    startSession();
+    startSetup();
     st.lastVideoTime = -1;
     st.running = true;
     loop();
@@ -197,6 +203,8 @@
 
   function stopCamera() {
     st.running = false;
+    st.setup = null;
+    $('cam-check').hidden = true;
     cancelAnimationFrame(st.raf);
     if (st.stream) { st.stream.getTracks().forEach((t) => t.stop()); st.stream = null; }
     ui.video.srcObject = null;
@@ -211,10 +219,53 @@
     const result = st.landmarker.detectForVideo(ui.video, t);
     const world = result.worldLandmarks && result.worldLandmarks[0];
     const image = result.landmarks && result.landmarks[0];
-    if (world && image) onFrame({ t, world, visibility: image }, image);
+    if (st.setup) onSetupFrame(image || null, t);
+    else if (world && image) onFrame({ t, world, visibility: image }, image);
     else onNoPose(t);
     if (typeof result.close === 'function') result.close();
   }
+
+  // ------------------------------------------------------------------ preparar la cámara (ADR-015)
+  function startSetup() {
+    const chosen = st.camOpts ? st.camOpts.selected : 'diagonal';
+    st.setup = CS.createCheck({ measures: st.camMeasures.measures, need: st.camMeasures.need, chosen });
+    st.setup.chosen = chosen;
+    ui.placeholder.hidden = true;
+    ui.hud.hidden = true;
+    $('cam-check').hidden = false;
+    setPhase('Prepara la cámara', `${CS.VIEWS[chosen].how}. ${st.spec.camera}`);
+    announce('Coloca la cámara: que se vea todo lo necesario', { ms: 3000 });
+    setButtons(true);
+  }
+
+  function onSetupFrame(image, t) {
+    const aspect = (ui.video.videoWidth || 16) / (ui.video.videoHeight || 9);
+    const r = st.setup.update(image, t, aspect);
+    if (image) drawPose(image, { side: null, progress: 0, lowConfidence: false, value: null });
+    else ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+    if (t - st.lastCheck > 150 || r.ready) {
+      st.lastCheck = t;
+      const el = $('cam-check');
+      CS.renderCheck(el, r, st.setup.chosen);
+      el.insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-cam-skip>Empezar ya</button>');
+    }
+    if (r.ready) finishSetup(r);
+  }
+
+  function finishSetup(r) {
+    if (!st.setup) return;
+    st.view = r && r.view ? r.view : null;
+    st.setup = null;
+    $('cam-check').hidden = true;
+    const q = st.view ? CS.qualityOf(st.camMeasures.measures, st.view)[0] : null;
+    ui.status.textContent = st.view ? `Cámara ${CS.VIEWS[st.view].short}: ${q.label.toLowerCase()} ${q.text}. El video no sale de este equipo.`
+      : 'Cámara activa. El video no sale de este equipo.';
+    startSession();
+  }
+
+  $('cam-check').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-cam-skip]') && st.setup) finishSetup(st.setup.last);
+  });
 
   // ------------------------------------------------------------------ sesión
   function startSession() {
@@ -232,7 +283,7 @@
     const first = st.spec.mode === 'reps' ? 'Ponte en la posición inicial y quédate quieto'
       : st.spec.mode === 'hold' ? 'Ponte en posición: el tiempo cuenta mientras la sostienes'
         : 'Ponte en posición y toca Sostener en cada repetición';
-    announce(first, { ms: 3500 });
+    announce(`${st.view ? 'Posición lista. ' : ''}${first}`, { ms: 3500 });
   }
 
   function onNoPose(t) {
@@ -312,6 +363,13 @@
   }
 
   function finish(reason) {
+    if (st.setup) {                                       // todavía preparando la cámara: solo se apaga
+      stopCamera();
+      setButtons(false);
+      ui.placeholder.hidden = false;
+      setPhase('Esperando la cámara', 'Toca "Usar la cámara" para empezar.');
+      return;
+    }
     if (!st.tracker || st.ended) return;
     st.ended = true;
     ui.holdBadge.hidden = true;
@@ -463,7 +521,7 @@
     const h = ui.canvas.height;
     ctx.clearRect(0, 0, w, h);
     if (!image) return;
-    const focusFn = FOCUS[st.spec.metric];
+    const focusFn = FOCUS[st.spec.metric] || (() => []);
     const sided = T.METRICS[st.spec.metric].sided;
     const sides = sided ? (out.side ? [S[out.side]] : [S.L, S.R]) : [null];
     const focusSets = sides.map((s) => focusFn(s));
@@ -568,7 +626,7 @@
     st.inFlight = true;
     A.call('patient', 'POST', '/api/live', {
       exercise_id: st.ex.id, source: 'camera', phase: out.phase === 'setup' ? 'setup' : 'tracking',
-      reps_done: out.count, reps_total: st.tracker.target.total, points, mirror: true,
+      reps_done: out.count, reps_total: st.tracker.target.total, points, mirror: true, view: st.view || undefined,
       progress: out.lowConfidence ? 0 : out.progress,
       metric: out.value == null || out.lowConfidence ? undefined : { label: metric.label, value: out.value, unit: metric.unit },
     }).catch(() => {}).finally(() => { st.inFlight = false; });

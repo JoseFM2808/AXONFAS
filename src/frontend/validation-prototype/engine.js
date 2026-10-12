@@ -23,7 +23,10 @@
   const DEFAULTS = {
     calibrationReps: 3,     // 01 · Lógica: línea base = primeras 3 repeticiones
     seatedFlexDeg: 65,      // rodilla con esta flexión o más = sentado
-    standingFlexDeg: 25,    // rodilla con esta flexión o menos = de pie
+    standingFlexDeg: 25,    // rodilla con esta flexión o menos = de pie (promedio de las dos)
+    kneeSlackDeg: 10,       // de pie exige además CADA rodilla bajo standingFlexDeg + esto
+    standHeightRatio: 0.85, // de pie exige la cadera a esta altura sobre los tobillos (fracción del largo de la pierna)
+    feetLevelRatio: 0.15,   // y los dos pies en el suelo: diferencia de altura entre tobillos bajo esta fracción
     trunkMarginDeg: 15,     // X: grados de tronco por encima de la línea base
     valgusMarginDeg: 10,    // Y: grados de valgo por encima de la línea base
     romTargetDeg: null,     // flexión de rodilla pedida; null = línea base menos romSlackDeg
@@ -31,6 +34,7 @@
     maxReps: 10,            // total, incluidas las de calibración
     minConfidence: 0.6,     // visibilidad mínima de los puntos clave para evaluar (TD-25)
     maxLowConfidenceRatio: 0.2, // una repetición con más frames dudosos no sirve para calibrar
+    disabled: {},           // compensaciones que no se evalúan porque la cámara no las ve bien (ADR-015)
   };
 
   const deg = (rad) => (rad * 180) / Math.PI;
@@ -76,8 +80,17 @@
     const kneeR = 180 - angleAt(p(LM.R_HIP), p(LM.R_KNEE), p(LM.R_ANKLE));
     const hipMid = mid(p(LM.L_HIP), p(LM.R_HIP));
     const shoulderMid = mid(p(LM.L_SHOULDER), p(LM.R_SHOULDER));
+    // Pararse de verdad: la cadera sube a la altura de estar de pie y los dos pies siguen en el suelo. Con una pierna
+    // estirada estando sentado, el promedio de las rodillas baja casi igual, pero el tobillo levantado se acerca a la
+    // cadera y la altura no sube (TD-55).
+    const legL = norm(sub(p(LM.L_HIP), p(LM.L_KNEE))) + norm(sub(p(LM.L_KNEE), p(LM.L_ANKLE)));
+    const legR = norm(sub(p(LM.R_HIP), p(LM.R_KNEE))) + norm(sub(p(LM.R_KNEE), p(LM.R_ANKLE)));
+    const leg = (legL + legR) / 2 || 1;
+    const ankleY = (p(LM.L_ANKLE).y + p(LM.R_ANKLE).y) / 2;
     return {
       kneeL, kneeR, knee: (kneeL + kneeR) / 2,
+      hipHeight: (ankleY - hipMid.y) / leg,
+      feetLevel: Math.abs(p(LM.L_ANKLE).y - p(LM.R_ANKLE).y) / leg,
       trunk: angleBetween(sub(shoulderMid, hipMid), UP),
       valgusL: valgusProxy(p(LM.L_HIP), p(LM.L_KNEE), p(LM.L_ANKLE), p(LM.R_HIP)),
       valgusR: valgusProxy(p(LM.R_HIP), p(LM.R_KNEE), p(LM.R_ANKLE), p(LM.L_HIP)),
@@ -111,6 +124,11 @@
     const romTarget = () => (cfg.romTargetDeg != null ? cfg.romTargetDeg
       : s.baseline ? s.baseline.knee - cfg.romSlackDeg : null);
 
+    /** De pie de verdad: las dos rodillas estiradas, la cadera arriba y los dos pies en el suelo. */
+    const standingNow = (a) => a.knee <= cfg.standingFlexDeg
+      && a.kneeL <= cfg.standingFlexDeg + cfg.kneeSlackDeg && a.kneeR <= cfg.standingFlexDeg + cfg.kneeSlackDeg
+      && a.hipHeight >= cfg.standHeightRatio && a.feetLevel <= cfg.feetLevelRatio;
+
     function thresholds() {
       if (!s.baseline) return null;
       return {
@@ -125,7 +143,7 @@
       s.rep = {
         index: s.reps.length + 1, calibration: s.phase === 'calibrating', start: t, end: null,
         kneeRom: s.seatedPeak, peakTrunk: -Infinity, peakValgusL: -Infinity, peakValgusR: -Infinity,
-        reachedStanding: false, romReached: null, events: [], flagged: {},
+        reachedStanding: false, romReached: null, events: [], flagged: {}, maxFeetLevel: 0, maxHipHeight: 0,
         // Si la persona empezó a levantarse cuando no se la veía bien, esos frames son parte de esta repetición.
         frames: s.lowStreak, lowConfidenceFrames: s.lowStreak,
       };
@@ -182,7 +200,7 @@
     }
 
     function update(frame) {
-      const out = { angles: null, newEvents: [], completed: null, lowConfidence: false };
+      const out = { angles: null, newEvents: [], completed: null, aborted: null, lowConfidence: false };
       if (s.phase === 'ended') return Object.assign(out, snapshot());
       const a = computeAngles(frame.world, frame.visibility);
       out.angles = a;
@@ -210,7 +228,12 @@
         s.posture = 'seated';
         if (s.rep) {
           if (s.rep.reachedStanding) out.completed = finishRep(frame.t);
-          else s.rep = null;                                          // se volvió a sentar sin pararse: no cuenta
+          else {
+            // Se volvió a sentar sin pararse: no cuenta. Se dice por qué: una pierna en el aire o no llegó arriba.
+            out.aborted = { reason: s.rep.maxFeetLevel > cfg.feetLevelRatio ? 'one_leg' : 'not_standing',
+              hipHeight: Math.round(s.rep.maxHipHeight * 100) / 100, calibration: s.rep.calibration };
+            s.rep = null;
+          }
         }
         s.seatedPeak = a.knee;
       }
@@ -218,7 +241,9 @@
 
       const rep = s.rep;
       if (rep) {
-        if (a.knee <= cfg.standingFlexDeg) rep.reachedStanding = true;
+        rep.maxFeetLevel = Math.max(rep.maxFeetLevel, a.feetLevel);
+        rep.maxHipHeight = Math.max(rep.maxHipHeight, a.hipHeight);
+        if (standingNow(a)) rep.reachedStanding = true;
         rep.peakTrunk = Math.max(rep.peakTrunk, a.trunk);
         rep.peakValgusL = Math.max(rep.peakValgusL, a.valgusL);
         rep.peakValgusR = Math.max(rep.peakValgusR, a.valgusR);
@@ -226,9 +251,11 @@
         if (s.phase === 'exercising' && th) {
           rep.romReached = rep.kneeRom >= th.romTarget;
           if (rep.romReached) {                                       // regla de 01: rango pedido Y compensación
-            [check(rep, 'trunk_flexion', null, a.trunk, th.trunk, frame.t),
-              check(rep, 'knee_valgus', 'left', a.valgusL, th.valgusL, frame.t),
-              check(rep, 'knee_valgus', 'right', a.valgusR, th.valgusR, frame.t)]
+            // Lo que la cámara no ve bien desde su posición no se evalúa (ADR-015): mejor sin alerta que una falsa.
+            const off = cfg.disabled || {};
+            [off.trunk ? null : check(rep, 'trunk_flexion', null, a.trunk, th.trunk, frame.t),
+              off.valgus ? null : check(rep, 'knee_valgus', 'left', a.valgusL, th.valgusL, frame.t),
+              off.valgus ? null : check(rep, 'knee_valgus', 'right', a.valgusR, th.valgusR, frame.t)]
               .forEach((e) => e && out.newEvents.push(e));
           }
         }

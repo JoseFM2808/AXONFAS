@@ -128,7 +128,7 @@ No usa GPU, LLM ni voz de entrada, y no guarda nada.
 | Paso | Regla implementada | Valor de partida (a validar) |
 |---|---|---|
 | Ángulos | Flexión de rodilla (3D), flexión de tronco contra la vertical y proxy de valgo, con los puntos "world" de MediaPipe en lugar del lifter de ADR-006 | — |
-| Repetición | Empieza cuando la rodilla baja del umbral de sentado y termina al volver a sentarse habiendo llegado a estar de pie; si no llegó a pararse, no cuenta | Sentado ≥ 65°, de pie ≤ 25° |
+| Repetición | Empieza cuando la rodilla baja del umbral de sentado y termina al volver a sentarse habiendo llegado a estar de pie; si no llegó a pararse, no cuenta y se dice por qué. **De pie de verdad** (TD-55): las dos rodillas estiradas, la cadera a la altura de estar de pie sobre los tobillos y los dos pies en el suelo. Estirar una pierna sentado baja el promedio de las rodillas casi igual, pero no sube la cadera y deja un tobillo en el aire: no cuenta ("ponte de pie con los dos pies apoyados") | Sentado ≥ 65°; de pie: promedio ≤ 25° y cada rodilla ≤ 35°, cadera ≥ 85 % del largo de la pierna, pies a menos del 15 % de diferencia de altura |
 | Línea base | Media de los picos de las 3 primeras repeticiones válidas (I-5). Una repetición con más del 20 % de frames dudosos no sirve para calibrar y se repite | 3 repeticiones |
 | Umbrales | Línea base + margen del terapeuta para tronco (X) y valgo (Y); rango pedido = línea base − 10° si el terapeuta no lo fija | X = 15°, Y = 10° |
 | Compensación | Solo se evalúa si la repetición alcanzó el rango pedido. Un evento por tipo y lado en cada repetición: la alerta sale en el primer frame que cruza el umbral y el evento guarda el pico | — |
@@ -150,6 +150,26 @@ cita su fuente pública y la dosis que esa fuente indica; el fisioterapeuta la a
 | Automático | Sentarse y pararse (la prueba de 30 s de CDC STEADI) | Cámara, motor de reglas, línea base y alertas (secciones anteriores) |
 | Seguimiento con cámara | Los 24, incluido sentarse y pararse (ADR-014) | Esqueleto, medida del ejercicio, conteo de repeticiones o sostenes y mapa muscular según el avance. Sin detección de compensaciones (sección siguiente) |
 | Guiado sin cámara | Los otros 23, como alternativa | Muestra pasos, músculos y huesos; cuenta series y el tiempo de sostén; el paciente marca cada serie |
+
+## Preparar la cámara (ADR-015)
+
+Antes de cada sesión con cámara, la persona elige dónde va la cámara y el sistema revisa en vivo que se vea bien.
+
+| Vista | Hacia adelante (sagital) | Hacia el costado (frontal) | Giros (transversal) | Subir y bajar (vertical) |
+|---|---|---|---|---|
+| De lado | buena | poco confiable | poco confiable | buena |
+| En diagonal | buena | regular | regular | buena |
+| De frente | regular (es profundidad) | buena | regular | regular |
+
+- **Alternativas y recomendación:** cada medida del ejercicio tiene su plano; la recomendada es la vista con mejor
+  suma. Sentarse y pararse con alertas mide rodilla, tronco (sagital), valgo (frontal) y de pie (vertical): la
+  recomendada es en diagonal.
+- **Chequeo en vivo:** se tienen que ver los puntos que usa la medida (visibilidad ≥ 0,6 y dentro de la imagen), a una
+  distancia en que el cuerpo ocupe al menos el 35 % de la imagen. El ángulo real sale del ancho aparente de hombros y
+  cadera respecto del tronco: menos de 28° = de frente, menos de 62° = en diagonal, más = de lado. Avisa si no coincide
+  con la elegida. Empieza solo cuando todo está bien 1,5 s seguidos (o con "Empezar ya").
+- **Lo que no se ve no alerta:** en el Prototipo, una compensación "poco confiable" desde la vista real no se evalúa
+  (por ejemplo, el valgo con la cámara de lado), y la lectura lo dice.
 
 ## Seguimiento con la cámara (ADR-014)
 
@@ -179,6 +199,8 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
   galería, en el plan del paciente, en el panel del fisioterapeuta y en el aviso de enseñanza. La
   indicación de cada fase sale de los mismos textos: "Levanta la pierna de arriba" → "Sostén: 3 s" → "¡Bien! Ahora
   baja" → vuelta. La cuenta del sostén aparece grande sobre el video, legible a 2–3 m.
+- **Una sola pierna no alcanza** (TD-55): en sentarse y pararse la medida es la altura de la cadera sobre los
+  tobillos (no vale con un pie en el aire); en la sentadilla parcial se tienen que doblar las dos rodillas.
 - **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta
   o, sin plan, de la fuente. Al cerrar cada serie se anuncia un descanso; al llegar al total, la sesión termina como
   `completed`.

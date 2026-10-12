@@ -50,13 +50,13 @@
     const now = performance.now();
     if (now - lastSent < 200) return;                        // ~5 por segundo
     lastSent = now;
-    const { out, image, mirror } = e.detail;
+    const { out, image, mirror, view } = e.detail;
     const points = {};
     if (image) KEY_POINTS.forEach((i) => { if (image[i]) points[String(i)] = [image[i].x, image[i].y]; });
     inFlight = true;
     post('/api/live', {
       exercise_id: exerciseId, source, phase: out.phase, posture: out.posture, reps_done: out.repsDone,
-      reps_total: item.safety_envelope.max_reps, angles: out.angles || undefined, points, mirror,
+      reps_total: item.safety_envelope.max_reps, angles: out.angles || undefined, points, mirror, view: view || undefined,
     }).catch(() => {}).finally(() => { inFlight = false; });
   });
 

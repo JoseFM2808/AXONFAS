@@ -364,8 +364,12 @@
     setLiveStatus(true, `En sesión · ${ex ? ex.name : 'ejercicio'}`);
     const phase = { calibrating: 'calibrando', exercising: 'con alertas', setup: 'tomando la posición inicial',
       tracking: 'seguimiento y conteo (sin alertas)', guided: 'guiado' }[msg.phase] || msg.phase;
+    // Desde dónde mira la cámara y qué queda poco confiable desde ahí (ADR-015)
+    const CSx = window.AxonCameraSetup;
+    const cam = msg.view && CSx && ex
+      ? ` · ${CSx.summary(msg.view, (msg.metric ? CSx.measuresFor(ex.id, 'track') : CSx.ENGINE).measures)}` : '';
     $('live-info').textContent = `${SOURCE[msg.source] || ''} · ${phase || ''} · repeticiones ${msg.reps_done ?? 0}`
-      + `${msg.reps_total ? ` de ${msg.reps_total}` : ''}`;
+      + `${msg.reps_total ? ` de ${msg.reps_total}` : ''}${cam}`;
     const alerts = Date.now() < state.alertUntil ? state.alertMuscles : [];
     state.liveMap.update({ intensities: B.estimateLoad(ex, msg.angles, msg.progress), alerts });
     if (msg.metric) {                                 // seguimiento de la galería (ADR-014): la medida de ese ejercicio

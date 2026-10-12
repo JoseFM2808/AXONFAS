@@ -149,13 +149,17 @@ class StagingApiTest(unittest.TestCase):
         patient.call("POST", "/api/live", {
             "exercise_id": "standing-row", "source": "camera", "phase": "tracking", "reps_done": 4, "reps_total": 24,
             "progress": 1.7, "metric": {"label": "Flexión de codo", "value": 92.46, "unit": "°", "extra": "x"},
-            "points": {"13": [0.4, 0.5], "15": [0.42, 0.6]}})
+            "points": {"13": [0.4, 0.5], "15": [0.42, 0.6]}, "view": "diagonal"})
         frame = q.get_nowait()
+        self.assertEqual(frame["view"], "diagonal", "desde dónde mira la cámara (ADR-015)")
         self.assertEqual(frame["progress"], 1.0, "el avance se recorta a 0-1")
         self.assertEqual(frame["metric"], {"label": "Flexión de codo", "value": 92.5, "unit": "°"})
         self.assertEqual(set(frame["points"]), {"13", "15"}, "codos y muñecas viajan para los ejercicios de brazo")
-        patient.call("POST", "/api/live", {"exercise_id": "standing-row", "metric": {"label": "x", "value": 1, "unit": "kg"}})
-        self.assertNotIn("metric", q.get_nowait(), "solo unidades conocidas")
+        patient.call("POST", "/api/live", {"exercise_id": "standing-row", "metric": {"label": "x", "value": 1, "unit": "kg"},
+                                           "view": "arriba"})
+        bad = q.get_nowait()
+        self.assertNotIn("metric", bad, "solo unidades conocidas")
+        self.assertNotIn("view", bad, "solo vistas conocidas")
         status, _ = self.session(patient, exercise_id="standing-row", mode="guided", source="camera", reps=[], events=[],
                                  reps_done=24)
         self.assertEqual(status, 201)

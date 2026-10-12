@@ -509,6 +509,8 @@ class StagingApi:
                                and all(isinstance(x, (int, float)) for x in v)}
         if isinstance(data.get("mirror"), bool):
             frame["mirror"] = data["mirror"]
+        if data.get("view") in ("front", "diagonal", "side"):  # desde dónde mira la cámara (ADR-015)
+            frame["view"] = data["view"]
         progress = data.get("progress")                    # avance del movimiento 0-1 en el seguimiento (ADR-014)
         if isinstance(progress, (int, float)) and not isinstance(progress, bool):
             frame["progress"] = round(min(1.0, max(0.0, float(progress))), 3)

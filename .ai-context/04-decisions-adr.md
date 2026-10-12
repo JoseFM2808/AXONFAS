@@ -156,6 +156,27 @@
   - La calidad se sigue midiendo solo en sesiones monitoreadas.
   - Los estilos del escenario de cámara pasan a `hud.css`, compartidos por `index.html` y `seguimiento.html`.
 
+## ADR-015 · Preparar la cámara antes de cada sesión y no evaluar lo que no se ve bien — Aceptada
+
+- **Fecha:** 2026-10-11
+- **Contexto:** el owner pidió que la cámara pida una posición desde la que el movimiento se vea completo, con
+  alternativas, y advirtió que la posición cambia qué tan bien se ven las medidas. Desde una mala posición, una medida
+  puede dar falsas alarmas: por ejemplo, el valgo de rodilla de lado o la flexión del tronco de frente, que es
+  profundidad y la cámara solo la estima.
+- **Decisión:** antes de cada sesión con cámara (Prototipo y seguimiento de la galería) hay un paso de preparación
+  (`camera-setup.js`).
+  - Ofrece tres posiciones (en diagonal, de frente, de lado), con la calidad esperada de cada medida según el plano en
+    que se mueve, y recomienda la mejor.
+  - Con la cámara encendida revisa en vivo que se vea lo necesario, la distancia y el ángulo real (por el ancho
+    aparente de hombros y cadera). La sesión empieza cuando todo se mantiene bien 1,5 s, o cuando la persona lo pide.
+  - En sentarse y pararse, las compensaciones "poco confiables" desde la posición real no disparan alertas, y la
+    lectura dice "no se evalúa desde esta cámara".
+  - La posición viaja en el canal en vivo, y el fisioterapeuta ve desde dónde se mide y qué queda menos confiable.
+- **Consecuencias:**
+  - Menos falsas alarmas.
+  - Una mala posición no se puede ignorar: se pide corregirla o se avisa que ciertas medidas no cuentan.
+  - Las calidades por plano y los umbrales del ángulo son valores de partida: validarlos con cámara real es TD-57.
+
 ---
 
 ## Anexo · Modelo de negocio acordado (hipótesis a validar, no es un ADR)

@@ -52,6 +52,13 @@
   let activeAlert = null;         // { key, until } para pintar en rojo el segmento
   let endedShown = false;
   let announceTimer = 0;
+  // Preparar la cámara (ADR-015): chequeo en vivo antes de calibrar, vista detectada y lo que no se evalúa desde ella.
+  const CS = window.AxonCameraSetup;
+  let camOpts = null;
+  let setup = null;
+  let view = null;
+  let disabled = {};
+  let lastCheck = 0;
 
   // ---------------------------------------------------------------- sobre de seguridad (controles del terapeuta)
   function readConfig() {
@@ -61,6 +68,7 @@
       romTargetDeg: ui.romAuto.checked ? null : Number(ui.romTarget.value),
       maxReps: Number(ui.maxReps.value),
       minConfidence: Number(ui.minConf.value),
+      disabled,
     };
   }
 
@@ -88,6 +96,8 @@
   // ---------------------------------------------------------------- fuentes
   function stopSource() {
     running = false;
+    setup = null;
+    $('cam-check').hidden = true;
     cancelAnimationFrame(rafId);
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
     ui.video.srcObject = null;
@@ -168,10 +178,54 @@
     ui.viewport.classList.add('mirror');
     ui.placeholder.hidden = true;
     ui.sourceStatus.textContent = 'Cámara activa. El video no sale de este equipo.';
-    newSession();
+    startSetup();
     running = true;
     loop();
   }
+
+  // ---------------------------------------------------------------- preparar la cámara (ADR-015)
+  function startSetup() {
+    const chosen = camOpts ? camOpts.selected : 'diagonal';
+    setup = CS.createCheck({ measures: CS.ENGINE.measures, need: CS.ENGINE.need, chosen });
+    setup.chosen = chosen;
+    session = null;
+    ui.hud.hidden = true;
+    $('cam-check').hidden = false;
+    ui.phase.textContent = 'Prepara la cámara';
+    ui.phaseSub.textContent = `${CS.VIEWS[chosen].how}, a 2–3 m y a la altura de la cadera.`;
+    announce('Coloca la cámara: que se vea el cuerpo entero y los pies', { ms: 3000 });
+    ui.btnPain.disabled = false;
+    ui.btnStop.disabled = false;
+  }
+
+  function onSetupFrame(image, t) {
+    const aspect = (ui.video.videoWidth || 16) / (ui.video.videoHeight || 9);
+    const r = setup.update(image, t, aspect);
+    if (image) drawPose(image, { lowConfidence: false });
+    else ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+    if (t - lastCheck > 150 || r.ready) {
+      lastCheck = t;
+      const el = $('cam-check');
+      CS.renderCheck(el, r, setup.chosen);
+      el.insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-cam-skip>Empezar ya</button>');
+    }
+    if (r.ready) finishSetup(r);
+  }
+
+  function finishSetup(r) {
+    if (!setup) return;
+    view = r && r.view ? r.view : null;
+    disabled = view ? CS.disabledFor(view) : {};
+    setup = null;
+    $('cam-check').hidden = true;
+    ui.sourceStatus.textContent = view ? `Cámara activa, ${CS.summary(view, CS.ENGINE.measures)}. El video no sale de este equipo.`
+      : 'Cámara activa. El video no sale de este equipo.';
+    newSession();
+  }
+
+  $('cam-check').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-cam-skip]') && setup) finishSetup(setup.last);
+  });
 
   function startDemo() {
     stopSource();
@@ -186,6 +240,8 @@
     ui.placeholder.hidden = true;
     ui.sourceStatus.textContent = 'Demo sintético: 3 de calibración, una compensación de tronco (rep 5), un valgo izquierdo (rep 7) '
       + 'y una repetición mal vista (rep 8).';
+    view = null;
+    disabled = {};
     newSession();
     running = true;
     loop();
@@ -202,7 +258,8 @@
       const result = landmarker.detectForVideo(ui.video, t0);
       const world = result.worldLandmarks && result.worldLandmarks[0];
       const image = result.landmarks && result.landmarks[0];
-      if (world && image) handleFrame({ t: t0, world, visibility: image }, image, t0, true);
+      if (setup) onSetupFrame(image || null, t0);
+      else if (world && image) handleFrame({ t: t0, world, visibility: image }, image, t0, true);
       else handleNoPose();
       if (typeof result.close === 'function') result.close();
     } else if (source === 'demo' && demo) {
@@ -228,7 +285,7 @@
 
   function handleFrame(frame, image, t0, draw) {
     const out = session.update(frame);
-    emit('frame', { out, image, source, mirror: source === 'camera' });
+    emit('frame', { out, image, source, mirror: source === 'camera', view });
     if (out.newEvents.length) emit('event', { events: out.newEvents });
     if (out.lowConfidence) {
       lowStreak += 1;
@@ -246,6 +303,11 @@
       renderReps();
       renderControls();
       announceProgress(out);
+    }
+    if (out.aborted) {                                       // se volvió a sentar sin pararse de verdad (TD-55)
+      announce(out.aborted.reason === 'one_leg'
+        ? 'No contó: ponte de pie con los dos pies apoyados, no levantes una pierna'
+        : 'No contó: ponte de pie por completo, con rodillas y caderas estiradas', { ms: 3200 });
     }
     if (out.phase === 'ended' && !endedShown) onEnded();
   }
@@ -378,9 +440,10 @@
     const f = (v) => (Number.isFinite(v) ? `${v.toFixed(0)}°` : '—');
     if (a) {
       setReadout('ro-knee', f(a.knee), th ? `pedida ≥ ${th.romTarget.toFixed(0)}°` : 'calibrando', false, low);
-      setReadout('ro-trunk', f(a.trunk), th ? `umbral ${th.trunk.toFixed(0)}°` : 'calibrando', th && a.trunk > th.trunk, low);
-      setReadout('ro-valgus-l', f(a.valgusL), th ? `umbral ${th.valgusL.toFixed(0)}°` : 'calibrando', th && a.valgusL > th.valgusL, low);
-      setReadout('ro-valgus-r', f(a.valgusR), th ? `umbral ${th.valgusR.toFixed(0)}°` : 'calibrando', th && a.valgusR > th.valgusR, low);
+      const off = (k) => (disabled[k] ? 'no se evalúa desde esta cámara' : null);
+      setReadout('ro-trunk', f(a.trunk), off('trunk') || (th ? `umbral ${th.trunk.toFixed(0)}°` : 'calibrando'), !disabled.trunk && th && a.trunk > th.trunk, low);
+      setReadout('ro-valgus-l', f(a.valgusL), off('valgus') || (th ? `umbral ${th.valgusL.toFixed(0)}°` : 'calibrando'), !disabled.valgus && th && a.valgusL > th.valgusL, low);
+      setReadout('ro-valgus-r', f(a.valgusR), off('valgus') || (th ? `umbral ${th.valgusR.toFixed(0)}°` : 'calibrando'), !disabled.valgus && th && a.valgusR > th.valgusR, low);
       setReadout('ro-conf', a.confidence.toFixed(2), low ? 'baja: no se evalúa' : 'suficiente', false, low);
     }
     renderPhase(out);
@@ -450,6 +513,14 @@
 
   // ---------------------------------------------------------------- fin de sesión
   function endSession(reason) {
+    if (setup) {                                             // todavía preparando la cámara: solo se apaga
+      stopSource();
+      ui.placeholder.hidden = false;
+      ui.phase.textContent = 'Esperando inicio…';
+      ui.phaseSub.textContent = 'Pulsa un botón para comenzar.';
+      setButtons(false);
+      return;
+    }
     if (!session) return;
     session.end(reason);
     onEnded();
@@ -570,4 +641,6 @@
   if ('speechSynthesis' in window) window.speechSynthesis.getVoices();     // precarga la lista de voces
   renderControls();
   renderGuide();
+  camOpts = CS ? CS.renderOptions($('cam-setup'), CS.ENGINE.measures,
+    { hint: 'A 2–3 m, a la altura de la cadera, con el cuerpo entero y los pies a la vista.' }) : null;
 })();
