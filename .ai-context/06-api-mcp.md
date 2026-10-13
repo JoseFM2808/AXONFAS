@@ -18,14 +18,14 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `POST /api/therapists` | — | `{name}` → 201 `{token, therapist}` |
 | `GET /api/therapists/me` | fisioterapeuta | → `{therapist, patients: [{id, alias, birth_year, consent_given, joined_at, invite_code, plan_size, metrics, live}]}` |
 | `POST /api/patients` | fisioterapeuta | `{alias, birth_year?}` → 201 `{patient}` con `invite_code` |
-| `GET /api/patients/{id}` | fisioterapeuta | → `{patient, plan, sessions (30), events (60), metrics, live}` |
+| `GET /api/patients/{id}` | fisioterapeuta | → `{patient, plan, sessions (30), events (60), metrics, live}`. Cada `metrics.per_exercise` suma `camera_first`, `camera_last` (`{session_id, ended_at, reps, peak, hold}`), `camera_sessions` y `camera_series` (TD-49) |
 | `PUT /api/patients/{id}/plan` | fisioterapeuta | `{exercises: [{exercise_id, sets, reps, hold_seconds, per_week, safety_envelope?, notes?}]}` → `{plan}`; reemplaza el plan activo |
 | `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code}` nuevo |
 | `POST /api/patients/{id}/highlight` | fisioterapeuta | `{muscle?, exercise_id?, note?}` → 202 `{delivered_to}` |
 | `GET /api/patients/{id}/live` | fisioterapeuta | Server-Sent Events con lo que publica ese paciente |
 | `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir |
 | `GET /api/me` | paciente | → `{patient, therapist, plan: [... , done_7d]}` |
-| `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?}` → 201 `{session_id}` |
+| `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds`, ver [03](03-database.md)); lo demás se descarta |
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
 | `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`) y `plan_updated` |
 

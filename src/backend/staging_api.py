@@ -14,6 +14,7 @@ ADR-012 y ADR-013. La sirve serve.py en el mismo origen que el prototipo (rutas 
 from __future__ import annotations
 
 import json
+import math
 import queue
 import re
 import secrets
@@ -139,6 +140,8 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
     - quality: en sesiones monitoreadas, fracción de repeticiones de ejercicio sin compensación.
     - quality_trend: promedio de las 3 últimas sesiones monitoreadas menos el de las 3 primeras (con 4 o más).
     - rom: flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada.
+    - camera_*: por ejercicio del plan, en las sesiones con conteo de cámara, el recorrido medio por repetición (en la
+      unidad de su medida) y el sostén medio, de la primera y la última sesión (TD-49).
     - pain_stops_30d: sesiones detenidas por dolor en 30 días (bandera roja para el fisioterapeuta).
     """
     now = now or datetime.now(timezone.utc)
@@ -150,6 +153,23 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         per_exercise.append({"exercise_id": item["exercise_id"], "done_7d": done, "per_week": item["per_week"],
                              "ratio": round(min(1.0, done / item["per_week"]), 3) if item["per_week"] else None})
     ratios = [p["ratio"] for p in per_exercise if p["ratio"] is not None]
+
+    camera: dict[str, list[dict]] = defaultdict(list)
+    for s in sorted(sessions, key=lambda s: s["ended_at"]):
+        if s["mode"] != "guided" or s.get("source") != "camera":
+            continue
+        reps = [r for r in json.loads(s["reps"] or "[]") if isinstance(r, dict)]
+        peaks = [r["peak"] for r in reps if isinstance(r.get("peak"), (int, float))]
+        holds = [r["holdSec"] for r in reps if isinstance(r.get("holdSec"), (int, float))]
+        if peaks or holds:
+            camera[s["exercise_id"]].append({
+                "session_id": s["id"], "ended_at": s["ended_at"], "reps": len(reps),
+                "peak": round(sum(peaks) / len(peaks), 1) if peaks else None,
+                "hold": round(sum(holds) / len(holds), 1) if holds else None})
+    for p in per_exercise:
+        series = camera.get(p["exercise_id"], [])
+        p.update({"camera_first": series[0] if series else None, "camera_last": series[-1] if series else None,
+                  "camera_sessions": len(series), "camera_series": series[-20:]})
 
     events_by_session: dict[int, set[int]] = defaultdict(set)
     for e in events:
@@ -175,6 +195,27 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         "pain_stops_30d": sum(1 for s in sessions if s["end_reason"] == "pain_stop" and parse_iso(s["ended_at"]) >= month_ago),
         "sessions_total": len(sessions), "last_session_at": max((s["ended_at"] for s in sessions), default=None),
     }
+
+
+# Campos por repetición que se guardan: los del motor de reglas (sentarse y pararse) y los del conteo con cámara de
+# la galería (TD-49: recorrido máximo, sostén, duración y lado). Todo lo demás se descarta.
+REP_NUMBERS = ("kneeRom", "peakTrunk", "peakValgusL", "peakValgusR", "lowConfidenceRatio", "peak", "holdSec", "seconds")
+REP_FLAGS = ("calibration", "romReached", "holdOk")
+REP_SIDES = ("L", "R", "+", "-")
+
+
+def clean_rep(rep: dict) -> dict:
+    out = {"index": rep["index"]} if isinstance(rep.get("index"), int) and not isinstance(rep.get("index"), bool) else {}
+    for key in REP_FLAGS:
+        if isinstance(rep.get(key), bool):
+            out[key] = rep[key]
+    for key in REP_NUMBERS:
+        value = rep.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            out[key] = round(float(value), 2)
+    if rep.get("side") in REP_SIDES:
+        out["side"] = rep["side"]
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ API
@@ -462,8 +503,7 @@ class StagingApi:
         events = data.get("events") or []
         if not isinstance(reps, list) or len(reps) > 100 or not isinstance(events, list) or len(events) > 200:
             raise ApiError(400, "'reps' o 'events' tienen un formato inválido.")
-        keep = ("index", "calibration", "kneeRom", "peakTrunk", "peakValgusL", "peakValgusR", "romReached", "lowConfidenceRatio")
-        reps = [{k: r.get(k) for k in keep} for r in reps if isinstance(r, dict)]
+        reps = [clean_rep(r) for r in reps if isinstance(r, dict)]
         clean_events = []
         for e in events:
             if not isinstance(e, dict) or e.get("type") not in EVENT_TYPES:

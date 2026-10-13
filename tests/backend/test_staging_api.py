@@ -167,6 +167,28 @@ class StagingApiTest(unittest.TestCase):
         self.assertEqual(detail["metrics"]["per_exercise"][0]["done_7d"], 1, "cuenta para el cumplimiento")
         self.assertIsNone(detail["metrics"]["quality"], "sin alertas no hay indicador de calidad")
 
+    def test_conteo_con_camara_guarda_cada_repeticion_y_da_efectividad(self):
+        """TD-49: recorrido máximo y sostén por repetición, para indicadores en todos los ejercicios."""
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "hip-abduction", "sets": 1, "reps": 3, "hold_seconds": 5, "per_week": 3})
+        now = datetime.now(timezone.utc)
+        for i, peaks in enumerate([[20.0, 22.0], [30.0, 32.0, 34.0]]):
+            reps = [{"index": k + 1, "side": "L", "peak": p, "holdSec": 5.2, "holdOk": True, "seconds": 7.1,
+                     "video": "data:...", "nota": "x"} for k, p in enumerate(peaks)]
+            reps.append({"index": "9", "peak": "mucho", "holdSec": float("nan"), "side": "arriba", "holdOk": 1})
+            status, _ = self.session(patient, exercise_id="hip-abduction", mode="guided", source="camera", events=[],
+                                     reps=reps, reps_done=len(peaks), started_at=iso(now - timedelta(days=2 - i, minutes=5)),
+                                     ended_at=iso(now - timedelta(days=2 - i)))
+            self.assertEqual(status, 201)
+        _, detail = self.doctor.call("GET", f"/api/patients/{self.patient_id}")
+        stored = detail["sessions"][0]["reps"]
+        self.assertEqual(stored[0], {"index": 1, "side": "L", "peak": 30.0, "holdSec": 5.2, "holdOk": True, "seconds": 7.1})
+        self.assertEqual(stored[-1], {}, "lo que no es un número, un lado o una marca válida no se guarda")
+        ex = detail["metrics"]["per_exercise"][0]
+        self.assertEqual((ex["camera_first"]["peak"], ex["camera_last"]["peak"], ex["camera_sessions"]), (21.0, 32.0, 2))
+        self.assertEqual(ex["camera_last"]["hold"], 5.2)
+        self.assertIsNone(detail["metrics"]["rom_last"], "el recorrido de rodilla sigue siendo solo de sesiones monitoreadas")
+
     def test_senalar_un_musculo_llega_al_paciente(self):
         patient = Client(self.api, self.join()[1]["token"])
         stream = patient.call("GET", "/api/me/stream")

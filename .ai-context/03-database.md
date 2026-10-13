@@ -169,7 +169,7 @@ del repo y de Drive. Solo datos sintéticos o del equipo con consentimiento (ADR
 | `patient` | `PATIENT` | Agrega `invite_code` (6 caracteres, un solo uso) y `joined_at`; `consent_given` lo marca el propio paciente al afiliarse |
 | `token` | — | Tokens bearer de las cuentas de demostración (`role` = `therapist` o `patient`). No existe en Producción (TD-41) |
 | `plan_exercise` | `CARE_PLAN` + `PLAN_EXERCISE` | El plan se aplana por paciente: `exercise_id` del catálogo, `sets`, `reps`, `hold_seconds`, `per_week`, `safety_envelope` (JSON `{trunk_margin, valgus_margin, max_reps}` solo en monitoreados), `notes`, `active` |
-| `session` | `SESSION` + `REP_METRIC` | `mode` (`monitored`/`guided`), `source` (`camera`/`demo`/`guided`), `reps_done`; las métricas por repetición van como JSON en `reps` (solo las de sentarse y pararse; las del seguimiento aún no se guardan, TD-49) |
+| `session` | `SESSION` + `REP_METRIC` | `mode` (`monitored`/`guided`), `source` (`camera`/`demo`/`guided`), `reps_done`; las métricas por repetición van como JSON en `reps`: en sentarse y pararse monitoreado, `kneeRom`, `peakTrunk`, `peakValgusL/R`, `romReached`, `lowConfidenceRatio` y `calibration`; en el conteo con cámara de la galería (TD-49), `peak` (recorrido máximo desde la posición inicial, en la unidad de la medida), `holdSec`, `holdOk`, `seconds` y `side` (`L`, `R`, `+`, `-`). Se guardan solo esos campos y con tipos válidos; el resto se descarta |
 | `compensation_event` | `COMPENSATION_EVENT` | Agrega `side`, `value`, `peak` y `threshold`; `rep` es el índice de la repetición |
 
 Reglas que aplica la API:

@@ -164,3 +164,13 @@ test('el contorno muscular es una figura completa: tronco, cabeza y, salvo en me
     if (!guide.upper) for (const k of ['thigh', 'shin', 'foot']) assert.ok(parts.has(k), `${id}: falta ${k}`);
   }
 });
+
+test('la figura anima según lo que eligió la persona; si no eligió, respeta "reducir movimiento"', () => {
+  assert.equal(G.motionDefault(null, false), true);
+  assert.equal(G.motionDefault(null, true), false, 'Windows con efectos de animación apagados: quieta hasta que la pidan');
+  assert.equal(G.motionDefault('on', true), true, 'tocar "Animar" vale más que el ajuste del sistema');
+  assert.equal(G.motionDefault('off', false), false, 'tocar "Pausa" también');
+  const fs = require('node:fs');
+  const css = fs.readFileSync(path.join(SRC, 'hud.css'), 'utf8');
+  assert.ok(css.includes('.fig-play'), 'el botón de animar es parte del componente .fig (design system §4)');
+});

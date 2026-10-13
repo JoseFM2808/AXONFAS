@@ -141,6 +141,21 @@
     box.appendChild(grid);
   }
 
+  /** Efectividad con la cámara (TD-49): recorrido medio por repetición y, si la dosis lo pide, sostén medio. */
+  function cameraText(x, item) {
+    const last = x && x.camera_last;
+    if (!last) return '—';
+    const spec = window.AxonTracker && AxonTracker.SPECS[x.exercise_id];
+    const unit = spec ? AxonTracker.METRICS[spec.metric].unit : '';
+    const v = (n) => `${n}${unit === '°' ? '°' : unit ? ` ${unit}` : ''}`;
+    const first = x.camera_first;
+    const parts = [];
+    if (last.peak != null) parts.push(`recorrido ${v(last.peak)}${x.camera_sessions > 1 && first.peak != null ? ` (1.ª: ${v(first.peak)})` : ''}`);
+    const holds = item.hold_seconds > 0 || (spec && spec.mode !== 'reps');      // sin sostén en la dosis, no se muestra
+    if (last.hold != null && holds) parts.push(`sostén ${last.hold} s`);
+    return parts.length ? parts.join(' · ') : '—';
+  }
+
   function renderDetail(d) {
     const p = d.patient;
     $('p-title').textContent = p.alias + (p.birth_year ? ` · ${p.birth_year}` : '');
@@ -162,7 +177,7 @@
     if (!d.plan.length) {
       const tr = el('tr');
       const td = el('td', 'empty', 'Sin ejercicios. Usa "Editar plan".');
-      td.colSpan = 4;
+      td.colSpan = 5;
       tr.appendChild(td);
       body.appendChild(tr);
     }
@@ -174,7 +189,8 @@
       const week = perEx[item.exercise_id] ? `${perEx[item.exercise_id].done_7d} de ${item.per_week}` : `0 de ${item.per_week}`;
       const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps`
         : 'sin alertas: conteo con cámara o guiado';
-      [ex ? ex.name : item.exercise_id, dose, week, envText].forEach((t) => tr.appendChild(el('td', null, t)));
+      [ex ? ex.name : item.exercise_id, dose, week, cameraText(perEx[item.exercise_id], item), envText]
+        .forEach((t) => tr.appendChild(el('td', null, t)));
       body.appendChild(tr);
     });
 

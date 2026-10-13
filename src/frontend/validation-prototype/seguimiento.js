@@ -7,9 +7,6 @@
 (() => {
   'use strict';
 
-  const MP_VERSION = '1.1.0';
-  const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
-  const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
   const LOW_FRAMES_BEFORE_HINT = 15;
   const LIVE_POINTS = [0, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];   // lo único que sale del equipo
   const SKELETON = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27],
@@ -21,6 +18,7 @@
   const A = window.AxonApi;
   const GF = window.AxonGuide;
   const CS = window.AxonCameraSetup;
+  const PC = window.AxonPoseCamera;                         // cámara y MediaPipe compartidos con app.js (TD-50)
   const S = T.SIDES;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
@@ -50,7 +48,7 @@
   const st = {
     camOpts: null, camMeasures: null, setup: null, view: null, lastCheck: 0,
     ex: null, spec: null, dose: null, tracker: null, map: null,
-    running: false, raf: 0, landmarker: null, stream: null, lastVideoTime: -1, lowStreak: 0, lastMap: 0,
+    cam: null, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
     patient: null, item: null, lastSent: 0, inFlight: false, saved: false,
   };
@@ -149,80 +147,31 @@
   });
 
   // ------------------------------------------------------------------ cámara
-  async function loadLandmarker() {
-    if (st.landmarker) return st.landmarker;
-    const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
-    const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
-    const options = (delegate) => ({ baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numPoses: 1 });
-    try {
-      st.landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('GPU'));
-    } catch (gpuError) {
-      console.warn('GPU no disponible para MediaPipe, uso CPU', gpuError);
-      st.landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('CPU'));
-    }
-    return st.landmarker;
-  }
-
   async function startCamera() {
     stopCamera();
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      ui.status.textContent = 'Este navegador no permite la cámara aquí: ábrelo desde http://localhost o con el QR (HTTPS).';
-      return;
-    }
-    ui.status.textContent = 'Cargando el modelo de pose (~9 MB la primera vez)…';
-    try {
-      await loadLandmarker();
-    } catch (err) {
-      console.error(err);
-      ui.status.textContent = 'No se pudo cargar el modelo de pose. Revisa la conexión a internet y vuelve a intentar.';
-      return;
-    }
-    ui.status.textContent = 'Pidiendo permiso para la cámara…';
-    try {
-      st.stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false,
-      });
-    } catch (err) {
-      ui.status.textContent = err && err.name === 'NotAllowedError'
-        ? 'El navegador no dio permiso para la cámara. Permítelo en la barra de direcciones y vuelve a intentar.'
-        : err && err.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo abrir la cámara.';
-      return;
-    }
-    ui.video.srcObject = st.stream;
-    await ui.video.play();
-    ui.canvas.width = ui.video.videoWidth || 1280;
-    ui.canvas.height = ui.video.videoHeight || 720;
-    ui.viewport.style.setProperty('--src-ratio', `${ui.canvas.width} / ${ui.canvas.height}`);
-    ui.viewport.classList.add('mirror');
-    ui.status.textContent = 'Cámara activa. El video no sale de este equipo.';
+    const run = await PC.open({
+      video: ui.video, canvas: ui.canvas, viewport: ui.viewport,
+      status: (text) => { ui.status.textContent = text; },
+      unsupported: 'Este navegador no permite la cámara aquí: ábrelo desde http://localhost o con el QR (HTTPS).',
+    });
+    if (!run) return;
+    st.cam = run;
     startSetup();
-    st.lastVideoTime = -1;
-    st.running = true;
-    loop();
+    st.cam.start(onCameraResult);
   }
 
   function stopCamera() {
-    st.running = false;
     st.setup = null;
     $('cam-check').hidden = true;
-    cancelAnimationFrame(st.raf);
-    if (st.stream) { st.stream.getTracks().forEach((t) => t.stop()); st.stream = null; }
+    if (st.cam) { st.cam.stop(); st.cam = null; }
     ui.video.srcObject = null;
   }
 
-  function loop() {
-    if (!st.running) return;
-    st.raf = requestAnimationFrame(loop);
-    if (ui.video.readyState < 2 || ui.video.currentTime === st.lastVideoTime) return;
-    st.lastVideoTime = ui.video.currentTime;
-    const t = performance.now();
-    const result = st.landmarker.detectForVideo(ui.video, t);
-    const world = result.worldLandmarks && result.worldLandmarks[0];
-    const image = result.landmarks && result.landmarks[0];
-    if (st.setup) onSetupFrame(image || null, t);
+  /** Un frame nuevo de la cámara (pose-camera.js): primero la preparación, después el seguimiento. */
+  function onCameraResult({ image, world, t }) {
+    if (st.setup) onSetupFrame(image, t);
     else if (world && image) onFrame({ t, world, visibility: image }, image);
     else onNoPose(t);
-    if (typeof result.close === 'function') result.close();
   }
 
   // ------------------------------------------------------------------ preparar la cámara (ADR-015)
@@ -640,6 +589,11 @@
       await A.call('patient', 'POST', '/api/sessions', {
         exercise_id: st.ex.id, mode: 'guided', source: 'camera', started_at: st.startedAt || new Date().toISOString(),
         ended_at: new Date().toISOString(), end_reason: reason, reps_done: reps,
+        // Por repetición (TD-49): recorrido máximo desde la posición inicial, sostén, duración y lado. Nunca video.
+        reps: st.tracker.reps.slice(0, 100).map((r) => ({
+          index: r.index, side: r.side || undefined, peak: r.peak ?? undefined, holdSec: r.holdSec ?? undefined,
+          holdOk: r.holdOk ?? undefined, seconds: r.seconds,
+        })),
       });
       $('patient-text').textContent = `Sesión guardada y enviada a tu fisioterapeuta (${plural(reps, 'repetición', 'repeticiones')}). Puedes volver a tu plan.`;
     } catch (err) {

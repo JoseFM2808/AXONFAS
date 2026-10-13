@@ -810,8 +810,9 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
    Marco con malla táctica y esquinas del HUD, lienzo con la figura, etiqueta de fase, vista y texto.
    Variantes: --card (galería y planes), --large (guías), --pip (sobre el video del seguimiento).
    ========================================================================== */
-.fig { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.fig { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; min-width: 0; }
 .fig-stage {
+  grid-column: 1 / -1;
   position: relative;
   aspect-ratio: 3 / 2;
   border-radius: var(--radius-sm);
@@ -871,8 +872,28 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   text-overflow: ellipsis;
   color: var(--muted);
 }
-.fig-cap { font: 600 0.85rem/1.35 var(--font-body); color: var(--ink); min-height: 2.7em; }
+/* Animar o pausar (todas las figuras de la página), bajo el dibujo y junto al texto. Quieta, se destaca para que se
+   note que se puede animar. */
+.fig-play {
+  min-height: 32px;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font: 700 0.62rem/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  background: rgba(3, 7, 18, 0.85);
+  border: 1px solid var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.fig-play:hover { color: var(--tape-hover); border-color: var(--tape-hover); }
+.fig-play:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
+.fig[data-motion="off"] .fig-play { color: var(--tape); border-color: var(--tape); box-shadow: 0 0 12px var(--tape-soft); }
+.fig-cap { grid-column: 2; font: 600 0.85rem/1.35 var(--font-body); color: var(--ink); min-height: 2.7em; }
 .fig--large .fig-chip { font-size: 0.72rem; top: 12px; }
+.fig--large .fig-play { font-size: 0.7rem; min-height: 36px; }
 .fig--large .fig-view { font-size: 0.64rem; top: 15px; }
 .fig--large .fig-cap { font-size: 0.95rem; }
 .fig--pip { gap: 4px; }
@@ -881,10 +902,16 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 .fig--pip .fig-stage::after { top: auto; left: auto; bottom: 4px; right: 4px; }
 .fig--pip .fig-chip { top: 6px; left: 16px; font-size: 0.55rem; padding: 3px 6px; }
 .fig--pip .fig-view { display: none; }
+.fig--pip { grid-template-columns: minmax(0, 1fr); }
+.fig--pip .fig-play { display: none; }                  /* sobre el video: se anima o pausa desde la figura grande */
+.fig--pip .fig-cap { grid-column: 1; }
 .fig--pip .fig-cap { font-size: 0.76rem; min-height: 0; color: #FFFFFF; }
 @media (max-width: 640px) {
   .fig-view { display: none; }
   .fig-cap { font-size: 0.8rem; }
+}
+@media (pointer: coarse) {
+  .fig-play { min-height: 40px; padding: 8px 12px; }
 }
 
 /* ==========================================================================

@@ -5,10 +5,8 @@
 (() => {
   'use strict';
 
-  const MP_VERSION = '1.1.0';
-  const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
-  const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
   const LOW_CONFIDENCE_FRAMES_BEFORE_HINT = 15;
+  const PC = window.AxonPoseCamera;                         // cámara y MediaPipe compartidos con seguimiento.js (TD-50)
 
   const $ = (id) => document.getElementById(id);
   // Eventos para módulos externos (patient-link.js manda la sesión al fisioterapeuta). app.js no sabe de la red.
@@ -41,11 +39,9 @@
 
   let session = null;
   let source = null;              // 'camera' | 'demo'
-  let running = false;
+  let running = false;             // bucle del demo
   let rafId = 0;
-  let landmarker = null;
-  let stream = null;
-  let lastVideoTime = -1;
+  let cam = null;                 // bucle de la cámara (pose-camera.js)
   let demo = null;                // { frames, start, idx }
   let lowStreak = 0;
   let alertTimer = 0;
@@ -99,7 +95,7 @@
     setup = null;
     $('cam-check').hidden = true;
     cancelAnimationFrame(rafId);
-    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    if (cam) { cam.stop(); cam = null; }
     ui.video.srcObject = null;
   }
 
@@ -127,60 +123,20 @@
     ui.btnCopy.disabled = !session || session.reps.length === 0;
   }
 
-  async function loadLandmarker() {
-    if (landmarker) return landmarker;
-    const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
-    const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
-    const options = (delegate) => ({ baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numPoses: 1 });
-    try {
-      landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('GPU'));
-    } catch (gpuError) {
-      console.warn('GPU no disponible para MediaPipe, uso CPU', gpuError);
-      landmarker = await vision.PoseLandmarker.createFromOptions(fileset, options('CPU'));
-    }
-    return landmarker;
-  }
-
   async function startCamera() {
     stopSource();
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      ui.sourceStatus.textContent = 'Este navegador no permite la cámara aquí. Ábrelo con Chrome o Edge, con doble clic en '
-        + 'index.html o desde http://localhost (ver README).';
-      return;
-    }
-    ui.sourceStatus.textContent = 'Cargando el modelo de pose (~9 MB la primera vez)…';
-    try {
-      await loadLandmarker();
-    } catch (err) {
-      console.error(err);
-      ui.sourceStatus.textContent = 'No se pudo cargar el modelo de pose. Revisa la conexión a internet y vuelve a intentar.';
-      return;
-    }
-    ui.sourceStatus.textContent = 'Pidiendo permiso para la cámara…';
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false,
-      });
-    } catch (err) {
-      ui.sourceStatus.textContent = err && err.name === 'NotAllowedError'
-        ? 'El navegador no dio permiso para la cámara. Permítelo en la barra de direcciones y vuelve a intentar.'
-        : err && err.name === 'NotFoundError' ? 'No se encontró ninguna cámara.'
-          : 'No se pudo abrir la cámara.';
-      return;
-    }
-    ui.video.srcObject = stream;
-    await ui.video.play();
-    ui.canvas.width = ui.video.videoWidth || 1280;
-    ui.canvas.height = ui.video.videoHeight || 720;
-    ui.viewport.style.setProperty('--src-ratio', `${ui.canvas.width} / ${ui.canvas.height}`);   // vertical en celular
+    const run = await PC.open({
+      video: ui.video, canvas: ui.canvas, viewport: ui.viewport,
+      status: (text) => { ui.sourceStatus.textContent = text; },
+      unsupported: 'Este navegador no permite la cámara aquí. Ábrelo con Chrome o Edge, con doble clic en index.html o '
+        + 'desde http://localhost (ver README).',
+    });
+    if (!run) return;
+    cam = run;
     source = 'camera';
-    lastVideoTime = -1;
-    ui.viewport.classList.add('mirror');
     ui.placeholder.hidden = true;
-    ui.sourceStatus.textContent = 'Cámara activa. El video no sale de este equipo.';
     startSetup();
-    running = true;
-    loop();
+    cam.start(onCameraResult);
   }
 
   // ---------------------------------------------------------------- preparar la cámara (ADR-015)
@@ -247,22 +203,18 @@
     loop();
   }
 
-  // ---------------------------------------------------------------- bucle
+  // ---------------------------------------------------------------- bucles
+  /** Un frame nuevo de la cámara (pose-camera.js): primero la preparación, después la sesión. */
+  function onCameraResult({ image, world, t }) {
+    if (setup) onSetupFrame(image, t);
+    else if (world && image) handleFrame({ t, world, visibility: image }, image, t, true);
+    else handleNoPose();
+  }
+
   function loop() {
     if (!running) return;
     rafId = requestAnimationFrame(loop);
-    if (source === 'camera') {
-      if (ui.video.readyState < 2 || ui.video.currentTime === lastVideoTime) return;
-      lastVideoTime = ui.video.currentTime;
-      const t0 = performance.now();
-      const result = landmarker.detectForVideo(ui.video, t0);
-      const world = result.worldLandmarks && result.worldLandmarks[0];
-      const image = result.landmarks && result.landmarks[0];
-      if (setup) onSetupFrame(image || null, t0);
-      else if (world && image) handleFrame({ t: t0, world, visibility: image }, image, t0, true);
-      else handleNoPose();
-      if (typeof result.close === 'function') result.close();
-    } else if (source === 'demo' && demo) {
+    if (source === 'demo' && demo) {
       // Se procesan todos los frames que ya tocaban (si la pestaña se ralentiza no se pierden repeticiones) y se dibuja el último.
       const elapsed = performance.now() - demo.start;
       while (demo.idx < demo.frames.length && demo.frames[demo.idx].t <= elapsed && running) {

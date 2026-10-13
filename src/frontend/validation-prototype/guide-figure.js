@@ -1149,6 +1149,18 @@
     return `${n} · ${label}`;
   }
 
+  // Animar o no: la elección de la persona (botón de cada figura) manda; si no eligió, se respeta "reducir movimiento"
+  // del sistema (por ejemplo, Windows con los efectos de animación apagados). Se recuerda en este navegador.
+  const MOTION_KEY = 'axonfas.figMotion';
+  const MOTION_EVENT = 'axon:fig-motion';
+  const motionDefault = (pref, reduce) => (pref === 'on' ? true : pref === 'off' ? false : !reduce);
+  function readMotion() {
+    try { return localStorage.getItem(MOTION_KEY); } catch { return null; }
+  }
+  function saveMotion(on) {
+    try { localStorage.setItem(MOTION_KEY, on ? 'on' : 'off'); } catch { /* sin almacenamiento: vale para esta página */ }
+  }
+
   /** Para cada paso: pose de partida, pose objetivo y flecha (se calcula una vez por guía). */
   function plan(guide, ctx, steps) {
     const holdIdx = steps.map((st, i) => (st.cap === 'hold' ? i : -1)).filter((i) => i >= 0);
@@ -1165,7 +1177,8 @@
   /**
    * Componente "Figura de referencia" (design system §4): pinta en `container` el marco, el lienzo, la etiqueta de la
    * fase, la vista y el texto. opts: hold (s), variant ('card' | 'pip' | 'large'), autoplay ('visible' | 'always'),
-   * caption (false = sin texto). Con movimiento reducido muestra inicio y final, sin animar. Devuelve { stop() }.
+   * caption (false = sin texto). El botón de la figura anima o pausa todas las de la página; en pausa, y con movimiento
+   * reducido mientras la persona no pida animar, muestra inicio y final lado a lado. Devuelve { el, stop() }.
    */
   function render(container, exerciseId, opts = {}) {
     const guide = GUIDES[exerciseId];
@@ -1184,8 +1197,10 @@
     canvas.setAttribute('aria-label', `Figura de referencia: ${name}`);
     const chip = el('span', 'fig-chip');
     const view = el('span', 'fig-view', viewLabel(guide));
+    const btn = el('button', 'fig-play');
+    btn.type = 'button';
     stage.append(canvas, chip, view);
-    fig.appendChild(stage);
+    fig.append(stage, btn);                                  // fuera del dibujo: no tapa las etiquetas de inicio y final
     const cap = opts.caption === false ? null : el('figcaption', 'fig-cap');
     if (cap) fig.appendChild(cap);
     container.appendChild(fig);
@@ -1196,6 +1211,7 @@
     const muscles = musclesFor(exerciseId);                 // los mismos que pinta el mapa muscular
     const eligible = limbsFor(guide);
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let animate = motionDefault(readMotion(), reduce);
     let raf = 0, t0 = 0, last = '', visible = opts.autoplay !== 'visible', observer = null, resizer = null;
     const size = () => {
       const dpr = (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1;
@@ -1227,7 +1243,7 @@
       setText('go', 'Inicio → final', `${guide.cues.start}. ${guide.cues.go}${hold > 0 ? `; sostén ${hold} s` : ''}.`);
     }
     function tick(ts) {
-      if (typeof canvas.isConnected === 'boolean' && !canvas.isConnected) { raf = 0; if (observer) observer.disconnect(); return; }
+      if (typeof canvas.isConnected === 'boolean' && !canvas.isConnected) { raf = 0; release(); return; }
       raf = requestAnimationFrame(tick);
       const { w, h, ok } = size();
       if (!ok) return;
@@ -1249,21 +1265,51 @@
       });
       setText(phase, chipText(phase, hold), f.caption);
     }
-    function play() { if (!raf && !reduce && visible) { t0 = 0; raf = requestAnimationFrame(tick); } }
+    function play() { if (!raf && animate && visible) { t0 = 0; raf = requestAnimationFrame(tick); } }
     function pause() { cancelAnimationFrame(raf); raf = 0; }
-    if (reduce) {
-      still();
-      if (typeof ResizeObserver !== 'undefined') { resizer = new ResizeObserver(() => still()); resizer.observe(canvas); }
-    } else if (opts.autoplay === 'visible' && typeof IntersectionObserver !== 'undefined') {
+    /** Botón y lienzo según `animate`: animación en bucle, o inicio y final quietos. */
+    function apply() {
+      fig.dataset.motion = animate ? 'on' : 'off';
+      btn.setAttribute('aria-pressed', String(animate));
+      btn.textContent = animate ? '❚❚ Pausa' : '▶ Animar';
+      btn.setAttribute('aria-label', animate ? `Pausar la animación: ${name}` : `Animar la figura: ${name}`);
+      if (animate) play();
+      else { pause(); still(); }
+    }
+    // Una figura avisa a las demás de la página para que todas animen o pausen juntas.
+    function onMotion(ev) {
+      if (!fig.isConnected) { release(); return; }
+      if (ev.detail.from === fig || ev.detail.on === animate) return;
+      animate = ev.detail.on;
+      apply();
+    }
+    function release() {
+      if (observer) observer.disconnect();
+      if (resizer) resizer.disconnect();
+      if (typeof removeEventListener === 'function') removeEventListener(MOTION_EVENT, onMotion);
+    }
+    btn.addEventListener('click', () => {
+      animate = !animate;
+      saveMotion(animate);
+      dispatchEvent(new CustomEvent(MOTION_EVENT, { detail: { on: animate, from: fig } }));
+      apply();
+    });
+    addEventListener(MOTION_EVENT, onMotion);
+    if (typeof ResizeObserver !== 'undefined') {
+      resizer = new ResizeObserver(() => { if (!raf) still(); });
+      resizer.observe(canvas);
+    }
+    if (opts.autoplay === 'visible' && typeof IntersectionObserver !== 'undefined') {
       observer = new IntersectionObserver((entries) => {
         visible = entries.some((e) => e.isIntersecting);
         if (visible) play(); else pause();
       });
       observer.observe(canvas);
-    } else { visible = true; play(); }
+    } else visible = true;
+    apply();
     return {
       el: fig,
-      stop() { pause(); if (observer) observer.disconnect(); if (resizer) resizer.disconnect(); },
+      stop() { pause(); release(); },
     };
   }
 
@@ -1274,5 +1320,5 @@
   }
 
   return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, SHAPES, L, skeleton, camera, solvePose, prepare, frameAt, endPose,
-    timeline, focusOf, motion, layout, outlines, lowestY, musclesFor, render, cuesFor };
+    timeline, focusOf, motion, layout, outlines, lowestY, musclesFor, render, cuesFor, motionDefault };
 });

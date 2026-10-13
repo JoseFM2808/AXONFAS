@@ -108,8 +108,11 @@ las etiquetas.
 las guías: "Cómo se hace", la guía del Prototipo y la vista guiada. `pip`, compacta, va sobre el video del seguimiento y
 en el aviso de enseñanza.
 
-**Movimiento.** Se anima solo mientras está a la vista. Con `prefers-reduced-motion` muestra inicio y final lado a lado
-(o uno debajo del otro si la persona está acostada), con la pose objetivo y la flecha en el inicio.
+**Movimiento.** Se anima solo mientras está a la vista. Bajo el dibujo, junto al texto, va el botón `.fig-play`
+("▶ Animar" / "❚❚ Pausa", en tipografía mono y con el borde de `--tape` cuando está quieta): anima o pausa todas las
+figuras de la página y la elección se recuerda en el navegador. En pausa, y con `prefers-reduced-motion` mientras la
+persona no pida animar, muestra inicio y final lado a lado (o uno debajo del otro si la persona está acostada), con la
+pose objetivo y la flecha en el inicio. La variante `pip` no lleva botón: sigue a la figura grande de la misma página.
 
 **Reglas.**
 - No dibujes figuras de ejercicios fuera de este componente.

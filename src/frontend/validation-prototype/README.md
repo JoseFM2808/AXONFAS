@@ -33,7 +33,8 @@ que se descarga de internet es MediaPipe y su modelo de pose (unos 25 MB la prim
 ## Cómo preparar la prueba con cámara
 
 La página abre con la **guía del ejercicio**: una animación de referencia vista de lado (con movimiento reducido
-activado en el sistema, muestra la posición inicial y la final lado a lado), los pasos y dónde va la cámara.
+activado en el sistema, muestra la posición inicial y la final lado a lado hasta que se toca "▶ Animar"), los pasos y
+dónde va la cámara.
 
 - Cámara a la altura de la cadera, a 2–3 m, de frente o un poco en diagonal. Se tienen que ver el cuerpo entero y los pies.
 - Silla sin brazos, brazos cruzados sobre el pecho, buena luz y fondo despejado.
@@ -101,11 +102,12 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `index.html` | Interfaz y estilos de los componentes. Los tokens (colores, tipografía, geometría) vienen de `docs/design-system/tokens.css`: cámbialos ahí, no aquí. Se adapta a celular: tacómetros debajo del video y botones grandes |
 | `preview.html` | Copia vieja de `index.html`, pendiente de borrar con aprobación (TD-37) |
 | `lanzar-prototipo.cmd` | Script de lanzamiento: doble clic y arranca `serve.py` desde la carpeta del proyecto |
-| `app.js` | Cámara, MediaPipe, dibujo, alertas, voz y tablas |
+| `app.js` | Prototipo: preparación de la cámara, motor de reglas, dibujo, alertas, voz y tablas |
+| `pose-camera.js` | Cámara y MediaPipe compartidos por el Prototipo y el seguimiento (TD-50): carga el modelo una vez, abre la cámara y corre el bucle de detección |
 | `share.js` | Botón "Probar en otro equipo" y QR (usa `/lan.json` de `serve.py`) |
 | `serve.py` | Servidor de red local: HTTP 8091 + HTTPS 8443 con certificado autofirmado, y la API de Staging (`src/backend/staging_api.py`) |
 | `catalog.js` | Catálogo de 24 ejercicios con fuente, dosis, músculos, huesos y precauciones (ADR-011) |
-| `guide-figure.js` | Componente "Figura de referencia" del design system (§4): marioneta muscular animada en 3D de cada ejercicio (vista en tres cuartos, con profundidad), con el estilo del mapa muscular, los músculos que trabaja encendidos según el esfuerzo, la posición objetivo, la flecha del recorrido y el sostén. Todas las páginas lo usan con `AxonGuide.render` |
+| `guide-figure.js` | Componente "Figura de referencia" del design system (§4): marioneta muscular animada en 3D de cada ejercicio (vista en tres cuartos, con profundidad), con el estilo del mapa muscular, los músculos que trabaja encendidos según el esfuerzo, la posición objetivo, la flecha del recorrido y el sostén, y un botón para animar o pausar (TD-58). Todas las páginas lo usan con `AxonGuide.render` |
 | `camera-setup.js` | Preparar la cámara (ADR-015): posiciones alternativas con la calidad de cada medida, chequeo en vivo de encuadre, distancia y ángulo, y qué no se evalúa desde la vista real |
 | `tracker.js` | Seguimiento de cada ejercicio (ADR-014): qué medir con la pose, en qué modo contar (repeticiones, sostén o manual) y con qué valores de partida, no clínicos (TD-48). Funciones puras |
 | `seguimiento.html`, `seguimiento.js` | Página de seguimiento con la cámara y su modo paciente |
