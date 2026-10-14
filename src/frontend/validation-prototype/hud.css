@@ -872,8 +872,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   text-overflow: ellipsis;
   color: var(--muted);
 }
-/* Animar o pausar (todas las figuras de la página), bajo el dibujo y junto al texto. Quieta, se destaca para que se
-   note que se puede animar. */
+/* Animar o pausar esta figura, bajo el dibujo y junto al texto (TD-59). En las tarjetas también anima el mouse encima
+   o un toque en el dibujo, y la que se anima se resalta con el borde de --tape. */
 .fig-play {
   min-height: 32px;
   white-space: nowrap;
@@ -890,7 +890,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 }
 .fig-play:hover { color: var(--tape-hover); border-color: var(--tape-hover); }
 .fig-play:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
-.fig[data-motion="off"] .fig-play { color: var(--tape); border-color: var(--tape); box-shadow: 0 0 12px var(--tape-soft); }
+.fig[data-motion="on"] .fig-play { color: var(--tape); border-color: var(--tape); }
+.fig[data-play="hover"] .fig-stage { cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.fig[data-play="hover"][data-motion="on"] .fig-stage {
+  border-color: var(--tape);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.65), 0 0 14px var(--tape-soft);
+}
 .fig-cap { grid-column: 2; font: 600 0.85rem/1.35 var(--font-body); color: var(--ink); min-height: 2.7em; }
 .fig--large .fig-chip { font-size: 0.72rem; top: 12px; }
 .fig--large .fig-play { font-size: 0.7rem; min-height: 36px; }

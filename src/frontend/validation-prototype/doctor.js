@@ -488,7 +488,7 @@
     if (state.teachGuide) state.teachGuide.stop();
     const item = state.detail && state.detail.plan ? state.detail.plan.find((p) => p.exercise_id === ex.id) : null;
     state.teachGuide = window.AxonGuide
-      ? AxonGuide.render($('teach-guide'), ex.id, { hold: item ? item.hold_seconds : ex.dose.hold, variant: 'card', autoplay: 'visible' })
+      ? AxonGuide.render($('teach-guide'), ex.id, { hold: item ? item.hold_seconds : ex.dose.hold, variant: 'card', autoplay: 'visible', play: 'auto' })
       : null;
     state.teachMap = B.render($('teach-map'), { intensities: B.staticLoad(ex), onMuscleClick: (m) => highlight({ muscle: m, note: $('teach-note').value }) });
     const facts = $('teach-facts');

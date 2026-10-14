@@ -108,11 +108,16 @@ las etiquetas.
 las guías: "Cómo se hace", la guía del Prototipo y la vista guiada. `pip`, compacta, va sobre el video del seguimiento y
 en el aviso de enseñanza.
 
-**Movimiento.** Se anima solo mientras está a la vista. Bajo el dibujo, junto al texto, va el botón `.fig-play`
-("▶ Animar" / "❚❚ Pausa", en tipografía mono y con el borde de `--tape` cuando está quieta): anima o pausa todas las
-figuras de la página y la elección se recuerda en el navegador. En pausa, y con `prefers-reduced-motion` mientras la
-persona no pida animar, muestra inicio y final lado a lado (o uno debajo del otro si la persona está acostada), con la
-pose objetivo y la flecha en el inicio. La variante `pip` no lleva botón: sigue a la figura grande de la misma página.
+**Movimiento** (TD-59, como los videos de una red social). Quieta, la figura muestra inicio y final lado a lado (o uno
+debajo del otro si la persona está acostada), con la pose objetivo y la flecha en el inicio.
+- **Tarjetas** (`card`, `data-play="hover"`): quietas. Se anima solo la que tiene el mouse encima, o la que se toca (en
+  el dibujo o en el botón), y **una sola a la vez**: al animar otra, la anterior se detiene. La que se anima lleva el
+  borde y el brillo de `--tape`.
+- **Dentro del ejercicio** (`large` y `pip`, `data-play="auto"`; o `play: 'auto'` en una tarjeta sola, como la vista
+  previa del fisioterapeuta): siempre animada, también con `prefers-reduced-motion`, porque muestra cómo se hace. Se
+  pausa sola fuera de la vista.
+- **Botón** `.fig-play` bajo el dibujo, junto al texto ("▶ Animar" / "❚❚ Pausa", tipografía mono, `--tape` cuando
+  anima): anima o pausa esa figura. La variante `pip` no lo lleva.
 
 **Reglas.**
 - No dibujes figuras de ejercicios fuera de este componente.

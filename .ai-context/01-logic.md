@@ -198,7 +198,9 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
   recorrido. Está junto al video, en "Cómo se hace", en cada tarjeta de la
   galería, en el plan del paciente, en el panel del fisioterapeuta y en el aviso de enseñanza. La
   indicación de cada fase sale de los mismos textos: "Levanta la pierna de arriba" → "Sostén: 3 s" → "¡Bien! Ahora
-  baja" → vuelta. La cuenta del sostén aparece grande sobre el video, legible a 2–3 m.
+  baja" → vuelta. La cuenta del sostén aparece grande sobre el video, legible a 2–3 m. Cuándo se anima (TD-59): en las
+  tarjetas (galería y plan) solo la que tiene el mouse encima o la que se toca, una a la vez; dentro del ejercicio (guía,
+  "Cómo se hace", vista guiada, sobre el video y vista previa del fisioterapeuta), siempre.
 - **Una sola pierna no alcanza** (TD-55): en sentarse y pararse la medida es la altura de la cadera sobre los
   tobillos (no vale con un pie en el aire); en la sentadilla parcial se tienen que doblar las dos rodillas.
 - **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta

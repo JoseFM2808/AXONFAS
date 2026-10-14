@@ -1149,17 +1149,13 @@
     return `${n} · ${label}`;
   }
 
-  // Animar o no: la elección de la persona (botón de cada figura) manda; si no eligió, se respeta "reducir movimiento"
-  // del sistema (por ejemplo, Windows con los efectos de animación apagados). Se recuerda en este navegador.
-  const MOTION_KEY = 'axonfas.figMotion';
-  const MOTION_EVENT = 'axon:fig-motion';
-  const motionDefault = (pref, reduce) => (pref === 'on' ? true : pref === 'off' ? false : !reduce);
-  function readMotion() {
-    try { return localStorage.getItem(MOTION_KEY); } catch { return null; }
-  }
-  function saveMotion(on) {
-    try { localStorage.setItem(MOTION_KEY, on ? 'on' : 'off'); } catch { /* sin almacenamiento: vale para esta página */ }
-  }
+  // Cuándo se anima, como los videos de una red social (TD-59, pedido del owner):
+  // - 'hover' (tarjetas de la galería y del plan): quieta, con inicio y final; se anima solo la que tiene el mouse encima
+  //   o la que se toca, y una sola a la vez para no confundir.
+  // - 'auto' (dentro del ejercicio: guías, "Cómo se hace", vista guiada, sobre el video): siempre animada, aunque el
+  //   sistema pida reducir movimiento, porque muestra cómo se hace; el botón la pausa solo a ella.
+  const playMode = (variant, play) => play || (variant === 'card' ? 'hover' : 'auto');
+  let playing = null;                                       // la tarjeta que se está animando (una por página)
 
   /** Para cada paso: pose de partida, pose objetivo y flecha (se calcula una vez por guía). */
   function plan(guide, ctx, steps) {
@@ -1177,8 +1173,8 @@
   /**
    * Componente "Figura de referencia" (design system §4): pinta en `container` el marco, el lienzo, la etiqueta de la
    * fase, la vista y el texto. opts: hold (s), variant ('card' | 'pip' | 'large'), autoplay ('visible' | 'always'),
-   * caption (false = sin texto). El botón de la figura anima o pausa todas las de la página; en pausa, y con movimiento
-   * reducido mientras la persona no pida animar, muestra inicio y final lado a lado. Devuelve { el, stop() }.
+   * play ('hover' | 'auto'; por defecto 'hover' en tarjetas y 'auto' en lo demás, ver playMode) y caption (false = sin
+   * texto). Quieta, muestra inicio y final lado a lado. Devuelve { el, stop() }.
    */
   function render(container, exerciseId, opts = {}) {
     const guide = GUIDES[exerciseId];
@@ -1186,10 +1182,12 @@
     const ctx = prepare(guide);
     const hold = opts.hold || 0;
     const variant = opts.variant || 'card';
+    const mode = playMode(variant, opts.play);
     const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text != null) n.textContent = text; return n; };
     container.innerHTML = '';
     const fig = el('figure', `fig fig--${variant}`);
     fig.dataset.phase = 'start';
+    fig.dataset.play = mode;
     const stage = el('div', 'fig-stage');
     const canvas = el('canvas', 'fig-canvas');
     const name = (typeof self !== 'undefined' && self.AxonCatalog && self.AxonCatalog.get(exerciseId)) ? self.AxonCatalog.get(exerciseId).name : exerciseId;
@@ -1210,8 +1208,8 @@
     const steps = plan(guide, ctx, tl.steps);
     const muscles = musclesFor(exerciseId);                 // los mismos que pinta el mapa muscular
     const eligible = limbsFor(guide);
-    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let animate = motionDefault(readMotion(), reduce);
+    let pinned = mode === 'auto';                             // animada por elección o, dentro del ejercicio, siempre
+    let hovering = false;                                     // el mouse está encima (solo tarjetas)
     let raf = 0, t0 = 0, last = '', visible = opts.autoplay !== 'visible', observer = null, resizer = null;
     const size = () => {
       const dpr = (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1;
@@ -1265,36 +1263,40 @@
       });
       setText(phase, chipText(phase, hold), f.caption);
     }
-    function play() { if (!raf && animate && visible) { t0 = 0; raf = requestAnimationFrame(tick); } }
+    const on = () => pinned || hovering;
+    function play() { if (!raf && on() && visible) { t0 = 0; raf = requestAnimationFrame(tick); } }
     function pause() { cancelAnimationFrame(raf); raf = 0; }
-    /** Botón y lienzo según `animate`: animación en bucle, o inicio y final quietos. */
+    const me = { quiet() { pinned = false; hovering = false; apply(); } };
+    /** Botón y lienzo: animación en bucle, o inicio y final quietos. Entre tarjetas, solo una se anima. */
     function apply() {
-      fig.dataset.motion = animate ? 'on' : 'off';
-      btn.setAttribute('aria-pressed', String(animate));
-      btn.textContent = animate ? '❚❚ Pausa' : '▶ Animar';
-      btn.setAttribute('aria-label', animate ? `Pausar la animación: ${name}` : `Animar la figura: ${name}`);
-      if (animate) play();
+      const active = on();
+      if (mode === 'hover') {
+        if (active && playing !== me) { const prev = playing; playing = me; if (prev) prev.quiet(); }
+        if (!active && playing === me) playing = null;
+      }
+      fig.dataset.motion = active ? 'on' : 'off';
+      btn.setAttribute('aria-pressed', String(active));
+      btn.textContent = active ? '❚❚ Pausa' : '▶ Animar';
+      btn.setAttribute('aria-label', active ? `Pausar la animación: ${name}` : `Animar la figura: ${name}`);
+      if (active) play();
       else { pause(); still(); }
     }
-    // Una figura avisa a las demás de la página para que todas animen o pausen juntas.
-    function onMotion(ev) {
-      if (!fig.isConnected) { release(); return; }
-      if (ev.detail.from === fig || ev.detail.on === animate) return;
-      animate = ev.detail.on;
+    function toggle() {
+      if (on()) { pinned = false; hovering = false; } else pinned = true;
       apply();
     }
     function release() {
       if (observer) observer.disconnect();
       if (resizer) resizer.disconnect();
-      if (typeof removeEventListener === 'function') removeEventListener(MOTION_EVENT, onMotion);
+      if (playing === me) playing = null;
     }
-    btn.addEventListener('click', () => {
-      animate = !animate;
-      saveMotion(animate);
-      dispatchEvent(new CustomEvent(MOTION_EVENT, { detail: { on: animate, from: fig } }));
-      apply();
-    });
-    addEventListener(MOTION_EVENT, onMotion);
+    btn.addEventListener('click', toggle);
+    if (mode === 'hover') {
+      // Mouse encima: se anima mientras está ahí. Tocar o hacer clic en el dibujo: se anima o se pausa (celular).
+      fig.addEventListener('pointerenter', (ev) => { if (ev.pointerType === 'mouse') { hovering = true; apply(); } });
+      fig.addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse' && hovering) { hovering = false; apply(); } });
+      stage.addEventListener('click', toggle);
+    }
     if (typeof ResizeObserver !== 'undefined') {
       resizer = new ResizeObserver(() => { if (!raf) still(); });
       resizer.observe(canvas);
@@ -1320,5 +1322,5 @@
   }
 
   return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, SHAPES, L, skeleton, camera, solvePose, prepare, frameAt, endPose,
-    timeline, focusOf, motion, layout, outlines, lowestY, musclesFor, render, cuesFor, motionDefault };
+    timeline, focusOf, motion, layout, outlines, lowestY, musclesFor, render, cuesFor, playMode };
 });

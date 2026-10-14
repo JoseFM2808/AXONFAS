@@ -165,12 +165,15 @@ test('el contorno muscular es una figura completa: tronco, cabeza y, salvo en me
   }
 });
 
-test('la figura anima según lo que eligió la persona; si no eligió, respeta "reducir movimiento"', () => {
-  assert.equal(G.motionDefault(null, false), true);
-  assert.equal(G.motionDefault(null, true), false, 'Windows con efectos de animación apagados: quieta hasta que la pidan');
-  assert.equal(G.motionDefault('on', true), true, 'tocar "Animar" vale más que el ajuste del sistema');
-  assert.equal(G.motionDefault('off', false), false, 'tocar "Pausa" también');
+test('en las tarjetas se anima solo la que se mira; dentro del ejercicio, siempre (TD-59)', () => {
+  assert.equal(G.playMode('card'), 'hover', 'galería y plan: quieta hasta el mouse encima o un toque');
+  assert.equal(G.playMode('large'), 'auto', 'guía, "Cómo se hace" y vista guiada: siempre animada');
+  assert.equal(G.playMode('pip'), 'auto', 'sobre el video del seguimiento y en el aviso de enseñanza');
+  assert.equal(G.playMode('card', 'auto'), 'auto', 'una tarjeta sola (vista previa del fisioterapeuta) puede pedir siempre');
   const fs = require('node:fs');
-  const css = fs.readFileSync(path.join(SRC, 'hud.css'), 'utf8');
-  assert.ok(css.includes('.fig-play'), 'el botón de animar es parte del componente .fig (design system §4)');
+  const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
+  assert.ok(!/play: 'hover'/.test(read('app.js') + read('seguimiento.js') + read('patient.js')), 'dentro del ejercicio nunca espera al mouse');
+  assert.ok(read('doctor.js').includes("play: 'auto'"), 'la vista previa para enseñar muestra el ejercicio animado');
+  const css = read('hud.css');
+  assert.ok(css.includes('.fig-play') && css.includes('[data-play="hover"]'), 'botón y estado de la tarjeta en el componente .fig');
 });
