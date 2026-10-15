@@ -202,5 +202,5 @@ flowchart LR
 - **CLI de la nube:** AMD Developer Cloud expone la API v2 de DigitalOcean en su propio endpoint
   `https://api.devcloud.amd.com`, así que se maneja con `doctl` pasando `--api-url` (tamaño `gpu-mi300x1-192gb-devcloud`,
   región `atl1`). El token sale del equipo "My AMD Team", lo configura el owner en su propia terminal y nunca entra al
-  repo. Que `doctl` funcione con ese endpoint se valida con `doctl account get` en TD-04. Crear un droplet gasta créditos:
+  repo. `doctl` funciona con ese endpoint (verificado con `doctl account get` el 2026-10-15, TD-04); los tamaños con GPU aparecen en `doctl compute size list` solo cuando la cuenta los tiene habilitados. Crear un droplet gasta créditos:
   solo con el visto bueno del owner, y todo recurso lleva la etiqueta `axonfas`.
