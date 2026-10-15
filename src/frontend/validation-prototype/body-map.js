@@ -78,8 +78,10 @@
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 1000 2200');
     svg.setAttribute('class', 'bodymap-svg');
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', `Mapa muscular: ${VIEWS[view].toLowerCase()}`);
+    // Con clic (fisioterapeuta): un grupo de botones, uno por músculo, que se usan también con Tab y Enter.
+    // Sin clic: una sola imagen con su nombre.
+    svg.setAttribute('role', onClick ? 'group' : 'img');
+    svg.setAttribute('aria-label', `Mapa muscular: ${VIEWS[view].toLowerCase()}${onClick ? '. Elige un músculo para señalárselo al paciente' : ''}`);
     Object.entries(DATA[view]).forEach(([muscle, polys]) => {
       const g = document.createElementNS(SVG_NS, 'g');
       g.dataset.muscle = muscle;
@@ -94,7 +96,15 @@
       });
       if (onClick && !NEUTRAL.has(muscle)) {
         g.style.cursor = 'pointer';
+        g.setAttribute('role', 'button');
+        g.setAttribute('tabindex', '0');
+        g.setAttribute('aria-label', `Señalar ${NAMES[muscle] || muscle}`);
         g.addEventListener('click', () => onClick(muscle));
+        g.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onClick(muscle); }
+        });
+      } else if (onClick) {
+        g.setAttribute('aria-hidden', 'true');
       }
       svg.appendChild(g);
     });

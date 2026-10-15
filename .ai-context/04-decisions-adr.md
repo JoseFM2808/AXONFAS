@@ -211,6 +211,49 @@
     sobre la imagen.
   - El benchmark mide el bucle lento: el bucle rápido sigue en el navegador hasta elegir el lifter (TD-05).
 
+## ADR-017 · Sugerencias por rol, perfil del paciente y accesibilidad WCAG 2.2 AA — Aceptada
+
+- **Fecha:** 2026-10-15
+- **Contexto:** el owner pidió tres cosas:
+  - una interfaz simétrica y sin desbordes;
+  - sugerencias "de IA" según el rol: para el usuario, sobre cómo usar mejor la plataforma; desde el perfil del
+    paciente, dirigidas al fisioterapeuta, con cambios en el plan que tengan en cuenta sus limitaciones físicas;
+  - accesibilidad web.
+
+  Hay dos reglas que no se pueden romper: la IA nunca decide sobre la seguridad ni cambia el plan (ADR-004, ADR-005), y
+  ningún texto puede atribuirle a la IA lo que no hace (TD-34). La GPU todavía no está conectada (TD-04).
+- **Decisión:**
+  - **Sugerencias deterministas y explicables** (`suggestions.js`, navegador y Node). Cada una dice el dato que la
+    origina ("Por qué: …").
+    - `forUser`: consejos de uso para el paciente o visitante (qué hacer hoy, cámara, técnica, accesibilidad). Nunca
+      cambian dosis; lo clínico remite al fisioterapeuta.
+    - `forTherapist`: a partir del perfil y los datos del paciente: cambio de ejercicio por uno que encaje, bajar
+      dosis ante dolor, menos veces por semana si no cumple (solo con más de 7 días en el plan), agregar un ejercicio
+      ante alertas repetidas y precauciones.
+    - Son propuestas: "Revisar en el plan" abre el editor con el cambio marcado y solo se aplica si el fisioterapeuta
+      guarda.
+  - **IA solo para resumir** (`agents/advisor.py`). Si la GPU está conectada, el fisioterapeuta puede pedir un resumen
+    de esas sugerencias. Se descarta si trae cifras que no están en los datos, si nombra ejercicios que no están en el
+    plan ni en las sugerencias, o si es largo. Sin GPU, la interfaz lo dice y no muestra el botón.
+  - **Perfil del paciente** (`patient.profile`, JSON). Solo opciones cerradas (9 limitaciones y 5 zonas con dolor),
+    más una nota de hasta 200 caracteres. Lo completa el paciente o el fisioterapeuta. Cada ejercicio declara qué exige
+    (`NEEDS`: suelo, rodillas, de pie, equilibrio, banda, brazo y zonas que carga).
+  - **Accesibilidad WCAG 2.2 AA en las cinco páginas:**
+    - "Saltar al contenido", una sola región principal y tablas con scroll enfocables y con nombre.
+    - Estados y avisos anunciados (`role="status"`, `aria-live`) y foco visible con contraste.
+    - Mapa muscular operable con teclado, objetivos táctiles de 40 px y textos que no se salen de su caja.
+    - Movimiento reducido para los adornos y bordes en alto contraste de Windows.
+    - Tokens nuevos `--alert-ink` (texto rojo con 5,3:1 o más), `--alert-strong` (botón de detener con 5,5:1) y
+      `--focus`.
+  - **Simetría:** las tarjetas de una fila y los indicadores comparten filas con `subgrid`. Las celdas de las tablas se
+    ajustan en vez de forzar un scroll lateral.
+- **Consecuencias:**
+  - axe-core 4.10 (WCAG 2.2 A/AA y buenas prácticas) da 0 violaciones en las cinco páginas, en escritorio y en celular.
+  - Falta probar con lectores de pantalla reales (TD-66).
+  - Las reglas de encaje y las sugerencias son valores de partida que se validan con fisioterapeutas (TD-65).
+  - El perfil es un dato de salud: solo en Staging, con seudónimo y consentimiento (ADR-010); entra en la revisión de
+    protección de datos (TD-14).
+
 ---
 
 ## Anexo · Modelo de negocio acordado (hipótesis a validar, no es un ADR)

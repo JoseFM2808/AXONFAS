@@ -25,6 +25,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # src/, para los agentes (ADR-016/017)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS therapist (
@@ -32,7 +35,7 @@ CREATE TABLE IF NOT EXISTS therapist (
 CREATE TABLE IF NOT EXISTS patient (
   id INTEGER PRIMARY KEY, therapist_id INTEGER NOT NULL REFERENCES therapist(id),
   alias TEXT NOT NULL, birth_year INTEGER, consent_given INTEGER NOT NULL DEFAULT 0,
-  invite_code TEXT UNIQUE, joined_at TEXT, created_at TEXT NOT NULL);
+  invite_code TEXT UNIQUE, joined_at TEXT, created_at TEXT NOT NULL, profile TEXT);
 CREATE TABLE IF NOT EXISTS token (
   token TEXT PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('therapist', 'patient')),
   subject_id INTEGER NOT NULL, created_at TEXT NOT NULL);
@@ -61,6 +64,9 @@ EVENT_TYPES = {"trunk_flexion", "knee_valgus"}
 # nariz, orejas, hombros, codos, muñecas, caderas, rodillas, tobillos (ADR-013; brazos y orejas para la galería, ADR-014)
 LIVE_POINTS = {"0", "7", "8", "11", "12", "13", "14", "15", "16", "23", "24", "25", "26", "27", "28"}
 METRIC_UNITS = {"°", "cm", "%"}
+# Perfil del paciente (ADR-017): solo opciones cerradas y una nota corta. Los ids son los de suggestions.js.
+PROFILE_LIMITS = {"no_floor", "no_kneel", "no_standing", "balance", "walking_aid", "arm_limited", "no_band", "low_vision", "hearing"}
+PAIN_AREAS = {"knee", "hip", "back", "neck", "shoulder"}
 MAX_BODY = 256 * 1024
 
 
@@ -84,6 +90,26 @@ def now_iso() -> str:
 def parse_iso(value: str) -> datetime:
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def load_names(path: Path) -> dict[str, str]:
+    """{id: nombre} de catalog.js, para validar que la IA no nombre ejercicios que no vienen al caso (ADR-017)."""
+    return dict(re.findall(r"id: '([a-z0-9-]+)', theme: '[a-z-]+', name: '([^']+)'", path.read_text(encoding="utf-8")))
+
+
+def clean_profile(data: dict) -> dict:
+    limitations = data.get("limitations") or []
+    pain = data.get("pain_areas") or []
+    if not isinstance(limitations, list) or not isinstance(pain, list):
+        raise ApiError(400, "'limitations' y 'pain_areas' deben ser listas.")
+    unknown = [x for x in limitations if x not in PROFILE_LIMITS] + [x for x in pain if x not in PAIN_AREAS]
+    if unknown:
+        raise ApiError(400, f"Opciones de perfil desconocidas: {', '.join(map(str, unknown[:5]))}.")
+    note = data.get("note")
+    if note is not None and not isinstance(note, str):
+        raise ApiError(400, "'note' debe ser texto.")
+    note = (note or "").strip()[:200] or None
+    return {"limitations": sorted(set(limitations)), "pain_areas": sorted(set(pain)), "note": note, "updated_at": now_iso()}
 
 
 def load_catalog(path: Path) -> dict[str, str]:
@@ -220,15 +246,19 @@ def clean_rep(rep: dict) -> dict:
 
 # ------------------------------------------------------------------------------------------------ API
 class StagingApi:
-    def __init__(self, db_path: str | Path, catalog: dict[str, str]):
+    def __init__(self, db_path: str | Path, catalog: dict[str, str], names: dict[str, str] | None = None):
         if str(db_path) != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(db_path), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(SCHEMA)
+        if "profile" not in {r["name"] for r in self.db.execute("PRAGMA table_info(patient)")}:
+            self.db.execute("ALTER TABLE patient ADD COLUMN profile TEXT")    # bases creadas antes de ADR-017
         self.lock = threading.RLock()
         self.catalog = catalog
+        self.names = names or {}
+        self._ai = {"checked": 0.0, "available": False}
         self.hub = LiveHub()
         self.routes = [
             ("POST", r"/api/therapists", self.create_therapist, None),
@@ -239,11 +269,15 @@ class StagingApi:
             ("POST", r"/api/patients/(\d+)/invite", self.new_invite, "therapist"),
             ("POST", r"/api/patients/(\d+)/highlight", self.highlight, "therapist"),
             ("GET", r"/api/patients/(\d+)/live", self.live_stream_for_therapist, "therapist"),
+            ("PUT", r"/api/patients/(\d+)/profile", self.set_patient_profile, "therapist"),
+            ("POST", r"/api/patients/(\d+)/advice", self.advice, "therapist"),
+            ("GET", r"/api/ai/status", self.ai_status, "therapist"),
             ("POST", r"/api/join", self.join, None),
             ("GET", r"/api/me", self.patient_me, "patient"),
             ("POST", r"/api/sessions", self.create_session, "patient"),
             ("POST", r"/api/live", self.publish_live, "patient"),
             ("GET", r"/api/me/stream", self.live_stream_for_patient, "patient"),
+            ("PUT", r"/api/me/profile", self.set_my_profile, "patient"),
         ]
 
     # -------------------------------------------------------------------------------------- utilidades
@@ -321,13 +355,14 @@ class StagingApi:
         rows = self.db.execute("SELECT * FROM plan_exercise WHERE patient_id = ? AND active = 1 ORDER BY id", (patient_id,))
         return [{"id": r["id"], "exercise_id": r["exercise_id"], "sets": r["sets"], "reps": r["reps"],
                  "hold_seconds": r["hold_seconds"], "per_week": r["per_week"],
-                 "safety_envelope": json.loads(r["safety_envelope"]), "notes": r["notes"]} for r in rows]
+                 "safety_envelope": json.loads(r["safety_envelope"]), "notes": r["notes"], "since": r["created_at"]} for r in rows]
 
     @staticmethod
     def _patient_public(row: sqlite3.Row) -> dict:
         return {"id": row["id"], "alias": row["alias"], "birth_year": row["birth_year"],
                 "consent_given": bool(row["consent_given"]), "joined_at": row["joined_at"],
-                "invite_code": None if row["joined_at"] else row["invite_code"]}
+                "invite_code": None if row["joined_at"] else row["invite_code"],
+                "profile": json.loads(row["profile"]) if row["profile"] else None}
 
     def _sessions(self, patient_id: int, limit: int = 200) -> list[dict]:
         rows = self.db.execute("SELECT * FROM session WHERE patient_id = ? ORDER BY ended_at DESC LIMIT ?", (patient_id, limit))
@@ -428,6 +463,67 @@ class StagingApi:
             self.db.execute("UPDATE patient SET invite_code = ?, joined_at = NULL WHERE id = ?", (code, patient_id))
         return 200, {"invite_code": code}
 
+    # ------------------------------------------------------------------ perfil y sugerencias (ADR-017)
+    def _save_profile(self, patient_id: int, data: dict) -> dict:
+        profile = clean_profile(data)
+        with self.lock, self.db:
+            self.db.execute("UPDATE patient SET profile = ? WHERE id = ?", (json.dumps(profile), patient_id))
+        return profile
+
+    def set_my_profile(self, patient_id, data):
+        profile = self._save_profile(patient_id, data)
+        self.hub.publish(("therapist", patient_id), {"kind": "profile_updated", "at": now_iso()})
+        return 200, {"profile": profile}
+
+    def set_patient_profile(self, therapist_id, data, patient_id):
+        with self.lock:
+            self._own_patient(therapist_id, patient_id)
+        profile = self._save_profile(patient_id, data)
+        self.hub.publish(("patient", patient_id), {"kind": "profile_updated", "at": now_iso()})
+        return 200, {"profile": profile}
+
+    def _llm(self):
+        from agents.llm import OpenAICompatible
+        return OpenAICompatible(timeout=20)
+
+    def ai_status(self, _therapist_id, _data):
+        """¿Hay un LLM conectado (túnel a la GPU con AXONFAS_LLM_KEY)? Se revisa como mucho cada 30 s."""
+        import os
+        import urllib.request
+        if not os.environ.get("AXONFAS_LLM_KEY"):
+            return 200, {"available": False, "reason": "sin GPU conectada (falta AXONFAS_LLM_KEY)"}
+        if time.time() - self._ai["checked"] > 30:
+            llm = self._llm()
+            req = urllib.request.Request(f"{llm.url}/models", headers={"Authorization": f"Bearer {llm.key}"})
+            try:
+                with urllib.request.urlopen(req, timeout=2):
+                    self._ai["available"] = True
+            except Exception:  # noqa: BLE001 — cualquier falla = no disponible
+                self._ai["available"] = False
+            self._ai["checked"] = time.time()
+        return 200, {"available": self._ai["available"], "reason": None if self._ai["available"] else "el LLM no responde"}
+
+    def advice(self, therapist_id, data, patient_id):
+        """Resumen con IA de las sugerencias que ya calcularon las reglas. Sin LLM conectado: 503."""
+        items = data.get("suggestions")
+        if not isinstance(items, list) or not items or len(items) > 20 or not all(isinstance(s, dict) for s in items):
+            raise ApiError(400, "'suggestions' debe ser una lista de 1 a 20 sugerencias.")
+        clean = [{k: str(s.get(k) or "")[:400] for k in ("title", "detail", "because")} | {"priority": s.get("priority")}
+                 for s in items]
+        with self.lock:
+            p = self._own_patient(therapist_id, patient_id)
+            plan = self._plan(patient_id)
+        if not self.ai_status(therapist_id, {})[1]["available"]:
+            raise ApiError(503, "La IA no está conectada: abre el túnel a la GPU (axonfas-cloud.ps1 tunnel) con AXONFAS_LLM_KEY.")
+        from agents import advisor
+        text_all = " ".join(f"{s['title']} {s['detail']}" for s in clean)
+        known = [self.names.get(x["exercise_id"], x["exercise_id"]) for x in plan]
+        known += [n for n in self.names.values() if n in text_all]
+        out = advisor.summarize(self._llm(), json.loads(p["profile"]) if p["profile"] else None, clean, known)
+        if out.get("text") and advisor.mentions_unknown(out["text"], known, list(self.names.values())):
+            out = {"text": None, "source": "rejected", "reason": "el resumen nombra ejercicios que no están en el plan ni en las sugerencias"}
+        return 200, out
+
     def highlight(self, therapist_id, data, patient_id):
         muscle = self._text(data, "muscle", 40, required=False)
         exercise_id = data.get("exercise_id")
@@ -475,7 +571,8 @@ class StagingApi:
         for s in sessions:
             if s["end_reason"] == "completed" and parse_iso(s["ended_at"]) >= week_ago:
                 done[s["exercise_id"]] += 1
-        return 200, {"patient": {"id": p["id"], "alias": p["alias"], "consent_given": bool(p["consent_given"])},
+        return 200, {"patient": {"id": p["id"], "alias": p["alias"], "consent_given": bool(p["consent_given"]),
+                                 "profile": json.loads(p["profile"]) if p["profile"] else None},
                      "therapist": {"name": therapist["name"]},
                      "plan": [{**item, "done_7d": done[item["exercise_id"]]} for item in plan]}
 

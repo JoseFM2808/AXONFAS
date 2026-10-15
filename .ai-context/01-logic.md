@@ -115,6 +115,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-10 | Un fisioterapeuta solo ve y modifica a sus propios pacientes; a cualquier otro la API le responde "no existe" | ADR-012 |
 | I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
 | I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
+| I-13 | Una sugerencia nunca cambia el plan por sí sola: el fisioterapeuta la revisa y guarda. Las del usuario nunca tocan la dosis, y la IA solo resume las que ya calcularon las reglas | ADR-005, ADR-017 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -246,6 +247,25 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 | Rodilla (ROM) | Flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada |
 | Con cámara (TD-49) | Por ejercicio del plan, en las sesiones con conteo de cámara: recorrido medio por repetición (cuánto se alejó la medida de la posición inicial, en su unidad) y sostén medio, de la primera y la última sesión. El sostén solo se muestra si la dosis lo pide |
 | Detenciones por dolor | Sesiones con `end_reason = 'pain_stop'` en 30 días: bandera roja para el fisioterapeuta |
+
+## Sugerencias por rol (ADR-017)
+
+`suggestions.js` calcula, con reglas, dos listas que siempre dicen el dato que las origina.
+
+| Rol | Dónde | Qué sugiere | Qué nunca hace |
+|---|---|---|---|
+| Usuario (paciente o visitante) | Galería, página del paciente y final del seguimiento | Qué ejercicio toca hoy; avisar al fisioterapeuta si uno no encaja con su perfil; dónde poner la cámara; técnica (repeticiones a medias, sostenes cortos, poca luz); voz o texto grande según el perfil | Cambiar dosis o dar consejo de salud |
+| Fisioterapeuta, desde el perfil del paciente | Panel del fisioterapeuta | Cambiar un ejercicio que no encaja (por ejemplo, del suelo a sentado); bajar las repeticiones al 70 % ante dolor o detenciones por dolor; menos veces por semana si cumple menos de la mitad tras 7 días; agregar glúteo medio ante valgo repetido o control de tronco ante flexión repetida; precauciones de equilibrio; plan inicial si está vacío | Aplicarse sola (I-13) |
+
+**Encaje con el perfil:**
+- **Bloquea** un ejercicio en el suelo con `no_floor`, apoyado en rodillas con `no_kneel`, de pie con `no_standing`,
+  con banda con `no_band`, o de equilibrio muy alto con `balance` o `walking_aid`.
+- **Pide precaución** en los ejercicios de pie o de equilibrio alto con problemas de equilibrio, con el brazo limitado,
+  o cuando el ejercicio carga una zona con dolor.
+- **Las alternativas** son ejercicios que encajan y trabajan los mismos músculos, del mismo tema primero.
+
+**Con la GPU conectada,** el fisioterapeuta puede pedir un resumen con IA. Solo se muestra si no trae cifras ni
+ejercicios ajenos a los datos.
 
 ## Vista corporal en vivo (ADR-013)
 

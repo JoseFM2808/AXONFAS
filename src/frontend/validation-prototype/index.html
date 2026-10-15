@@ -201,6 +201,7 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#stage">Saltar al video y los controles</a>
 
 <!-- HEADER COCKPIT -->
 <header class="top-header">
@@ -228,7 +229,7 @@
   <!-- ESCENARIO CENTRAL / VIDEO VIEWPORT -->
   <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
 
-  <main class="stage-wrapper" id="stage">
+  <main class="stage-wrapper" id="stage" tabindex="-1">
     <div class="viewport" id="viewport">
       <video id="video" playsinline muted></video>
       <canvas id="overlay" width="1280" height="720"></canvas>
@@ -364,7 +365,7 @@
         <button class="btn" id="btn-demo" type="button">⚡ Ver el demo sintético</button>
         <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
         <button class="btn" id="btn-share" type="button" hidden>📱 Probar en otro equipo</button>
-        <span class="status-line" id="source-status">Sin fuente conectada.</span>
+        <span class="status-line" id="source-status" role="status">Sin fuente conectada.</span>
       </div>
       <div class="dock-group">
         <button class="btn danger" id="btn-pain" type="button" disabled>🛑 Dolor: Detener</button>
@@ -442,7 +443,7 @@
       <p class="baseline" id="baseline" style="font-size:0.9rem; color:var(--muted); margin-bottom:12px;">
         La línea base calculada aparecerá al terminar las 3 repeticiones de calibración.
       </p>
-      <div class="table-wrap">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones registradas">
         <table>
           <thead>
             <tr>
@@ -461,7 +462,7 @@
     <!-- EVENTOS DE COMPENSACIÓN -->
     <div>
       <h2>Compensaciones Biomecánicas Detectadas (&lt;250ms)</h2>
-      <div class="table-wrap">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Compensaciones detectadas">
         <table>
           <thead>
             <tr>

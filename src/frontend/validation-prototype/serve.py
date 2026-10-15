@@ -34,7 +34,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "backend"))
-from staging_api import StagingApi, Stream, load_catalog  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
+from staging_api import StagingApi, Stream, load_catalog, load_names  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
 
 DEFAULT_DB = Path.home() / ".axonfas" / "staging.sqlite3"   # fuera del repo y de Drive (ADR-012)
 DESIGN_DIR = HERE.parents[2] / "docs" / "design-system"    # index.html enlaza ../../../docs/design-system/tokens.css
@@ -196,7 +196,7 @@ def main() -> int:
     ap.add_argument("--local-only", action="store_true", help="escucha solo en 127.0.0.1 (sin red local ni QR)")
     ap.add_argument("--db", default=str(DEFAULT_DB), help="base SQLite de las cuentas de demostración (fuera del repo)")
     args = ap.parse_args()
-    Handler.api = StagingApi(args.db, load_catalog(HERE / "catalog.js"))
+    Handler.api = StagingApi(args.db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"))
 
     ip = None if args.local_only else lan_ip()
     bind = "127.0.0.1" if args.local_only else "0.0.0.0"

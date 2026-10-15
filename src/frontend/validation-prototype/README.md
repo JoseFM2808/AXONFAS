@@ -110,6 +110,7 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `camera-setup.js` | Preparar la cámara (ADR-015): posiciones alternativas con la calidad de cada medida, chequeo en vivo de encuadre, distancia y ángulo, y qué no se evalúa desde la vista real |
 | `tracker.js` | Seguimiento de cada ejercicio (ADR-014): qué medir con la pose, en qué modo contar (repeticiones, sostén o manual) y con qué valores de partida, no clínicos (TD-48). Funciones puras |
 | `seguimiento.html`, `seguimiento.js` | Página de seguimiento con la cámara y su modo paciente |
+| `suggestions.js` | Sugerencias por rol (ADR-017): consejos de uso para el usuario y, desde el perfil del paciente, propuestas para el fisioterapeuta; encaje de cada ejercicio con las limitaciones; lista y formulario del perfil accesibles |
 | `body-map.js`, `body-map-data.js` | Mapa muscular 2D y estimación educativa de carga; polígonos de react-body-highlighter (MIT, atribución en el archivo) |
 | `hud.css` | Componentes compartidos del design system (cabecera, botones, tarjetas, tablas, mapa, indicadores y el escenario de cámara de `index.html` y `seguimiento.html`) |
 | `galeria.html`, `gallery.js` | Galería de ejercicios |

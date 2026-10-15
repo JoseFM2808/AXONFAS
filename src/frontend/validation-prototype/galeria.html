@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
@@ -28,6 +29,7 @@
 </header>
 
 <div class="wrap">
+<main id="main" tabindex="-1">
   <h2 class="page-title">Ejercicios por temática de salud</h2>
   <p class="page-lede">Cada ejercicio viene de un programa público (AAOS, NHS o CDC STEADI), con la dosis que indica esa
     fuente, los músculos y huesos que trabaja y sus precauciones. Tu fisioterapeuta decide cuáles hacer y cuánto.</p>
@@ -36,12 +38,15 @@
     repeticiones o del tiempo sostenido (valores de partida, no clínicos). Solo <strong>Sentarse y pararse</strong> avisa
     además de compensaciones, en el Prototipo.</p>
 
+  <div id="tips" class="panel-card" style="margin-bottom:16px;"></div>
+
   <div class="row-between" style="margin-bottom:16px;">
     <div class="chips" id="themes" role="group" aria-label="Temática"></div>
     <input class="search" id="search" type="search" placeholder="Buscar por nombre o músculo" aria-label="Buscar ejercicio" style="max-width:20rem;">
   </div>
-  <p class="muted" id="count" style="margin-bottom:12px;"></p>
+  <p class="muted" id="count" aria-live="polite" style="margin-bottom:12px;"></p>
   <div class="card-grid" id="grid"></div>
+</main>
 
   <footer>
     Fuentes: AAOS OrthoInfo (programas de acondicionamiento de rodilla, cadera, columna y hombro), NHS WWL Teaching
@@ -56,6 +61,8 @@
 <script src="catalog.js"></script>
 <script src="tracker.js"></script>
 <script src="guide-figure.js"></script>
+<script src="api-client.js"></script>
+<script src="suggestions.js"></script>
 <script src="gallery.js"></script>
 </body>
 </html>

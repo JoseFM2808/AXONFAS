@@ -53,6 +53,7 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#stage">Saltar al video y los controles</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
@@ -91,7 +92,7 @@
 
   <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
 
-  <main class="stage-wrapper" id="stage">
+  <main class="stage-wrapper" id="stage" tabindex="-1">
     <div class="viewport" id="viewport">
       <video id="video" playsinline muted></video>
       <canvas id="overlay" width="1280" height="720"></canvas>
@@ -151,7 +152,7 @@
         <button class="btn" id="btn-recal" type="button" disabled>↺ Recalibrar</button>
         <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
         <label class="check"><input type="checkbox" id="voice" checked> Voz</label>
-        <span class="status-line" id="source-status">Sin cámara.</span>
+        <span class="status-line" id="source-status" role="status">Sin cámara.</span>
       </div>
       <div class="dock-group">
         <button class="btn danger" id="btn-pain" type="button" disabled>🛑 Dolor: detener</button>
@@ -184,12 +185,13 @@
 
   <section class="panel-card">
     <h2>Repeticiones de esta sesión</h2>
-    <div class="table-wrap">
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones de esta sesión">
       <table>
         <thead><tr><th>#</th><th>Lado</th><th>Recorrido máximo</th><th>Sostuvo</th><th>Duración</th></tr></thead>
         <tbody id="reps-body"><tr><td colspan="5" class="empty">Todavía no hay repeticiones.</td></tr></tbody>
       </table>
     </div>
+    <div id="tips" style="margin-top:16px;"></div>
   </section>
 
   <footer>
@@ -203,6 +205,7 @@
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>
 <script src="tracker.js"></script>
+<script src="suggestions.js"></script>
 <script src="camera-setup.js"></script>
 <script src="guide-figure.js"></script>
 <script src="api-client.js"></script>

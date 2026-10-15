@@ -90,6 +90,10 @@ nunca emite alertas de compensación (I-12). Antes de cada sesión con cámara v
 (`camera-setup.js`, ADR-015): toda medida nueva declara su plano y los puntos que necesita ver (`plane` y `need` en
 `METRICS`), y lo poco confiable desde la vista real no alerta.
 La carga muscular del mapa es una estimación educativa: nunca se presenta como medición ni diagnóstico (ADR-013).
+Las sugerencias (`suggestions.js`, ADR-017) son reglas explicables: las del fisioterapeuta nunca se aplican solas
+(I-13) y las del usuario nunca tocan la dosis. La IA solo resume y se valida; no la nombres donde no corre. Todo
+ejercicio nuevo necesita su entrada en `NEEDS`. Toda UI nueva cumple WCAG 2.2 AA (design system §7): foco visible,
+nombres accesibles, estados anunciados, contraste con `--alert-ink` y teclado; los tests revisan lo básico.
 
 El prototipo de validación (`src/frontend/validation-prototype/`) se abre con doble clic en `index.html` o con
 `py src/frontend/validation-prototype/serve.py`, que lo publica en la red local (HTTP 8091 para este equipo, HTTPS 8443

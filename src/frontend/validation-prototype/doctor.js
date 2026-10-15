@@ -7,13 +7,14 @@
   const C = window.AxonCatalog;
   const B = window.AxonBodyMap;
   const A = window.AxonApi;
+  const S = window.AxonSuggest;
   const $ = (id) => document.getElementById(id);
   const END = { completed: 'Completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano', envelope_breach: 'Fuera del sobre' };
   const SOURCE = { camera: 'Cámara', demo: 'Demo sintético', guided: 'Guiado' };
   const EVENT = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDE = { left: 'izquierda', right: 'derecha' };
   const state = { selected: null, detail: null, stream: null, liveMap: null, teachMap: null, teachGuide: null, lastFrame: 0, alertUntil: 0,
-    alertMuscles: [], feed: [], refreshTimer: 0, livenessTimer: 0 };
+    alertMuscles: [], feed: [], refreshTimer: 0, livenessTimer: 0, suggestions: [], ai: null };
 
   const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)} %`);
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -226,7 +227,66 @@
         + `(umbral ${e.threshold}°) · severidad ${e.severity}${e.alert_latency_ms != null ? ` · ${e.alert_latency_ms} ms` : ''}`));
     });
     renderTeach(d.plan);
+    renderProfile(d);
+    renderSuggestions(d);
   }
+
+  // ------------------------------------------------------------------ perfil y sugerencias (ADR-017)
+  function renderProfile(d) {
+    const p = d.patient.profile;
+    const box = $('p-profile');
+    box.innerHTML = '';
+    if (!S || S.profileEmpty(p)) {
+      box.appendChild(el('p', 'muted', 'Sin perfil todavía: el paciente puede completarlo en su página, o tú aquí abajo.'));
+    } else {
+      (p.limitations || []).forEach((id) => box.appendChild(el('span', 'tag warn', (S.LIMITS.find((x) => x.id === id) || {}).other || id)));
+      (p.pain_areas || []).forEach((id) => box.appendChild(el('span', 'tag bad', `Dolor: ${(S.PAIN_AREAS.find((x) => x.id === id) || {}).label || id}`)));
+      if (p.note) box.appendChild(el('span', 'tag cal', `Nota: ${p.note}`));
+    }
+    if (S) {
+      S.renderProfileForm($('p-profile-form'), p, async (next) => {
+        await A.call('therapist', 'PUT', `/api/patients/${state.selected}/profile`, next);
+        await loadDetail();
+      }, { who: 'therapist' });
+    }
+  }
+
+  function renderSuggestions(d) {
+    if (!S) return;
+    state.suggestions = S.forTherapist({ profile: d.patient.profile, plan: d.plan, metrics: d.metrics, sessions: d.sessions, events: d.events });
+    S.renderList($('p-suggest'), state.suggestions, {
+      title: 'Sugerencias para ti, fisioterapeuta',
+      note: 'Calculadas con reglas a partir del perfil y los datos del paciente. Son propuestas: nada cambia hasta que revisas y guardas el plan.',
+      empty: 'Nada que sugerir por ahora: el plan encaja con su perfil y sus datos.',
+      actionLabel: 'Revisar en el plan',
+      onAction: (s) => openPlanEditor(s.action),
+    });
+    $('p-ai-text').textContent = 'Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba salen de reglas y de los datos del paciente.';
+    checkAi();
+  }
+
+  async function checkAi() {
+    if (state.ai == null) {
+      try { state.ai = (await A.call('therapist', 'GET', '/api/ai/status')).available; } catch { state.ai = false; }
+    }
+    $('p-ai-btn').hidden = !state.ai || !state.suggestions.length;
+  }
+
+  $('p-ai-btn').addEventListener('click', async () => {
+    const btn = $('p-ai-btn');
+    btn.disabled = true;
+    $('p-ai-text').textContent = 'Pidiendo el resumen al modelo en la GPU…';
+    try {
+      const out = await A.call('therapist', 'POST', `/api/patients/${state.selected}/advice`, { suggestions: state.suggestions });
+      $('p-ai-text').textContent = out.text
+        ? `Resumen generado por IA (revísalo: no reemplaza tu criterio): ${out.text}`
+        : `La IA no dio un resumen válido (${out.reason}). Usa las sugerencias de arriba.`;
+    } catch (err) {
+      $('p-ai-text').textContent = `Sin resumen: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ------------------------------------------------------------------ afiliar
   $('btn-invite').addEventListener('click', () => {
@@ -299,7 +359,8 @@
     return box;
   }
 
-  $('btn-plan').addEventListener('click', () => {
+  /** Abre el editor del plan; con una sugerencia, deja el cambio hecho y marcado para que el fisioterapeuta lo revise. */
+  function openPlanEditor(action) {
     const current = Object.fromEntries((state.detail ? state.detail.plan : []).map((p) => [p.exercise_id, p]));
     const list = $('plan-list');
     list.innerHTML = '';
@@ -307,9 +368,36 @@
       list.appendChild(el('h3', 'muted', t.name));
       C.EXERCISES.filter((e) => e.theme === t.id).forEach((e) => list.appendChild(planRow(e, current[e.id])));
     });
-    $('plan-error').textContent = '';
+    const marked = [];
+    const box = (id) => list.querySelector(`.plan-ex[data-id="${id}"]`);
+    const toggle = (id, on) => {
+      const b = box(id);
+      if (!b) return;
+      b.querySelector('input[type="checkbox"]').checked = on;
+      b.dataset.on = String(on);
+      b.classList.add('suggested');
+      marked.push(b);
+    };
+    if (action) {
+      if (action.type === 'swap') { toggle(action.from, false); toggle(action.to, true); }
+      if (action.type === 'remove') toggle(action.exercise_id, false);
+      if (action.type === 'add') (action.exercise_ids || []).forEach((id) => toggle(id, true));
+      if (action.type === 'dose') {
+        const b = box(action.exercise_id);
+        const input = b && b.querySelector(`[data-name="${action.field}"]`);
+        if (input) { input.value = action.value; b.classList.add('suggested'); marked.push(b); }
+      }
+    }
+    $('plan-error').textContent = marked.length ? 'Marcado en amarillo: el cambio sugerido. Revísalo y guarda solo si estás de acuerdo.' : '';
     $('plan-dialog').showModal();
-  });
+    if (marked[0]) {
+      marked[0].scrollIntoView({ block: 'center' });
+      const focusable = marked[0].querySelector('input');
+      if (focusable) focusable.focus();
+    }
+  }
+
+  $('btn-plan').addEventListener('click', () => openPlanEditor(null));
   $('plan-close').addEventListener('click', () => $('plan-dialog').close());
   $('plan-save').addEventListener('click', async () => {
     const exercises = [];
@@ -355,6 +443,7 @@
 
   function onLive(msg) {
     if (msg.kind === 'hello') { if (msg.last) onLive(msg.last); return; }
+    if (msg.kind === 'profile_updated') { loadDetail().catch(() => {}); return; }
     if (msg.kind === 'session_saved') {
       loadDetail().catch(() => {});
       refreshPatients().catch(() => {});

@@ -30,7 +30,11 @@
   --alert: #FF0055;                   /* Carmesí láser (compensación / dolor) */
   --alert-soft: rgba(255, 0, 85, 0.16);
   --alert-glow: 0 0 25px rgba(255, 0, 85, 0.55);
-  
+  /* Accesibilidad (ADR-017, WCAG 2.2 AA): el carmesí puro no llega a 4.5:1 como texto sobre las superficies */
+  --alert-ink: #FF5C8A;               /* texto en rojo sobre fondo oscuro: ≥ 5.3:1 en --surface, --surface-2 y --alert-soft */
+  --alert-strong: #D1004A;            /* fondo de botones de detener con texto blanco: 5.5:1 */
+  --focus: #FFFFFF;                   /* anillo de foco del teclado: blanco con halo cian, visible sobre cualquier fondo */
+
   --hold: #FFB800;                    /* Ámbar de aviso / calibración */
   --hold-soft: rgba(255, 184, 0, 0.15);
   

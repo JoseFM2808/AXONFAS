@@ -30,6 +30,7 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
@@ -47,6 +48,7 @@
 </header>
 
 <div class="wrap">
+<main id="main" tabindex="-1">
   <!-- CUENTA DE DEMOSTRACIÓN -->
   <section id="login" class="panel-card" hidden style="max-width:34rem;">
     <h2>Cuenta de demostración</h2>
@@ -58,7 +60,7 @@
         <input id="login-name" type="text" maxlength="80" required placeholder="Lic. Demo" autocomplete="off">
       </div>
       <button class="btn primary" type="submit">Crear cuenta de demostración</button>
-      <p class="status-line" id="login-error" style="margin-top:10px;"></p>
+      <p class="status-line" id="login-error" role="status" style="margin-top:10px;"></p>
     </form>
   </section>
 
@@ -85,6 +87,24 @@
       </div>
       <div id="p-invite" class="panel-card" hidden></div>
       <div class="kpis" id="p-kpis"></div>
+
+      <section class="panel-card stack" id="p-advice-card" aria-label="Sugerencias para el fisioterapeuta">
+        <div id="p-suggest"></div>
+        <div class="ai-summary" id="p-ai">
+          <p class="muted" id="p-ai-text">Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba
+            salen de reglas y de los datos del paciente.</p>
+          <button class="btn" id="p-ai-btn" type="button" hidden>Resumir con IA</button>
+        </div>
+      </section>
+
+      <section class="panel-card" aria-labelledby="p-profile-title">
+        <h2 id="p-profile-title">Perfil del paciente</h2>
+        <div class="profile-summary" id="p-profile"></div>
+        <details style="margin-top:12px;">
+          <summary>Editar el perfil (por ejemplo, tras tu evaluación)</summary>
+          <div id="p-profile-form" style="margin-top:12px;"></div>
+        </details>
+      </section>
 
       <div class="detail-grid">
         <div class="stack">
@@ -120,7 +140,7 @@
             </div>
             <div class="chips">
               <button class="btn primary" id="teach-send" type="button">Enviar el ejercicio al paciente</button>
-              <span class="status-line" id="teach-status"></span>
+              <span class="status-line" id="teach-status" role="status"></span>
             </div>
           </section>
         </div>
@@ -128,14 +148,14 @@
         <div class="stack">
           <section class="panel-card">
             <h2>Plan de ejercicios <button class="btn" id="btn-plan" type="button">Editar plan</button></h2>
-            <div class="table-wrap"><table>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Plan de ejercicios"><table>
               <thead><tr><th>Ejercicio</th><th>Dosis</th><th>Semana</th><th>Con cámara</th><th>Sobre</th></tr></thead>
               <tbody id="p-plan"></tbody>
             </table></div>
           </section>
           <section class="panel-card">
             <h2>Historial de sesiones</h2>
-            <div class="table-wrap"><table>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Historial de sesiones"><table>
               <thead><tr><th>Fecha</th><th>Ejercicio</th><th>Fuente</th><th>Reps</th><th>Fin</th><th>Alertas</th></tr></thead>
               <tbody id="p-sessions"></tbody>
             </table></div>
@@ -148,6 +168,7 @@
       </div>
     </section>
   </section>
+</main>
 
   <footer>
     Indicadores descriptivos para seguimiento, no resultados clínicos. Cumplimiento = sesiones completadas en 7 días
@@ -172,7 +193,7 @@
       <input id="invite-year" type="number" min="1900" max="2026" placeholder="1952">
     </div>
     <button class="btn primary" type="submit">Crear código de afiliación</button>
-    <p class="status-line" id="invite-error" style="margin-top:10px;"></p>
+    <p class="status-line" id="invite-error" role="status" style="margin-top:10px;"></p>
   </form>
 </dialog>
 
@@ -186,7 +207,7 @@
     sobre de seguridad (márgenes sobre la línea base) lo fijas tú y el paciente no lo puede cambiar.</p>
   <div id="plan-list"></div>
   <div class="row-between" style="margin-top:12px;">
-    <span class="status-line" id="plan-error"></span>
+    <span class="status-line" id="plan-error" role="status"></span>
     <button class="btn primary" id="plan-save" type="button">Guardar plan</button>
   </div>
 </dialog>
@@ -195,6 +216,7 @@
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>
+<script src="suggestions.js"></script>
 <script src="guide-figure.js"></script>
 <script src="tracker.js"></script>
 <script src="camera-setup.js"></script>

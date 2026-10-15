@@ -8,6 +8,7 @@
   const C = window.AxonCatalog;
   const B = window.AxonBodyMap;
   const A = window.AxonApi;
+  const S = window.AxonSuggest;
   const $ = (id) => document.getElementById(id);
   const state = { me: null, guided: null, stream: null, holdTimer: 0, guide: null };
 
@@ -37,7 +38,7 @@
       if (!state.stream) {
         state.stream = A.stream('patient', '/api/me/stream', (msg) => {
           if (msg.kind === 'highlight' && window.AxonTeach) AxonTeach.show(msg);
-          if (msg.kind === 'plan_updated' && !state.guided) boot();
+          if ((msg.kind === 'plan_updated' || msg.kind === 'profile_updated') && !state.guided) boot();
         });
       }
     } catch (err) {
@@ -71,10 +72,30 @@
       + `${plural(item.per_week, 'vez', 'veces')} por semana · esta semana: ${item.done_7d} de ${item.per_week}`;
   }
 
-  function renderPlan() {
+  /** Rol usuario (ADR-017): consejos de uso y el perfil que el fisioterapeuta usa para adaptar el plan. */
+  function renderHelp() {
+    const me = state.me;
+    const profile = me.patient.profile;
+    if (!S) return;
+    S.renderList($('tips'), S.forUser({ page: 'patient', profile, plan: me.plan }), {
+      title: 'Sugerencias para ti',
+      note: 'Consejos de uso calculados con reglas a partir de tu plan y tu perfil. Lo que sea de salud, consúltalo con tu fisioterapeuta.' });
+    $('profile-card').open = S.profileEmpty(profile);
+    S.renderProfileForm($('profile-form'), profile, async (next) => {
+      const res = await A.call('patient', 'PUT', '/api/me/profile', next);
+      state.me.patient.profile = res.profile;
+      renderPlan(true);
+    }, { who: 'patient' });
+  }
+
+  function renderPlan(keepForm = false) {
     const me = state.me;
     $('hello').textContent = `Hola, ${me.patient.alias}`;
     $('therapist').textContent = `Tu fisioterapeuta: ${me.therapist.name}. Toca "Cómo se hace" para ver los pasos.`;
+    if (!keepForm) renderHelp();
+    else if (S) S.renderList($('tips'), S.forUser({ page: 'patient', profile: me.patient.profile, plan: me.plan }), {
+      title: 'Sugerencias para ti',
+      note: 'Consejos de uso calculados con reglas a partir de tu plan y tu perfil. Lo que sea de salud, consúltalo con tu fisioterapeuta.' });
     const grid = $('plan-grid');
     grid.innerHTML = '';
     if (!me.plan.length) {
@@ -109,7 +130,8 @@
         guided.addEventListener('click', () => startGuided(item, ex));
         actions.appendChild(guided);
       }
-      grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item), hold: item.hold_seconds }));
+      grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item), hold: item.hold_seconds,
+        profile: me.patient.profile, forPlan: true }));
     });
   }
 

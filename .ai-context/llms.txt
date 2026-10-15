@@ -9,8 +9,8 @@ Reglas no negociables: el LLM nunca decide una alerta de seguridad; ningún ajus
 - [Lógica](01-logic.md): dos bucles, flujo de una repetición, cadena de compensación, turno de voz, reglas del agente, invariantes, reglas de seguridad de la pista, seguimiento con cámara y conteo de la galería
 - [Arquitectura](02-architecture.md): tecnologías, candidatos de lifter y licencias, costo por sesión, componentes en 1× MI300X, agentes, carpetas, entornos y operación del droplet
 - [Base de datos](03-database.md): diagrama ER, diccionario de datos, reglas de integridad
-- [Decisiones](04-decisions-adr.md): ADR-001…016 (galería documentada, cuentas de demostración, vista corporal en vivo, seguimiento y conteo en la galería, preparar la cámara, pila de la GPU lista para correr) y anexo del modelo de negocio
-- [Pendientes](05-tech-debt.md): requisitos del hackathon y TD-01…62 con prioridad y fecha límite
+- [Decisiones](04-decisions-adr.md): ADR-001…017 (galería documentada, cuentas de demostración, vista corporal en vivo, seguimiento y conteo en la galería, preparar la cámara, pila de la GPU lista para correr, sugerencias por rol y accesibilidad) y anexo del modelo de negocio
+- [Pendientes](05-tech-debt.md): requisitos del hackathon y TD-01…66 con prioridad y fecha límite
 - [API y MCP](06-api-mcp.md): API de Staging local (cuentas, planes, sesiones, canal en vivo), interfaces previstas de la nube, MCP N/A
 
 ## Proyecto

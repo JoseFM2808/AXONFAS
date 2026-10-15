@@ -189,6 +189,46 @@ class StagingApiTest(unittest.TestCase):
         self.assertEqual(ex["camera_last"]["hold"], 5.2)
         self.assertIsNone(detail["metrics"]["rom_last"], "el recorrido de rodilla sigue siendo solo de sesiones monitoreadas")
 
+    def test_perfil_del_paciente_lo_ve_el_fisioterapeuta(self):
+        """ADR-017: limitaciones y zonas con dolor, solo opciones cerradas; el fisioterapeuta recibe el aviso en vivo."""
+        patient = Client(self.api, self.join()[1]["token"])
+        q = self.api.hub.subscribe(("therapist", self.patient_id))
+        status, body = patient.call("PUT", "/api/me/profile", {"limitations": ["no_floor", "balance", "no_floor"],
+                                                               "pain_areas": ["knee"], "note": "  " + "x" * 300})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["profile"]["limitations"], ["balance", "no_floor"])
+        self.assertEqual(len(body["profile"]["note"]), 200)
+        self.assertEqual(q.get_nowait()["kind"], "profile_updated")
+        _, detail = self.doctor.call("GET", f"/api/patients/{self.patient_id}")
+        self.assertEqual(detail["patient"]["profile"]["pain_areas"], ["knee"])
+        self.assertEqual(patient.call("GET", "/api/me")[1]["patient"]["profile"]["limitations"], ["balance", "no_floor"])
+        self.assertEqual(patient.call("PUT", "/api/me/profile", {"limitations": ["diagnostico"]})[0], 400)
+        self.assertEqual(patient.call("PUT", "/api/me/profile", {"limitations": "no_floor"})[0], 400)
+        status, body = self.doctor.call("PUT", f"/api/patients/{self.patient_id}/profile", {"limitations": ["walking_aid"]})
+        self.assertEqual((status, body["profile"]["limitations"]), (200, ["walking_aid"]))
+        _, other = Client(self.api).call("POST", "/api/therapists", {"name": "Otra"})
+        self.assertEqual(Client(self.api, other["token"]).call("PUT", f"/api/patients/{self.patient_id}/profile", {})[0], 404)
+
+    def test_resumen_con_ia_solo_si_hay_gpu_y_sin_inventar(self):
+        sys.path.insert(0, str(ROOT / "src"))
+        from agents.llm import FakeLLM
+        suggestions = [{"title": "Cambiar Puente de cadera por Rotación de tronco sentado", "detail": "Encaja con su perfil.",
+                        "because": "Se hace en el suelo.", "priority": 1}]
+        self.assertEqual(self.doctor.call("POST", f"/api/patients/{self.patient_id}/advice", {"suggestions": suggestions})[0], 503,
+                         "sin GPU conectada no hay IA")
+        self.assertFalse(self.doctor.call("GET", "/api/ai/status")[1]["available"])
+        self.api.names = {"hip-bridge": "Puente de cadera", "seated-trunk-rotation": "Rotación de tronco sentado",
+                          "one-leg-stand": "Apoyo en un pie"}
+        self.api.ai_status = lambda *_: (200, {"available": True})
+        replies = {"good": "Primero revisa el puente de cadera: se hace en el suelo y conviene la rotación de tronco sentado.",
+                   "numbers": "Bájale a 4 repeticiones el puente de cadera.",
+                   "unknown": "Agrega Apoyo en un pie para el equilibrio."}
+        for case, expected in [("good", "llm"), ("numbers", "rejected"), ("unknown", "rejected")]:
+            self.api._llm = lambda c=case: FakeLLM(default=replies[c])
+            status, out = self.doctor.call("POST", f"/api/patients/{self.patient_id}/advice", {"suggestions": suggestions})
+            self.assertEqual((status, out["source"]), (200, expected), case)
+        self.assertEqual(self.doctor.call("POST", f"/api/patients/{self.patient_id}/advice", {"suggestions": []})[0], 400)
+
     def test_senalar_un_musculo_llega_al_paciente(self):
         patient = Client(self.api, self.join()[1]["token"])
         stream = patient.call("GET", "/api/me/stream")

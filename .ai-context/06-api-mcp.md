@@ -18,7 +18,7 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `POST /api/therapists` | — | `{name}` → 201 `{token, therapist}` |
 | `GET /api/therapists/me` | fisioterapeuta | → `{therapist, patients: [{id, alias, birth_year, consent_given, joined_at, invite_code, plan_size, metrics, live}]}` |
 | `POST /api/patients` | fisioterapeuta | `{alias, birth_year?}` → 201 `{patient}` con `invite_code` |
-| `GET /api/patients/{id}` | fisioterapeuta | → `{patient, plan, sessions (30), events (60), metrics, live}`. Cada `metrics.per_exercise` suma `camera_first`, `camera_last` (`{session_id, ended_at, reps, peak, hold}`), `camera_sessions` y `camera_series` (TD-49) |
+| `GET /api/patients/{id}` | fisioterapeuta | → `{patient (con `profile`), plan (cada ítem con `since`, cuándo se indicó), sessions (30), events (60), metrics, live}`. Cada `metrics.per_exercise` suma `camera_first`, `camera_last` (`{session_id, ended_at, reps, peak, hold}`), `camera_sessions` y `camera_series` (TD-49) |
 | `PUT /api/patients/{id}/plan` | fisioterapeuta | `{exercises: [{exercise_id, sets, reps, hold_seconds, per_week, safety_envelope?, notes?}]}` → `{plan}`; reemplaza el plan activo |
 | `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code}` nuevo |
 | `POST /api/patients/{id}/highlight` | fisioterapeuta | `{muscle?, exercise_id?, note?}` → 202 `{delivered_to}` |
@@ -27,7 +27,11 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/me` | paciente | → `{patient, therapist, plan: [... , done_7d]}` |
 | `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds`, ver [03](03-database.md)); lo demás se descarta |
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
-| `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`) y `plan_updated` |
+| `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`), `plan_updated` y `profile_updated` |
+| `PUT /api/me/profile` | paciente | `{limitations: [...], pain_areas: [...], note?}` → `{profile}`; ids desconocidos → 400; avisa `profile_updated` al fisioterapeuta (ADR-017) |
+| `PUT /api/patients/{id}/profile` | fisioterapeuta | Igual, para completar el perfil tras su evaluación; avisa al paciente |
+| `GET /api/ai/status` | fisioterapeuta | → `{available, reason}`: hay LLM solo con el túnel a la GPU y `AXONFAS_LLM_KEY` (ADR-016) |
+| `POST /api/patients/{id}/advice` | fisioterapeuta | `{suggestions: [{title, detail, because, priority}]}` (1–20) → `{text, source: 'llm'}` o `{text: null, source: 'rejected', reason}`; sin LLM → 503. Resume, no agrega sugerencias (ADR-017) |
 
 **Marco en vivo** (`POST /api/live`; el servidor descarta todo campo que no esté en esta lista, I-11):
 `{exercise_id, source, phase, posture, reps_done, reps_total, angles: {knee, trunk, valgusL, valgusR, confidence},

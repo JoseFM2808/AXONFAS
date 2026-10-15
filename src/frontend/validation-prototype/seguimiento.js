@@ -19,6 +19,7 @@
   const GF = window.AxonGuide;
   const CS = window.AxonCameraSetup;
   const PC = window.AxonPoseCamera;                         // cámara y MediaPipe compartidos con app.js (TD-50)
+  const SG = window.AxonSuggest;                            // consejos de uso al terminar (ADR-017)
   const S = T.SIDES;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
@@ -50,7 +51,7 @@
     ex: null, spec: null, dose: null, tracker: null, map: null,
     cam: null, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
-    patient: null, item: null, lastSent: 0, inFlight: false, saved: false,
+    patient: null, item: null, lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
   };
 
   const cssCache = {};
@@ -127,6 +128,7 @@
     hideAlert();
     renderReadouts(null);
     renderReps();
+    if ($('tips')) $('tips').innerHTML = '';
     setPhase('Esperando la cámara', 'Toca "Usar la cámara" para empezar.');
     setButtons(false);
   }
@@ -223,6 +225,9 @@
     st.ended = false;
     st.saved = false;
     st.lowStreak = 0;
+    st.frames = 0;
+    st.lowFrames = 0;
+    st.lastOut = null;
     ui.placeholder.hidden = true;
     ui.hud.hidden = false;
     hideAlert();
@@ -257,6 +262,9 @@
   }
 
   function handleOut(out, image) {
+    st.frames += 1;
+    st.lastOut = out;
+    if (out.lowConfidence) st.lowFrames += 1;
     if (out.lowConfidence) {
       st.lowStreak += 1;
       if (st.lowStreak === LOW_FRAMES_BEFORE_HINT) showInfo(`No te veo bien. ${st.spec.camera}`);
@@ -339,7 +347,20 @@
     ui.status.textContent = 'Cámara apagada.';
     setButtons(false);
     renderReps();
+    renderTips(reps);
     saveSession(reason, reps);
+  }
+
+  /** Consejos de uso según cómo fue la sesión (rol usuario, ADR-017). Nunca cambian la dosis. */
+  function renderTips(reps) {
+    if (!SG || !$('tips')) return;
+    const o = st.lastOut || {};
+    const session = { count: reps, total: st.tracker.target.total, partials: o.partials || 0, shortHolds: o.shortHolds || 0,
+      lowConfidenceRatio: st.frames ? st.lowFrames / st.frames : 0, view: st.view,
+      recommended: st.camMeasures ? CS.recommend(st.camMeasures.measures) : null };
+    SG.renderList($('tips'), SG.forUser({ page: 'session', profile: st.patient ? st.patient.profile : null, session }), {
+      title: 'Sugerencias para la próxima', note: 'Consejos de uso calculados con reglas a partir de esta sesión.',
+      empty: 'Todo salió bien: no hay nada que mejorar en el uso de la cámara.' });
   }
 
   function setButtons(active) {

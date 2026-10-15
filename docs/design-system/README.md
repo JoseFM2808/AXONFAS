@@ -141,3 +141,43 @@ Antes de cada sesión con cámara (`camera-setup.js`, ADR-015).
   con ✓ (`--safe`), ✗ (`--alert`) o ! (`--hold`) para cuerpo a la vista, distancia y ángulo, la calidad con la vista
   real, una barra que se llena mientras la posición se mantiene y el botón "Empezar ya".
 
+---
+
+## 6. Componente: sugerencias (`.suggest`) y perfil del paciente (`.profile-form`)
+
+`AxonSuggest.renderList` y `AxonSuggest.renderProfileForm` (`suggestions.js`, ADR-017).
+
+- **Lista de sugerencias:** una sección con título (`h2.suggest-title`), una nota que dice de dónde salen
+  ("calculadas con reglas…") y una grilla de tarjetas `.suggest-item`.
+  - Cada tarjeta trae el tipo (mono, en mayúsculas), el título, el texto y "Por qué: …" en `--muted`.
+  - El borde izquierdo es `--tape` (uso), `--hold` (dosis o precaución) o `--alert` (prioridad alta, también escrita en
+    el tipo).
+  - El botón va al fondo, así queda alineado en toda la fila. La lista se anuncia con `aria-live="polite"`.
+- **Resumen con IA (`.ai-summary`):** borde punteado. Solo aparece si la GPU está conectada; si no, lo dice con texto.
+- **Formulario del perfil:** dos `fieldset` con `legend` (limitaciones y zonas con dolor) de casillas de 32 px de alto,
+  y una nota con su indicación enlazada (`aria-describedby`). El resultado se anuncia (`role="status"`).
+- **Aviso de encaje en las tarjetas (`.fit-note`):** en `--hold`, siempre presente (vacío si encaja), para que todas las
+  tarjetas tengan las mismas filas.
+
+## 7. Accesibilidad (WCAG 2.2 AA)
+
+- **Contraste:**
+  - Texto en rojo sobre superficies oscuras: `--alert-ink` (5,3:1 o más), nunca `--alert`.
+  - Botón de detener: `--alert-strong` con texto blanco (5,5:1).
+  - Alerta de severidad 1: texto oscuro sobre `--hold`.
+  - El resto de combinaciones del HUD supera 4,5:1.
+- **Foco:** anillo blanco de 3 px con halo cian (`--focus`) en todo control. Nunca se quita el `outline` sin dar otro.
+- **Estructura:**
+  - "Saltar al contenido" como primer elemento; una sola región `<main>`.
+  - Tablas con scroll lateral dentro de `.table-wrap` con `tabindex="0"`, `role="region"` y nombre.
+  - Líneas de estado con `role="status"`.
+- **Teclado:** todo lo que se toca se usa con Tab y Enter: el mapa muscular del fisioterapeuta, las figuras y los
+  diálogos.
+- **Tamaño:** botones de 40 px de alto o más (2.5.8); los textos largos se cortan dentro de su caja
+  (`overflow-wrap`), nunca la desbordan.
+- **Movimiento:** con `prefers-reduced-motion` se quitan pulsos y transiciones. Las figuras de los ejercicios siguen
+  animadas dentro del ejercicio y tienen pausa.
+- **Alto contraste de Windows:** bordes con `CanvasText`.
+- **Simetría:** las tarjetas de una fila (`.card-grid > .ex-card`) y los indicadores (`.kpis > .kpi`) usan `subgrid`.
+  Una tarjeta nueva debe mantener el mismo número de hijos.
+

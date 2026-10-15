@@ -4,11 +4,23 @@
   const C = window.AxonCatalog;
   const B = window.AxonBodyMap;
   const $ = (id) => document.getElementById(id);
-  const state = { theme: 'all', query: '' };
+  const S = window.AxonSuggest;
+  const state = { theme: 'all', query: '', profile: null };
   const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-  /** Tarjeta de un ejercicio. La reutiliza patient.js con `extra` (botones), `doseText` y `hold` del plan. */
-  function exerciseCard(e, { extra = null, doseText = null, hold = null } = {}) {
+  /** Aviso de encaje con el perfil (ADR-017): vacío si encaja. Siempre se crea, para que las tarjetas tengan las mismas filas. */
+  function fitNote(e, profile, forPlan) {
+    const p = document.createElement('p');
+    p.className = 'fit-note';
+    if (!S || !profile) return p;
+    const f = S.fit(e.id, profile);
+    if (!f.ok) p.textContent = `No encaja con tu perfil: ${f.blocks.join(' y ')}. ${forPlan ? 'Coméntaselo a tu fisioterapeuta.' : 'Tu fisioterapeuta decide.'}`;
+    else if (f.cautions.length) p.textContent = `Ojo: ${f.cautions[0]}.`;
+    return p;
+  }
+
+  /** Tarjeta de un ejercicio. La reutiliza patient.js con `extra` (botones), `doseText`, `hold` y `profile` del plan. */
+  function exerciseCard(e, { extra = null, doseText = null, hold = null, profile = null, forPlan = false } = {}) {
     const theme = C.THEMES.find((t) => t.id === e.theme);
     const card = document.createElement('article');
     card.className = 'ex-card';
@@ -21,6 +33,8 @@
       : track && track.quality === 'limited' ? 'Conteo con cámara (aprox.)' : 'Conteo con cámara';
     const title = document.createElement('h3');
     title.textContent = e.name;
+    title.id = `ex-${e.id}-${Math.random().toString(36).slice(2, 7)}`;
+    card.setAttribute('aria-labelledby', title.id);
     const goal = document.createElement('p');
     goal.className = 'muted';
     goal.textContent = e.goal;
@@ -68,7 +82,7 @@
     a.rel = 'noopener';
     a.textContent = `${e.source.org} · ${e.source.title}`;
     source.append(a, ` (${e.sourceName})`);
-    card.append(badges, title, goal, ...(guide ? [guide] : []), map, dose, facts, details, source);
+    card.append(badges, title, goal, fitNote(e, profile, forPlan), guide || document.createElement('div'), map, dose, facts, details, source);
     if (extra) card.appendChild(extra);
     B.render(map, { intensities: B.staticLoad(e) });
     return card;
@@ -113,9 +127,23 @@
         alerts.textContent = 'Con alertas (Prototipo)';
         extra.appendChild(alerts);
       }
-      grid.appendChild(exerciseCard(e, { extra }));
+      grid.appendChild(exerciseCard(e, { extra, profile: state.profile }));
     });
     $('count').textContent = `${list.length} de ${C.EXERCISES.length} ejercicios`;
+  }
+
+  /** Consejos de uso (rol usuario) y, con una cuenta de paciente, el encaje de cada ejercicio con su perfil. */
+  async function loadProfile() {
+    const A = window.AxonApi;
+    const signedIn = Boolean(A && A.load('patient'));
+    if (signedIn) {
+      try { state.profile = (await A.call('patient', 'GET', '/api/me')).patient.profile; } catch { state.profile = null; }
+    }
+    if (S && $('tips')) {
+      S.renderList($('tips'), S.forUser({ page: 'gallery', profile: state.profile, signedIn }), {
+        title: 'Sugerencias para ti', note: 'Consejos de uso calculados con reglas a partir de tus datos. No reemplazan a tu fisioterapeuta.' });
+    }
+    if (state.profile) renderGrid();
   }
 
   window.AxonGallery = { exerciseCard };
@@ -123,5 +151,6 @@
     $('search').addEventListener('input', (ev) => { state.query = ev.target.value; renderGrid(); });
     renderThemes();
     renderGrid();
+    loadProfile();
   }
 })();
