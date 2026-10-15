@@ -68,8 +68,13 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 py ../.claude/context-sync/context_sync.py     # después de cada cambio técnico, desde esta carpeta
 py src/frontend/context-panel/build_panel.py   # regenera el panel de contexto desde .ai-context/
 node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada, seguimiento y cámara (TD-28, ADR-011/013/014/015)
-py -m unittest discover -s tests/backend              # API de Staging: cuentas, planes, sesiones, en vivo (ADR-012)
+py -m unittest discover -s tests/backend              # API de Staging (ADR-012) y benchmark de la GPU con operaciones de mentira
+py -m unittest discover -s tests/agents               # agentes, sobre de seguridad y conexión HTTP, sin GPU (ADR-016)
 ```
+
+Jornada en la GPU: `src/backend/cloud/axonfas-cloud.ps1` (`check` → `up -Yes` → `deploy` → `bench` → `down -Yes`; detalle
+en `src/backend/README.md`). `up` y `down` piden `-Yes` y el visto bueno del owner cada vez; nunca los corras por tu
+cuenta. Puedes correr `check` y `status`, que solo leen.
 
 Cuentas de demostración (ADR-012): `doctor.html` (fisioterapeuta) y `paciente.html`, servidas por `serve.py`. Sin
 contraseñas y solo datos de prueba con seudónimo; la base vive en `~/.axonfas/staging.sqlite3`, nunca en el repo. La

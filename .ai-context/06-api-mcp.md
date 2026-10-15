@@ -44,6 +44,22 @@ progress, metric: {label, value, unit}, view, points: {"0"|"7"|"8"|"11"|"12"|"13
 
 **Mensajes al paciente:** `{kind: "highlight", muscle?, exercise_id?, note?, from, at}` y `{kind: "plan_updated"}`.
 
+## Servicios de la GPU (ADR-016)
+
+Corren en el droplet MI300X y solo se usan por el túnel SSH (`axonfas-cloud.ps1 tunnel`). Todos piden
+`Authorization: Bearer <clave>`; la clave se genera en el droplet y no entra al repo.
+
+| Servicio | Endpoint | Entra | Sale |
+|---|---|---|---|
+| LLM (vLLM) | `POST :8000/v1/chat/completions` | API de OpenAI; modelo `axonfas-llm` (Qwen2.5-7B-Instruct); `response_format: {type: json_object}` para el agente clínico | `choices[0].message.content`, `usage` |
+| Voz | `GET :8001/health` (sin clave) | — | `{device, gpu, memory, stt, tts, stt_model, load_s, errors}` |
+| Voz | `POST :8001/v1/stt?language=es` | WAV PCM de 16 bits (cualquier frecuencia; se pasa a 16 kHz) | `{text, ms, audio_seconds}` |
+| Voz | `POST :8001/v1/tts` | `{text (≤ 600), voice (por defecto ef_dora)}` | `audio/wav` 24 kHz, cabecera `X-Synth-Ms` |
+
+**Respuesta del agente clínico** (lo que pide el prompt): `{"action": "adjust", "param", "old", "new", "reason"}` o
+`{"action": "none", "reason"}`. `param` ∈ `rom_target` (grados), `reps`, `rest_seconds`. La decisión que devuelve
+`clinical.propose` suma `within_envelope`, `outcome` y `note`, con la forma de `agent_decision`.
+
 ## Interfaces previstas
 
 | Interfaz | Entre | Entra | Sale | Pendiente |
@@ -51,7 +67,7 @@ progress, metric: {label, value, unit}, view, points: {"0"|"7"|"8"|"11"|"12"|"13
 | WebSocket de sesión | Navegador del paciente ↔ gateway FastAPI | Coordenadas 2D por frame (33 puntos de MediaPipe) y audio de voz en streaming. Nunca video (ADR-003) | Alertas del bucle rápido (color + frase corta pregrabada), audio TTS, metas nuevas en pantalla | TD-07 |
 | API del panel | Panel del fisioterapeuta ↔ backend | Sobre de seguridad por `plan_exercise`, aprobación del borrador SOAP | Sesiones, métricas por repetición, eventos de compensación, decisiones del agente, borrador SOAP | TD-09 |
 | Export clínico | Backend → sistemas externos | `clinical_report` revisado | `Observation` FHIR R4 + PDF. Fuera de Staging, solo si `reviewed_by` no es null | TD-10 |
-| LLM | Orquestador ↔ vLLM | Prompt con contexto de la sesión | Propuesta estructurada o texto para voz / SOAP | Interna, no se expone |
+| LLM | Orquestador ↔ vLLM | Prompt con contexto de la sesión | Propuesta estructurada o texto para voz / SOAP | Hecho por línea de comandos (ADR-016); falta conectarlo al Prototipo (TD-61) |
 
 ## Contratos ya fijados
 

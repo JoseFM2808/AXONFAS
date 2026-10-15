@@ -177,6 +177,40 @@
   - Una mala posición no se puede ignorar: se pide corregirla o se avisa que ciertas medidas no cuentan.
   - Las calidades por plano y los umbrales del ángulo son valores de partida: validarlos con cámara real es TD-57.
 
+## ADR-016 · Pila de la GPU lista para correr: modelos, acceso por túnel y un script para el ciclo del droplet — Aceptada
+
+- **Fecha:** 2026-10-15
+- **Contexto:** la cuenta de AMD Developer Cloud está lista, pero la MI300X espera la aprobación de AMD (TD-04). El owner
+  pidió que, cuando llegue el acceso, solo haya que correr el programa. Cada hora de GPU cuesta USD 1.99 y el puerto de
+  vLLM de la imagen Quick Start queda público si no se protege.
+- **Decisión:**
+  - **Modelos** (todos con licencia que permite uso comercial):
+    - Qwen2.5-7B-Instruct (Apache-2.0) en vLLM, con el 45 % de la memoria de la GPU.
+    - Whisper large-v3-turbo (MIT) para pasar voz a texto.
+    - Kokoro-82M (Apache-2.0) para la voz en español.
+    - Whisper y Kokoro corren en PyTorch sobre ROCm, en el contenedor `rocm` de la imagen vLLM Quick Start, en `atl1`.
+    - El lifter 3D sigue pendiente (TD-05).
+  - **Dependencias:** se instalan con un archivo de restricciones que congela torch, transformers y numpy de la imagen,
+    para que pip nunca cambie el PyTorch de ROCm.
+  - **Acceso:**
+    - vLLM (puerto 8000) y el servidor de voz (8001) solo se usan por un túnel SSH.
+    - Escuchan en localhost o en la IP interna del contenedor, y piden una clave que se genera y queda en el droplet.
+    - Un firewall de la nube (`axonfas-fw`, por la etiqueta `axonfas`) deja entrar solo SSH.
+  - **Agentes** (`src/agents/`, solo biblioteca estándar):
+    - Las frases de alarma y la validación contra el sobre son deterministas y van antes y después del LLM.
+    - La frase para el paciente y la nota SOAP descartan todo texto del LLM que traiga números que no están en los datos.
+  - **Operación:**
+    - `src/backend/cloud/axonfas-cloud.ps1` cubre el ciclo: `check`, `up`, `deploy`, `tunnel`, `smoke`, `bench`,
+      `fetch` y `down`.
+    - `up` y `down` piden `-Yes`; `up` no crea nada si la cuenta no tiene la MI300X habilitada.
+    - Lo que corre en la GPU vive en `src/backend/gpu/`: `bootstrap.sh`, `voice_server.py`, `smoke.py` y `bench.py`.
+- **Consecuencias:**
+  - El día del acceso, la secuencia es `up -Yes` → `deploy` → `bench` → `down -Yes`.
+  - Los agentes, el sobre y la conexión HTTP están probados sin GPU (18 tests).
+  - Lo que solo se sabe con la GPU queda para ese día: que los modelos quepan, los tiempos y que Kokoro instale bien
+    sobre la imagen.
+  - El benchmark mide el bucle lento: el bucle rápido sigue en el navegador hasta elegir el lifter (TD-05).
+
 ---
 
 ## Anexo · Modelo de negocio acordado (hipótesis a validar, no es un ADR)

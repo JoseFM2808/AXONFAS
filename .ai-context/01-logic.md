@@ -78,6 +78,18 @@ sequenceDiagram
 - El agente propone cambios en formato estructurado: JSON `{param, old, new, reason}` (parámetro, valor anterior, valor nuevo y motivo), el mismo que guarda `agent_decision.proposal`. El motor de reglas los valida contra el sobre. Esquema completo en [06 · API y MCP](06-api-mcp.md).
 - Todo cambio queda en `agent_decision` con su motivo, para auditoría del terapeuta.
 
+### Cómo está implementado (ADR-016, `src/agents/`)
+
+| Paso | Quién | Regla |
+|---|---|---|
+| 1. Alarma | `safety.red_flag` (determinista) | Dolor agudo, fuerte o intenso, mareo, pérdida de fuerza o debilidad súbita, desmayo, dolor de pecho, falta de aire, "algo se rompió". Si aparece, la sesión termina con `pain_stop` y **no se consulta al LLM** (I-7). Ante la duda, detener |
+| 2. Propuesta | `clinical.propose` (LLM, JSON) | Un solo ajuste de `rom_target`, `reps` o `rest_seconds`, o ninguno. Respuesta rota o sin LLM = sin cambio (`rejected`) |
+| 3. Validación | `safety.validate` (determinista) | `old` igual al valor actual, motivo no vacío, valor numérico. Dentro de `[rom_min, rom_max]` y `max_reps` del sobre → `applied`; fuera → `escalated_to_therapist` y se pausa el ejercicio; forma inválida → `rejected`. Sin sobre no hay ajuste (I-3) |
+| 4. Frase | `coach.reply` (LLM opcional) | Dice lo que decidió el motor. Si el LLM agrega un número que no está en la decisión, pasa de 30 palabras o devuelve JSON, se usa la plantilla |
+| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras que no están en los datos (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8) |
+
+Sin propuesta (`action: none`) no se guarda `agent_decision`. La alarma no es una decisión del agente: es un fin de sesión.
+
 ## Fin de sesión
 
 1. Consolidar métricas por repetición → resumen de sesión.

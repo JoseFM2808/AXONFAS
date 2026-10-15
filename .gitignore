@@ -104,3 +104,6 @@ Thumbs.db
 *.log
 logs/
 .claude/settings.local.json
+
+# ─── Resultados de la GPU (se traen a ~/.axonfas/results; nunca al repo) ─────
+src/backend/results/

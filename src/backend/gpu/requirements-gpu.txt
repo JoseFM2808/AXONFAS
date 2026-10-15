@@ -1,0 +1,7 @@
+# AXONFAS · dependencias extra dentro del contenedor `rocm` de la imagen vLLM (ADR-016).
+# bootstrap.sh las instala con un archivo de restricciones que congela torch, transformers y numpy tal como vienen en la
+# imagen: así pip nunca reemplaza el PyTorch de ROCm por uno de CUDA. Si algo no cabe, falla en vez de romper la imagen.
+fastapi
+uvicorn
+soundfile
+kokoro>=0.9.4

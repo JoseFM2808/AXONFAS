@@ -146,7 +146,7 @@ erDiagram
 | `voice_turn` | `pain_score` | smallint | 0–10 si el paciente lo menciona; null si no |
 | `agent_decision` | `proposal` | jsonb | `{param, old, new, reason}` propuesto por el LLM |
 | `agent_decision` | `within_envelope` | boolean | Resultado de validar contra `safety_envelope` |
-| `agent_decision` | `outcome` | text | `applied`, `rejected`, `escalated_to_therapist` |
+| `agent_decision` | `outcome` | text | `applied`, `rejected`, `escalated_to_therapist`. Sin propuesta del agente no hay fila; una frase de alarma termina la sesión (`end_reason = 'pain_stop'`) y tampoco es una decisión del agente (ADR-016) |
 | `clinical_report` | `reviewed_by` | uuid | Terapeuta que aprobó el borrador. Sin revisión, el reporte es borrador |
 | `monitoring_period` | `days_with_data` | int | Días con sesión en la ventana de 30 días. Alimenta la facturación RTM |
 | `monitoring_period` | `therapist_minutes` | int | Minutos que el terapeuta dedicó a revisar. También cuenta para RTM |
