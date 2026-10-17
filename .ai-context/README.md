@@ -17,7 +17,8 @@ Arquitectura viva de AXONFAS para agentes de IA (Claude Code y otros). Se va a v
 sintéticos), secretos. Lo privado va en `docs/meetings/`, que no se versiona.
 
 Después de cada cambio técnico: actualizar las pestañas afectadas y ejecutar desde la carpeta del proyecto
-`py ../.claude/context-sync/context_sync.py` hasta que no quede ningún `FAIL`.
+`py ../.claude/context-sync/context_sync.py` hasta que no quede ningún `FAIL` (si el script no está en esa ruta, avisar
+al owner; no crearlo).
 
 Panel publicado (las seis pestañas en una página): https://claude.ai/artifact/9mXdndf1iqyp85yJuHf7Kv. Se regenera con
 `py src/frontend/context-panel/build_panel.py` y se republica siempre en esa misma URL.

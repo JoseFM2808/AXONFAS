@@ -5,7 +5,7 @@ ADR-012 y ADR-013. La sirve serve.py en el mismo origen que el prototipo (rutas 
 - Datos en SQLite fuera del repo y de Drive (por defecto ~/.axonfas/staging.sqlite3). Solo datos sintéticos o del
   equipo con consentimiento (ADR-010).
 - Cuentas de demostración, sin contraseñas: cada dispositivo recibe un token bearer aleatorio. NO es autenticación de
-  Producción (TD-38).
+  Producción (TD-41).
 - El paciente se afilia con el código que genera su fisioterapeuta y acepta el consentimiento. Sin consentimiento y sin
   plan para ese ejercicio no se registran sesiones (I-3, I-9).
 - Un fisioterapeuta solo ve a sus pacientes (I-10). El canal en vivo lleva ángulos, fase, repeticiones, eventos y
@@ -29,6 +29,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # src/, para los agentes (ADR-016/017)
 
+import fhir  # noqa: E402 — export FHIR R4; vive junto a este módulo (serve.py y los tests ponen src/backend en sys.path)
+from agents import coach, safety  # noqa: E402
+from agents.safety import PARAMS  # noqa: E402 — límites fijos del rango, para no duplicar números
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS therapist (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS token (
 CREATE TABLE IF NOT EXISTS plan_exercise (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id), exercise_id TEXT NOT NULL,
   sets INTEGER NOT NULL, reps INTEGER NOT NULL, hold_seconds INTEGER NOT NULL, per_week INTEGER NOT NULL,
-  safety_envelope TEXT NOT NULL, notes TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+  safety_envelope TEXT NOT NULL, notes TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+  rest_min_seconds INTEGER, rest_max_seconds INTEGER);
 CREATE TABLE IF NOT EXISTS session (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id), exercise_id TEXT NOT NULL,
   mode TEXT NOT NULL CHECK (mode IN ('monitored', 'guided')),
@@ -54,6 +59,24 @@ CREATE TABLE IF NOT EXISTS compensation_event (
   id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES session(id), rep INTEGER NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('trunk_flexion', 'knee_valgus')), side TEXT, value REAL, peak REAL,
   threshold REAL, severity INTEGER NOT NULL CHECK (severity BETWEEN 1 AND 3), alert_latency_ms INTEGER);
+CREATE TABLE IF NOT EXISTS clinical_report (
+  id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL UNIQUE REFERENCES session(id),
+  soap_draft TEXT NOT NULL,            -- JSON {S, O, A, P}
+  facts TEXT NOT NULL,                 -- JSON: los datos que la nota puede citar (soap.facts)
+  source TEXT NOT NULL CHECK (source IN ('template', 'llm')),
+  created_at TEXT NOT NULL,
+  reviewed_by INTEGER REFERENCES therapist(id), reviewed_at TEXT,
+  CHECK ((reviewed_by IS NULL) = (reviewed_at IS NULL)));
+CREATE TABLE IF NOT EXISTS symptom_report (
+  id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id),
+  session_id INTEGER REFERENCES session(id), exercise_id TEXT, reported_at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('red_flag', 'discomfort')),
+  category TEXT NOT NULL CHECK (category IN ('red_flag', 'pain', 'cramp', 'fatigue', 'stiffness', 'other')),
+  text TEXT CHECK (text IS NULL OR length(text) <= 200),
+  action TEXT NOT NULL CHECK (action IN ('session_stopped', 'demand_lowered', 'paused', 'logged')),
+  adjustment TEXT,                     -- JSON {param, old, new} solo con demand_lowered
+  source TEXT NOT NULL CHECK (source IN ('patient_form', 'voice_turn')));
+CREATE INDEX IF NOT EXISTS idx_symptom_patient ON symptom_report(patient_id, reported_at);
 CREATE INDEX IF NOT EXISTS idx_patient_therapist ON patient(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_session_patient ON session(patient_id, ended_at);
 """
@@ -67,6 +90,12 @@ METRIC_UNITS = {"°", "cm", "%"}
 # Perfil del paciente (ADR-017): solo opciones cerradas y una nota corta. Los ids son los de suggestions.js.
 PROFILE_LIMITS = {"no_floor", "no_kneel", "no_standing", "balance", "walking_aid", "arm_limited", "no_band", "low_vision", "hearing"}
 PAIN_AREAS = {"knee", "hip", "back", "neck", "shoulder"}
+# Opciones rápidas del formulario de molestia (symptom-form.js) y su categoría. Dato de salud: solo Staging (ADR-010).
+SYMPTOM_OPTIONS = {"pain_mild": "pain", "fatigue": "fatigue", "cramp": "cramp", "stiffness": "stiffness", "red_flag": "red_flag"}
+# Descanso entre series (ADR-019): una RECOMENDACIÓN del fisioterapeuta, no un límite ni parte del sobre. Sin dato, 60 s
+# como valor de partida, no clínico (TD-80). Los límites son los fijos de `rest_seconds` del agente.
+REST_DEFAULT_SECONDS = 60
+REST_LIMITS = (PARAMS["rest_seconds"]["min"], PARAMS["rest_seconds"]["max"])
 MAX_BODY = 256 * 1024
 
 
@@ -160,7 +189,8 @@ class LiveHub:
 
 
 # ------------------------------------------------------------------------------------------------ indicadores
-def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], now: datetime | None = None) -> dict:
+def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], now: datetime | None = None,
+                    symptoms: list[dict] | None = None) -> dict:
     """Indicadores descriptivos (no son resultados clínicos):
     - adherence: por ejercicio del plan, sesiones completadas en 7 días / sesiones por semana indicadas (tope 1).
     - quality: en sesiones monitoreadas, fracción de repeticiones de ejercicio sin compensación.
@@ -169,6 +199,7 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
     - camera_*: por ejercicio del plan, en las sesiones con conteo de cámara, el recorrido medio por repetición (en la
       unidad de su medida) y el sostén medio, de la primera y la última sesión (TD-49).
     - pain_stops_30d: sesiones detenidas por dolor en 30 días (bandera roja para el fisioterapeuta).
+    - discomfort_30d y red_flags_30d: molestias que reportó el paciente en 30 días (todas, y las que fueron alarma).
     """
     now = now or datetime.now(timezone.utc)
     week_ago, month_ago = now - timedelta(days=7), now - timedelta(days=30)
@@ -211,6 +242,7 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         knees = [r["kneeRom"] for r in reps if isinstance(r.get("kneeRom"), (int, float))]
         if knees:
             rom.append({"session_id": s["id"], "ended_at": s["ended_at"], "knee": round(sum(knees) / len(knees), 1)})
+    recent_symptoms = [x for x in symptoms or [] if parse_iso(x["reported_at"]) >= month_ago]
     mean = lambda xs: round(sum(xs) / len(xs), 3) if xs else None
     trend = (round(mean([q["clean"] for q in quality[-3:]]) - mean([q["clean"] for q in quality[:3]]), 3)
              if len(quality) >= 4 else None)
@@ -219,6 +251,8 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         "quality": quality[-1]["clean"] if quality else None, "quality_series": quality[-20:], "quality_trend": trend,
         "rom_first": rom[0]["knee"] if rom else None, "rom_last": rom[-1]["knee"] if rom else None, "rom_series": rom[-20:],
         "pain_stops_30d": sum(1 for s in sessions if s["end_reason"] == "pain_stop" and parse_iso(s["ended_at"]) >= month_ago),
+        "discomfort_30d": sum(1 for x in recent_symptoms),
+        "red_flags_30d": sum(1 for x in recent_symptoms if x["kind"] == "red_flag"),
         "sessions_total": len(sessions), "last_session_at": max((s["ended_at"] for s in sessions), default=None),
     }
 
@@ -255,6 +289,10 @@ class StagingApi:
         self.db.executescript(SCHEMA)
         if "profile" not in {r["name"] for r in self.db.execute("PRAGMA table_info(patient)")}:
             self.db.execute("ALTER TABLE patient ADD COLUMN profile TEXT")    # bases creadas antes de ADR-017
+        plan_columns = {r["name"] for r in self.db.execute("PRAGMA table_info(plan_exercise)")}
+        for column in ("rest_min_seconds", "rest_max_seconds"):
+            if column not in plan_columns:
+                self.db.execute(f"ALTER TABLE plan_exercise ADD COLUMN {column} INTEGER")      # bases anteriores a ADR-019
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
@@ -271,6 +309,10 @@ class StagingApi:
             ("GET", r"/api/patients/(\d+)/live", self.live_stream_for_therapist, "therapist"),
             ("PUT", r"/api/patients/(\d+)/profile", self.set_patient_profile, "therapist"),
             ("POST", r"/api/patients/(\d+)/advice", self.advice, "therapist"),
+            ("POST", r"/api/sessions/(\d+)/report", self.create_report, "therapist"),
+            ("GET", r"/api/sessions/(\d+)/report", self.get_report, "therapist"),
+            ("POST", r"/api/sessions/(\d+)/report/approve", self.approve_report, "therapist"),
+            ("GET", r"/api/sessions/(\d+)/fhir", self.session_fhir, "therapist"),
             ("GET", r"/api/ai/status", self.ai_status, "therapist"),
             ("POST", r"/api/join", self.join, None),
             ("GET", r"/api/me", self.patient_me, "patient"),
@@ -278,6 +320,7 @@ class StagingApi:
             ("POST", r"/api/live", self.publish_live, "patient"),
             ("GET", r"/api/me/stream", self.live_stream_for_patient, "patient"),
             ("PUT", r"/api/me/profile", self.set_my_profile, "patient"),
+            ("POST", r"/api/me/discomfort", self.report_discomfort, "patient"),
         ]
 
     # -------------------------------------------------------------------------------------- utilidades
@@ -302,6 +345,8 @@ class StagingApi:
             return err.status, {"error": err.message}
         except (json.JSONDecodeError, UnicodeDecodeError):
             return 400, {"error": "JSON inválido."}
+        except sqlite3.Error:
+            return 500, {"error": "Error interno de la base de Staging."}
 
     def _auth(self, headers, role: str) -> int:
         value = (headers.get("Authorization") or "").strip()
@@ -345,6 +390,16 @@ class StagingApi:
         return value.strip()
 
     @staticmethod
+    def _num_or_none(data: dict, key: str) -> float | None:
+        """Número finito de un evento, o None si falta. Cualquier otra cosa (texto, bool, dict) es un 400, no un 500."""
+        value = data.get(key)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ApiError(400, f"'{key}' de un evento debe ser un número.")
+        return float(value)
+
+    @staticmethod
     def _int(data: dict, key: str, lo: int, hi: int, default: int | None = None) -> int:
         value = data.get(key, default)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not lo <= value <= hi:
@@ -355,7 +410,10 @@ class StagingApi:
         rows = self.db.execute("SELECT * FROM plan_exercise WHERE patient_id = ? AND active = 1 ORDER BY id", (patient_id,))
         return [{"id": r["id"], "exercise_id": r["exercise_id"], "sets": r["sets"], "reps": r["reps"],
                  "hold_seconds": r["hold_seconds"], "per_week": r["per_week"],
-                 "safety_envelope": json.loads(r["safety_envelope"]), "notes": r["notes"], "since": r["created_at"]} for r in rows]
+                 "safety_envelope": json.loads(r["safety_envelope"]), "notes": r["notes"], "since": r["created_at"],
+                 "rest": ({"min": r["rest_min_seconds"], "max": r["rest_max_seconds"], "default": False}
+                          if r["rest_min_seconds"] is not None and r["rest_max_seconds"] is not None
+                          else {"min": REST_DEFAULT_SECONDS, "max": REST_DEFAULT_SECONDS, "default": True})} for r in rows]
 
     @staticmethod
     def _patient_public(row: sqlite3.Row) -> dict:
@@ -367,6 +425,11 @@ class StagingApi:
     def _sessions(self, patient_id: int, limit: int = 200) -> list[dict]:
         rows = self.db.execute("SELECT * FROM session WHERE patient_id = ? ORDER BY ended_at DESC LIMIT ?", (patient_id, limit))
         return [dict(r) for r in rows]
+
+    def _symptoms(self, patient_id: int, limit: int = 200) -> list[dict]:
+        rows = self.db.execute("SELECT id, session_id, exercise_id, reported_at, kind, category, text, action, adjustment "
+                               "FROM symptom_report WHERE patient_id = ? ORDER BY id DESC LIMIT ?", (patient_id, limit))
+        return [{**dict(r), "adjustment": json.loads(r["adjustment"]) if r["adjustment"] else None} for r in rows]
 
     def _events(self, session_ids: list[int]) -> list[dict]:
         if not session_ids:
@@ -390,7 +453,8 @@ class StagingApi:
             out = []
             for p in patients:
                 sessions = self._sessions(p["id"])
-                metrics = compute_metrics(self._plan(p["id"]), sessions, self._events([s["id"] for s in sessions]))
+                metrics = compute_metrics(self._plan(p["id"]), sessions, self._events([s["id"] for s in sessions]),
+                                          symptoms=self._symptoms(p["id"]))
                 out.append({**self._patient_public(p), "plan_size": len(self._plan(p["id"])), "metrics": metrics,
                             "live": self.hub.last(("therapist", p["id"])) is not None})
         return 200, {"therapist": dict(therapist), "patients": out}
@@ -415,12 +479,18 @@ class StagingApi:
             plan = self._plan(patient_id)
             sessions = self._sessions(patient_id)
             events = self._events([s["id"] for s in sessions])
+            symptoms = self._symptoms(patient_id)
+        with self.lock:
+            marks = ",".join("?" * len(sessions[:30]))
+            reports = {r["session_id"]: r["reviewed_by"] for r in self.db.execute(
+                f"SELECT session_id, reviewed_by FROM clinical_report WHERE session_id IN ({marks})", [x["id"] for x in sessions[:30]])}
         for s in sessions:
+            s["report_status"] = None if s["id"] not in reports else ("final" if reports[s["id"]] is not None else "draft")
             s["reps"] = json.loads(s["reps"] or "[]")
             s["baseline"] = json.loads(s["baseline"]) if s["baseline"] else None
-        metrics = compute_metrics(plan, [{**s, "reps": json.dumps(s["reps"])} for s in sessions], events)
+        metrics = compute_metrics(plan, [{**s, "reps": json.dumps(s["reps"])} for s in sessions], events, symptoms=symptoms)
         return 200, {"patient": self._patient_public(p), "plan": plan, "sessions": sessions[:30], "events": events[:60],
-                     "metrics": metrics, "live": self.hub.last(("therapist", patient_id))}
+                     "symptoms": symptoms[:30], "metrics": metrics, "live": self.hub.last(("therapist", patient_id))}
 
     def set_plan(self, therapist_id, data, patient_id):
         items = data.get("exercises")
@@ -442,15 +512,32 @@ class StagingApi:
                 envelope = {"trunk_margin": self._int(env, "trunk_margin", 5, 35, 15),
                             "valgus_margin": self._int(env, "valgus_margin", 3, 25, 10),
                             "max_reps": self._int(env, "max_reps", 4, 20, 10)}
+                if "rom_min" in env or "rom_max" in env:      # rango de rodilla para los ajustes del agente (ADR-018)
+                    if env.get("rom_min") is None or env.get("rom_max") is None:
+                        raise ApiError(400, "Indica rom_min y rom_max juntos.")
+                    lo, hi = PARAMS["rom_target"]["min"], PARAMS["rom_target"]["max"]
+                    rom_min, rom_max = self._int(env, "rom_min", lo, hi), self._int(env, "rom_max", lo, hi)
+                    if rom_min >= rom_max:
+                        raise ApiError(400, "rom_min debe ser menor que rom_max.")
+                    envelope.update(rom_min=rom_min, rom_max=rom_max)
+            rest_min, rest_max = item.get("rest_min_seconds"), item.get("rest_max_seconds")
+            if rest_min is not None or rest_max is not None:      # recomendación de descanso; vale para todo ejercicio
+                lo, hi = REST_LIMITS
+                rest_min = self._int(item, "rest_min_seconds", lo, hi) if rest_min is not None else None
+                rest_max = self._int(item, "rest_max_seconds", lo, hi) if rest_max is not None else None
+                rest_min, rest_max = (rest_min if rest_min is not None else rest_max), (rest_max if rest_max is not None else rest_min)
+                if rest_min > rest_max:
+                    raise ApiError(400, "El descanso mínimo no puede ser mayor que el máximo.")
             clean.append((ex_id, self._int(item, "sets", 1, 10), self._int(item, "reps", 1, 50),
                           self._int(item, "hold_seconds", 0, 120, 0), self._int(item, "per_week", 1, 7),
-                          json.dumps(envelope), self._text(item, "notes", 300, required=False)))
+                          json.dumps(envelope), self._text(item, "notes", 300, required=False), rest_min, rest_max))
         with self.lock, self.db:
             self._own_patient(therapist_id, patient_id)
             self.db.execute("UPDATE plan_exercise SET active = 0 WHERE patient_id = ?", (patient_id,))
             for row in clean:
                 self.db.execute("INSERT INTO plan_exercise (patient_id, exercise_id, sets, reps, hold_seconds, per_week, "
-                                "safety_envelope, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                "safety_envelope, notes, rest_min_seconds, rest_max_seconds, created_at) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (patient_id, *row, now_iso()))
             plan = self._plan(patient_id)
         self.hub.publish(("patient", patient_id), {"kind": "plan_updated", "at": now_iso()})
@@ -460,8 +547,118 @@ class StagingApi:
         with self.lock, self.db:
             self._own_patient(therapist_id, patient_id)
             code = self._new_code()
-            self.db.execute("UPDATE patient SET invite_code = ?, joined_at = NULL WHERE id = ?", (code, patient_id))
-        return 200, {"invite_code": code}
+            self.db.execute("UPDATE patient SET invite_code = ?, joined_at = NULL, consent_given = 0 WHERE id = ?",
+                            (code, patient_id))
+            # Un código nuevo corta los dispositivos anteriores (TD-41). TD-78: el consentimiento se vuelve a pedir al afiliarse.
+            revoked = self.db.execute("DELETE FROM token WHERE role = 'patient' AND subject_id = ?", (patient_id,)).rowcount
+        return 200, {"invite_code": code, "revoked_devices": revoked}
+
+    # ------------------------------------------------------------------ nota SOAP de la sesión (TD-09, ADR-008)
+    def _own_session(self, therapist_id: int, session_id: int) -> sqlite3.Row:
+        row = self.db.execute("SELECT s.* FROM session s JOIN patient p ON p.id = s.patient_id "
+                              "WHERE s.id = ? AND p.therapist_id = ?", (session_id, therapist_id)).fetchone()
+        if not row:
+            raise ApiError(404, "No existe esa sesión en tu lista.")                # I-10: ni siquiera confirma que existe
+        return row
+
+    def _plan_item_at(self, patient_id: int, exercise_id: str, ended_at: str) -> dict | None:
+        """El ejercicio del plan vigente cuando terminó la sesión (los planes viejos quedan con active = 0 y sirven igual)."""
+        rows = self.db.execute("SELECT * FROM plan_exercise WHERE patient_id = ? AND exercise_id = ? ORDER BY id DESC",
+                               (patient_id, exercise_id)).fetchall()
+        end = parse_iso(ended_at)
+        for r in rows:
+            if parse_iso(r["created_at"]) <= end:
+                return dict(r)
+        # La hora la pone el dispositivo del paciente: con el reloj atrasado, la sesión "termina" antes del plan. Como no se
+        # registra sesión sin plan (I-9), se toma el plan más antiguo de ese ejercicio en vez de dejar la meta vacía.
+        return dict(rows[-1]) if rows else None
+
+    def _report_input(self, row: sqlite3.Row) -> dict:
+        """Entrada de `soap.facts` armada solo con datos guardados de la sesión (I-6). Staging todavía no guarda
+        `agent_decision` ni `voice_turn` (TD-61): la nota los recibe vacíos."""
+        item = self._plan_item_at(row["patient_id"], row["exercise_id"], row["ended_at"])
+        target = None
+        if item:
+            if row["mode"] == "monitored":
+                target = json.loads(item["safety_envelope"]).get("max_reps")
+            else:
+                target = item["sets"] * item["reps"]
+        reps = [r for r in json.loads(row["reps"] or "[]") if not r.get("calibration")]
+        knees = [r["kneeRom"] for r in reps if isinstance(r.get("kneeRom"), (int, float))]
+        events = self.db.execute("SELECT type FROM compensation_event WHERE session_id = ? ORDER BY id", (row["id"],)).fetchall()
+        # Molestias unidas a la sesión, y las del paciente sin sesión del mismo día (UTC): quedan "fuera de la sesión".
+        day = parse_iso(row["ended_at"]).astimezone(timezone.utc).date().isoformat()
+        symptoms = [{"category": x["category"], "text": x["text"], "action": x["action"], "in_session": x["session_id"] is not None}
+                    for x in reversed(self._symptoms(row["patient_id"]))
+                    if x["session_id"] == row["id"] or (x["session_id"] is None and x["reported_at"][:10] == day)]
+        return {"id": row["id"], "patient_id": row["patient_id"], "monitored": row["mode"] == "monitored",
+                "exercise_id": row["exercise_id"], "exercise_name": self.names.get(row["exercise_id"], row["exercise_id"]),
+                "started_at": row["started_at"], "ended_at": row["ended_at"], "reps_done": row["reps_done"],
+                "reps_target": target, "end_reason": row["end_reason"], "events": [{"type": e["type"]} for e in events],
+                "rom_mean": round(sum(knees) / len(knees), 1) if knees else None,
+                "pain_reported": bool(row["pain_reported"]), "decisions": [], "utterances": [],
+                "symptom_reports": symptoms}
+
+    def _report_public(self, session_id: int) -> dict:
+        r = self.db.execute("SELECT c.*, t.name AS reviewer FROM clinical_report c LEFT JOIN therapist t ON t.id = c.reviewed_by "
+                            "WHERE c.session_id = ?", (session_id,)).fetchone()
+        return {"report": {"session_id": session_id, "status": "draft" if r["reviewed_by"] is None else "final",
+                           "source": r["source"], "soap": json.loads(r["soap_draft"]), "facts": json.loads(r["facts"]),
+                           "created_at": r["created_at"], "reviewed_by": r["reviewed_by"], "reviewed_by_name": r["reviewer"],
+                           "reviewed_at": r["reviewed_at"]}}
+
+    def create_report(self, therapist_id, _data, session_id):
+        """Borrador SOAP: plantilla determinista, y el LLM solo si hay GPU conectada (y sin inventar cifras, I-6)."""
+        with self.lock:
+            row = self._own_session(therapist_id, session_id)
+            if self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
+                return 200, self._report_public(session_id)
+            entry = self._report_input(row)
+        from agents import soap
+        llm = self._llm() if self.ai_status(therapist_id, {})[1]["available"] else None
+        draft = soap.draft(llm, entry)
+        with self.lock, self.db:
+            created = self.db.execute("INSERT OR IGNORE INTO clinical_report (session_id, soap_draft, facts, source, created_at) "
+                                      "VALUES (?, ?, ?, ?, ?)", (session_id, json.dumps(draft["soap"], ensure_ascii=False),
+                                                                 json.dumps(draft["facts"], ensure_ascii=False), draft["source"],
+                                                                 now_iso())).rowcount
+            out = self._report_public(session_id)
+        return (201 if created else 200), out
+
+    def session_fhir(self, therapist_id, _data, session_id):
+        """Observation FHIR R4 de la sesión: `preliminary` mientras la nota es borrador y `final` cuando está firmada.
+        Se genera al pedirla y no se guarda ni escribe nada."""
+        from agents import soap
+        with self.lock:
+            row = self._own_session(therapist_id, session_id)
+            entry = self._report_input(row)
+            has_report = self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone()
+            report = self._report_public(session_id)["report"] if has_report else None
+            patient = self.db.execute("SELECT id, alias FROM patient WHERE id = ?", (row["patient_id"],)).fetchone()
+        return 200, fhir.observation(entry, soap.facts(entry), report, {"id": patient["id"], "alias": patient["alias"]})
+
+    def get_report(self, therapist_id, _data, session_id):
+        with self.lock:
+            self._own_session(therapist_id, session_id)
+            if not self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
+                raise ApiError(404, "Todavía no hay borrador para esta sesión.")
+            return 200, self._report_public(session_id)
+
+    def approve_report(self, therapist_id, data, session_id):
+        """Firma la nota. Solo A y P se pueden completar: S y O son datos de la BD (I-6). Una vez firmada, no se toca (I-8)."""
+        edits = {k: self._text(data, k, 1000, required=False) for k in ("A", "P")}
+        with self.lock, self.db:
+            self._own_session(therapist_id, session_id)
+            r = self.db.execute("SELECT * FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone()
+            if not r:
+                raise ApiError(404, "Todavía no hay borrador para esta sesión.")
+            if r["reviewed_by"] is not None:
+                raise ApiError(409, "La nota ya está firmada.")
+            soap_note = json.loads(r["soap_draft"])
+            soap_note.update({k: v for k, v in edits.items() if v})
+            self.db.execute("UPDATE clinical_report SET soap_draft = ?, reviewed_by = ?, reviewed_at = ? WHERE session_id = ?",
+                            (json.dumps(soap_note, ensure_ascii=False), therapist_id, now_iso(), session_id))
+            return 200, self._report_public(session_id)
 
     # ------------------------------------------------------------------ perfil y sugerencias (ADR-017)
     def _save_profile(self, patient_id: int, data: dict) -> dict:
@@ -601,13 +798,19 @@ class StagingApi:
         if not isinstance(reps, list) or len(reps) > 100 or not isinstance(events, list) or len(events) > 200:
             raise ApiError(400, "'reps' o 'events' tienen un formato inválido.")
         reps = [clean_rep(r) for r in reps if isinstance(r, dict)]
+        symptom_ids = data.get("symptom_report_ids") or []
+        if (not isinstance(symptom_ids, list) or len(symptom_ids) > 20
+                or not all(isinstance(i, int) and not isinstance(i, bool) for i in symptom_ids)):
+            raise ApiError(400, "'symptom_report_ids' debe ser una lista de hasta 20 números.")
         clean_events = []
         for e in events:
             if not isinstance(e, dict) or e.get("type") not in EVENT_TYPES:
                 raise ApiError(400, "Un evento tiene un tipo inválido.")
+            latency = e.get("alertLatencyMs")
             clean_events.append((self._int(e, "rep", 0, 500), e["type"], e.get("side") if e.get("side") in ("left", "right") else None,
-                                 e.get("value"), e.get("peak"), e.get("threshold"), self._int(e, "severity", 1, 3),
-                                 e.get("alertLatencyMs") if isinstance(e.get("alertLatencyMs"), int) else None))
+                                 self._num_or_none(e, "value"), self._num_or_none(e, "peak"), self._num_or_none(e, "threshold"),
+                                 self._int(e, "severity", 1, 3), latency if isinstance(latency, int) and not isinstance(latency, bool)
+                                 and 0 <= latency <= 60000 else None))
         with self.lock, self.db:
             p = self.db.execute("SELECT consent_given FROM patient WHERE id = ?", (patient_id,)).fetchone()
             if not p or not p["consent_given"]:
@@ -623,9 +826,87 @@ class StagingApi:
             self.db.executemany("INSERT INTO compensation_event (session_id, rep, type, side, value, peak, threshold, severity, "
                                 "alert_latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [(cur.lastrowid, *e) for e in clean_events])
+            if symptom_ids:       # por id y no por hora: el reloj del dispositivo puede estar corrido (TD-72)
+                marks = ",".join("?" * len(symptom_ids))
+                self.db.execute(f"UPDATE symptom_report SET session_id = ? WHERE id IN ({marks}) AND patient_id = ? "
+                                "AND session_id IS NULL", (cur.lastrowid, *symptom_ids, patient_id))
         self.hub.publish(("therapist", patient_id), {"kind": "session_saved", "session_id": cur.lastrowid, "exercise_id": ex_id,
                                                      "end_reason": end_reason, "at": now_iso()})
         return 201, {"session_id": cur.lastrowid}
+
+    # ------------------------------------------------------------------ molestias del paciente (ADR-018)
+    def _assess_symptom(self, patient_id: int, exercise_id: str | None, option: str | None, text: str | None,
+                        in_session: bool, current: dict) -> dict:
+        """Decisión determinista, sin LLM, sobre una molestia. La reutilizará el turno de voz (TD-61, source 'voice_turn').
+        Devuelve {kind, category, text, action, adjustment}."""
+        found = safety.classify_symptom(text)
+        if option == "red_flag" or (found and found["kind"] == "red_flag"):
+            kind, category, action, adjustment = "red_flag", "red_flag", "session_stopped", None
+        else:
+            kind = "discomfort"
+            category = SYMPTOM_OPTIONS.get(option) or (found["category"] if found else "other")
+            action, adjustment = "logged", None
+            if in_session:
+                item = next((i for i in self._plan(patient_id) if i["exercise_id"] == exercise_id), None)
+                proposal = None
+                if item and item["safety_envelope"]:          # ejercicio monitoreado: hay sobre que acota el ajuste
+                    proposal = safety.reduce_demand(safety.agent_envelope(item["safety_envelope"]), current)
+                if proposal:
+                    action, adjustment = "demand_lowered", {k: proposal[k] for k in ("param", "old", "new")}
+                else:
+                    action = "paused"                         # guiado, sin sobre o sin qué bajar: pausa y aviso
+        return {"kind": kind, "category": category, "text": text, "action": action, "adjustment": adjustment}
+
+    def _save_symptom(self, patient_id: int, exercise_id: str | None, record: dict, source: str) -> dict:
+        with self.lock, self.db:
+            at = now_iso()
+            cur = self.db.execute(
+                "INSERT INTO symptom_report (patient_id, exercise_id, reported_at, kind, category, text, action, adjustment, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (patient_id, exercise_id, at, record["kind"], record["category"], record["text"], record["action"],
+                 json.dumps(record["adjustment"]) if record["adjustment"] else None, source))
+        report = {"id": cur.lastrowid, "session_id": None, "exercise_id": exercise_id, "reported_at": at, "kind": record["kind"],
+                  "category": record["category"], "text": record["text"], "action": record["action"],
+                  "adjustment": record["adjustment"]}
+        self.hub.publish(("therapist", patient_id), {"kind": "symptom_reported", "id": cur.lastrowid, "exercise_id": exercise_id,
+                                                     "category": record["category"], "symptom_kind": record["kind"],
+                                                     "action": record["action"], "text": record["text"],
+                                                     "adjustment": record["adjustment"], "at": at})
+        return report
+
+    def report_discomfort(self, patient_id, data):
+        """El paciente avisa de una molestia con el formulario, sin GPU (ADR-018). Se registra, se avisa al fisioterapeuta y,
+        en sesión, solo se baja la exigencia dentro del sobre; una alarma detiene la sesión (I-7)."""
+        text = self._text(data, "text", 200, required=False)
+        option = data.get("option")
+        if option is not None and (not isinstance(option, str) or option not in SYMPTOM_OPTIONS):
+            raise ApiError(400, "Esa opción no existe.")
+        if not text and not option:
+            raise ApiError(400, "Cuéntanos qué sientes: elige una opción o escribe una frase.")
+        exercise_id = data.get("exercise_id")
+        if exercise_id is not None and (not isinstance(exercise_id, str) or exercise_id not in self.catalog):
+            raise ApiError(400, "Ese ejercicio no está en el catálogo.")     # un id que no es texto daba 500 al consultar
+        current = {}
+        raw = data.get("current")
+        for key, lo, hi in (("rom_target", 10, 140), ("reps", 1, 50)):
+            v = raw.get(key) if isinstance(raw, dict) else None
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and lo <= v <= hi:
+                current[key] = v
+        with self.lock:
+            p = self.db.execute("SELECT consent_given FROM patient WHERE id = ?", (patient_id,)).fetchone()
+            if not p or not p["consent_given"]:
+                raise ApiError(403, "Sin consentimiento no se registran molestias.")          # dato de salud, igual que las sesiones
+            if exercise_id is not None and not self.db.execute(
+                    "SELECT 1 FROM plan_exercise WHERE patient_id = ? AND exercise_id = ? AND active = 1", (patient_id, exercise_id)).fetchone():
+                raise ApiError(409, "Ese ejercicio no está en tu plan.")
+            record = self._assess_symptom(patient_id, exercise_id, option, text, data.get("in_session") is True, current)
+        report = self._save_symptom(patient_id, exercise_id, record, "patient_form")
+        action, adjustment = record["action"], record["adjustment"]
+        message = {"session_stopped": coach.STOP_TEXT, "paused": coach.PAUSE_TEXT,
+                   "demand_lowered": coach.template({"outcome": "applied", "proposal": adjustment}) if adjustment else coach.PAUSE_TEXT,
+                   "logged": "Gracias: se lo avisamos a tu fisioterapeuta. Si empeora, no hagas el ejercicio y consúltale."}[action]
+        return 201, {"report": report, "action": action, "adjustment": adjustment, "stop": action == "session_stopped",
+                     "message": message}
 
     def publish_live(self, patient_id, data):
         frame = {"kind": "frame", "at": now_iso(), "exercise_id": data.get("exercise_id") if data.get("exercise_id") in self.catalog else None}

@@ -46,4 +46,18 @@ Cada jornada, desde la carpeta del proyecto:
 ```
 
 `up` cobra USD 1.99/h hasta `down`. Los resultados quedan en `~/.axonfas/results/`. Planificado: gateway FastAPI +
-WebSocket, lifter 3D (TD-05), PostgreSQL y export FHIR R4 (TD-10). Contratos: `.ai-context/06-api-mcp.md`.
+WebSocket, lifter 3D (TD-05), y PostgreSQL. Contratos: `.ai-context/06-api-mcp.md`.
+
+## Validar el export FHIR
+
+`GET /api/sessions/{id}/fhir` (rol fisioterapeuta) devuelve una `Observation` FHIR R4 de la sesión (`src/backend/fhir.py`):
+`preliminary` mientras la nota SOAP es borrador y `final` cuando la firmó un fisioterapeuta. Los códigos usan sistemas
+propios bajo `https://axonfas.example/fhir/...` (dominio reservado `.example`: es Staging) y unidades UCUM; el paciente va
+solo por seudónimo. En el panel, el botón "Descargar Observation FHIR (JSON)" baja el mismo recurso.
+
+Paso manual pendiente (TD-10), solo con datos sintéticos:
+
+1. Descarga la Observation de una sesión sintética desde `doctor.html` (queda como `axonfas-observation-sesion-<id>.json`).
+2. Valídala con el validador oficial de HL7: `java -jar validator_cli.jar obs.json -version 4.0.1`
+   (`validator_cli.jar` en https://github.com/hapifhir/org.hl7.fhir.core/releases) o pega el JSON en https://validator.fhir.org.
+3. Se acepta si no hay **errores**. Los avisos por los sistemas `axonfas.example` sin definición son esperables.

@@ -11,6 +11,7 @@
   const $ = (id) => document.getElementById(id);
   const END = { completed: 'Completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano', envelope_breach: 'Fuera del sobre' };
   const SOURCE = { camera: 'Cámara', demo: 'Demo sintético', guided: 'Guiado' };
+  const REPORT_ACTION = { none: 'Crear borrador', draft: 'Ver borrador', final: 'Ver nota firmada' };
   const EVENT = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDE = { left: 'izquierda', right: 'derecha' };
   const state = { selected: null, detail: null, stream: null, liveMap: null, teachMap: null, teachGuide: null, lastFrame: 0, alertUntil: 0,
@@ -91,6 +92,8 @@
       facts.append(el('span', null, `Cumplimiento 7 días: ${pct(m.adherence)}`), el('span', null, `Calidad última sesión: ${pct(m.quality)}`),
         el('span', null, `Última sesión: ${fmtDate(m.last_session_at)}`));
       card.append(head, el('p', 'muted', status), meter, facts);
+      if (m.discomfort_30d) card.appendChild(el('span', 'tag warn', `${m.discomfort_30d} molestia(s) (30 días)`));
+      if (!p.consent_given) card.appendChild(el('span', 'tag warn', 'Sin consentimiento'));
       if (m.pain_stops_30d) card.appendChild(el('span', 'tag bad', `${m.pain_stops_30d} detención(es) por dolor en 30 días`));
       card.addEventListener('click', () => selectPatient(p.id));
       grid.appendChild(card);
@@ -101,6 +104,8 @@
     if (state.stream) { state.stream.stop(); state.stream = null; }
     state.selected = id;
     state.feed = [];
+    resetSoap();                                   // la nota abierta era de otro paciente: no se firma por error
+    $('p-reinvite-status').textContent = '';
     document.querySelectorAll('.patient-card').forEach((c) => c.setAttribute('aria-current', 'false'));
     if (!id) { $('patient').hidden = true; return; }
     await loadDetail();
@@ -160,7 +165,8 @@
   function renderDetail(d) {
     const p = d.patient;
     $('p-title').textContent = p.alias + (p.birth_year ? ` · ${p.birth_year}` : '');
-    $('p-status').textContent = p.joined_at ? `Afiliado el ${fmtDate(p.joined_at)} · consentimiento aceptado` : 'Esperando afiliación';
+    $('p-status').textContent = p.joined_at ? `Afiliado el ${fmtDate(p.joined_at)} · consentimiento aceptado`
+      : 'Esperando afiliación: el consentimiento se vuelve a pedir con el código nuevo.';
     renderInvite(p);
     const m = d.metrics;
     const trend = m.quality_trend == null ? 'con 4 sesiones o más' : `${m.quality_trend >= 0 ? '+' : ''}${Math.round(m.quality_trend * 100)} puntos`;
@@ -170,6 +176,7 @@
       kpi('Tendencia calidad', m.quality_trend == null ? '—' : trend, 'últimas 3 vs primeras 3'),
       kpi('Rodilla (ROM)', m.rom_last == null ? '—' : `${m.rom_last}°`, m.rom_first == null ? 'sin sesiones monitoreadas' : `primera sesión: ${m.rom_first}°`),
       kpi('Detenciones por dolor', String(m.pain_stops_30d), 'en 30 días'),
+      kpi('Molestias 30 días', String(m.discomfort_30d ?? 0), m.red_flags_30d ? `${m.red_flags_30d} con señal de alarma` : 'reportadas por el paciente'),
       kpi('Sesiones', String(m.sessions_total), `última: ${fmtDate(m.last_session_at)}`));
 
     const perEx = Object.fromEntries(m.per_exercise.map((x) => [x.exercise_id, x]));
@@ -178,7 +185,7 @@
     if (!d.plan.length) {
       const tr = el('tr');
       const td = el('td', 'empty', 'Sin ejercicios. Usa "Editar plan".');
-      td.colSpan = 5;
+      td.colSpan = 6;
       tr.appendChild(td);
       body.appendChild(tr);
     }
@@ -188,9 +195,12 @@
       const env = item.safety_envelope;
       const dose = `${item.sets} × ${item.reps}${item.hold_seconds ? ` · ${item.hold_seconds} s` : ''}`;
       const week = perEx[item.exercise_id] ? `${perEx[item.exercise_id].done_7d} de ${item.per_week}` : `0 de ${item.per_week}`;
-      const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps`
+      const romText = env && env.rom_min != null && env.rom_max != null ? ` · rodilla ${env.rom_min}–${env.rom_max}°` : '';
+      const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps${romText}`
         : 'sin alertas: conteo con cámara o guiado';
-      [ex ? ex.name : item.exercise_id, dose, week, cameraText(perEx[item.exercise_id], item), envText]
+      const r = item.rest;
+      const restText = !r || r.default ? `${r ? r.min : 60} s (por defecto)` : r.min === r.max ? `${r.min} s` : `${r.min}–${r.max} s`;
+      [ex ? ex.name : item.exercise_id, dose, week, cameraText(perEx[item.exercise_id], item), envText, restText]
         .forEach((t) => tr.appendChild(el('td', null, t)));
       body.appendChild(tr);
     });
@@ -202,7 +212,7 @@
     if (!d.sessions.length) {
       const tr = el('tr');
       const td = el('td', 'empty', 'Todavía no hay sesiones.');
-      td.colSpan = 6;
+      td.colSpan = 7;
       tr.appendChild(td);
       sBody.appendChild(tr);
     }
@@ -216,6 +226,15 @@
       end.appendChild(el('span', `tag ${s.end_reason === 'completed' ? 'ok' : s.end_reason === 'pain_stop' ? 'bad' : 'warn'}`, END[s.end_reason] || s.end_reason));
       tr.appendChild(end);
       tr.appendChild(el('td', 'num', String(eventsBySession[s.id] || 0)));
+      const note = el('td');
+      const label = REPORT_ACTION[s.report_status || 'none'];
+      const btn = el('button', 'btn', label);
+      btn.type = 'button';
+      btn.dataset.session = String(s.id);
+      btn.setAttribute('aria-label', `${label} de la sesión del ${fmtDate(s.ended_at)} (${ex ? ex.name : s.exercise_id})`);
+      btn.addEventListener('click', () => openReport(s, btn));
+      note.appendChild(btn);
+      tr.appendChild(note);
       sBody.appendChild(tr);
     });
 
@@ -226,10 +245,178 @@
       evBox.appendChild(el('div', null, `Rep ${e.rep} · ${EVENT[e.type]}${e.side ? ` ${SIDE[e.side]}` : ''} · pico ${e.peak}° `
         + `(umbral ${e.threshold}°) · severidad ${e.severity}${e.alert_latency_ms != null ? ` · ${e.alert_latency_ms} ms` : ''}`));
     });
+    renderSymptoms(d);
     renderTeach(d.plan);
     renderProfile(d);
     renderSuggestions(d);
   }
+
+  // ------------------------------------------------------------------ molestias del paciente (ADR-018)
+  const SYMPTOM_CATEGORY = { pain: 'dolor o molestia', cramp: 'calambre', fatigue: 'cansancio', stiffness: 'rigidez', other: 'otra molestia',
+    red_flag: 'señal de alarma' };
+  const PARAM_NAME = { rom_target: 'el rango', reps: 'las repeticiones', rest_seconds: 'el descanso' };
+  const PARAM_UNIT = { rom_target: '°', reps: '', rest_seconds: ' s' };
+  function symptomAction(s) {
+    if (s.action === 'demand_lowered' && s.adjustment) {
+      const a = s.adjustment;
+      return `se bajó ${PARAM_NAME[a.param] || a.param} de ${a.old}${PARAM_UNIT[a.param] || ''} a ${a.new}${PARAM_UNIT[a.param] || ''}`;
+    }
+    return { session_stopped: 'se detuvo la sesión', paused: 'pausa', logged: 'registrada', demand_lowered: 'se bajó la exigencia' }[s.action] || s.action;
+  }
+
+  function renderSymptoms(d) {
+    const box = $('p-symptoms');
+    box.innerHTML = '';
+    const list = d.symptoms || [];
+    if (!list.length) box.appendChild(el('p', 'muted', 'Sin molestias reportadas.'));
+    list.slice(0, 12).forEach((s) => {
+      const ex = C.get(s.exercise_id);
+      const row = el('div', 'row-between');
+      const text = `${fmtDate(s.reported_at)} · ${ex ? ex.name : 'sin ejercicio'} · ${SYMPTOM_CATEGORY[s.category] || s.category}`
+        + `${s.text ? ` · «${s.text}»` : ''} · ${symptomAction(s)}`;
+      row.append(el('span', null, text), el('span', `tag ${s.kind === 'red_flag' ? 'bad' : 'warn'}`, s.kind === 'red_flag' ? 'Alarma' : 'Molestia'));
+      box.appendChild(row);
+    });
+  }
+
+  /** Aviso en vivo de una molestia: se anuncia con role=status; una alarma interrumpe con role=alert. */
+  function announceSymptom(msg) {
+    const ex = C.get(msg.exercise_id);
+    const what = `${SYMPTOM_CATEGORY[msg.category] || 'molestia'}${ex ? ` en ${ex.name}` : ''}`;
+    const text = msg.symptom_kind === 'red_flag' ? `Señal de alarma${ex ? ` en ${ex.name}` : ''}. Se detuvo la sesión.`
+      : `Molestia reportada: ${what}. ${msg.action === 'demand_lowered' ? 'Se bajó la exigencia.' : msg.action === 'paused' ? 'Se hizo una pausa.' : 'Quedó registrada.'}`;
+    $('p-symptom-alert').textContent = msg.symptom_kind === 'red_flag' ? '' : text;      // la alarma se anuncia solo con role=alert
+    const old = document.getElementById('p-symptom-urgent');
+    if (old) old.remove();
+    if (msg.symptom_kind === 'red_flag') {
+      const urgent = el('p', 'status-line', text);
+      urgent.id = 'p-symptom-urgent';
+      urgent.setAttribute('role', 'alert');
+      $('p-symptom-alert').after(urgent);
+    }
+    pushFeed(text, true);
+  }
+
+  // ------------------------------------------------------------------ nota SOAP (TD-09, I-8)
+  // El borrador sale de los datos guardados de la sesión; S y O no se editan. Hasta que el fisioterapeuta la firma,
+  // no es un registro clínico. Lo que dice la IA solo se muestra si la nota la redactó el LLM (source === 'llm').
+  function soapStatus(text) { $('soap-status').textContent = text; }
+
+  // Vacía y oculta la nota: así nunca queda a la vista (ni se puede firmar) el texto de otra sesión u otro paciente.
+  function resetSoap() {
+    state.soap = null;
+    $('soap-card').hidden = true;
+    ['soap-when', 'soap-source', 'soap-fhir-note'].forEach((id) => { $(id).textContent = ''; });
+    $('soap-state').replaceChildren();
+    $('soap-body').replaceChildren();
+    $('soap-approve').hidden = true;
+    $('soap-fhir').hidden = true;
+    soapStatus('');
+  }
+
+  function renderSoap(r) {
+    const final = r.status === 'final';
+    const session = state.soap.session;
+    const ex = C.get(session.exercise_id);
+    $('soap-when').textContent = `${fmtDate(session.ended_at)} · ${ex ? ex.name : session.exercise_id}`;
+    const stateBox = $('soap-state');
+    stateBox.replaceChildren();
+    if (final) {
+      stateBox.append(el('span', 'tag ok', 'Firmada'), ` Firmada por ${r.reviewed_by_name || 'el fisioterapeuta'} el ${fmtDate(r.reviewed_at)}.`);
+    } else {
+      stateBox.append(el('span', 'tag warn', 'Borrador'), ' ', el('strong', null, 'Borrador sin firmar.'),
+        ' No es un registro clínico hasta que lo firmes. S y O salen de los datos guardados de la sesión.');
+    }
+    if (final) $('soap-source').textContent = '';
+    else if (r.source === 'llm') $('soap-source').textContent = 'La valoración y el plan los propuso la IA en la GPU AMD; las cifras se comprobaron contra los datos. Revísalos antes de firmar.';
+    else $('soap-source').textContent = 'Redactado con una plantilla a partir de los datos de la sesión (sin IA).';
+    const body = $('soap-body');
+    body.replaceChildren();
+    const readOnly = (title, text) => { body.append(el('dt', null, title), el('dd', null, text)); };
+    readOnly('Subjetivo (S)', r.soap.S);
+    readOnly('Objetivo (O)', r.soap.O);
+    [['A', 'Valoración (A), la completas tú'], ['P', 'Plan (P)']].forEach(([key, title]) => {
+      if (final) { readOnly(title.replace(', la completas tú', ''), r.soap[key]); return; }
+      const label = el('label', null, title);
+      label.htmlFor = `soap-edit-${key}`;
+      const area = document.createElement('textarea');
+      Object.assign(area, { id: `soap-edit-${key}`, maxLength: 1000, value: r.soap[key] });
+      const dt = el('dt');
+      dt.appendChild(label);
+      const dd = el('dd');
+      dd.appendChild(area);
+      body.append(dt, dd);
+    });
+    $('soap-fhir').hidden = false;
+    $('soap-fhir-note').textContent = final ? '' : 'Sale como preliminary hasta que firmes la nota.';
+    $('soap-approve').hidden = final;
+    $('soap-approve').disabled = false;
+    $('soap-card').hidden = false;
+  }
+
+  async function openReport(session, trigger) {
+    resetSoap();
+    state.soap = { session, report: null };
+    state.soapTrigger = trigger.dataset.session;
+    trigger.disabled = true;
+    try {
+      const path = `/api/sessions/${session.id}/report`;
+      const res = await A.call('therapist', session.report_status ? 'GET' : 'POST', path, session.report_status ? undefined : {});
+      state.soap.report = res.report;
+      renderSoap(res.report);
+      $('soap-title').focus();
+      soapStatus(res.report.status === 'final' ? 'Nota firmada: solo lectura.' : 'Borrador listo: revísalo y fírmalo.');
+      if (!session.report_status) loadDetail().catch(() => {});
+    } catch (err) {
+      state.soap = null;                           // sin nota cargada no hay nada que firmar ni descargar
+      $('soap-card').hidden = false;
+      soapStatus(err.message);
+    } finally { trigger.disabled = false; }
+  }
+
+  $('soap-approve').addEventListener('click', async () => {
+    const btn = $('soap-approve');
+    if (!state.soap) return;
+    btn.disabled = true;
+    soapStatus('Firmando la nota…');
+    try {
+      const res = await A.call('therapist', 'POST', `/api/sessions/${state.soap.session.id}/report/approve`,
+        { A: $('soap-edit-A').value, P: $('soap-edit-P').value });
+      state.soap.report = res.report;
+      renderSoap(res.report);
+      $('soap-title').focus();
+      soapStatus('Nota firmada.');
+      loadDetail().catch(() => {});
+    } catch (err) {
+      soapStatus(err.message);
+      btn.disabled = false;
+    }
+  });
+
+  // El token viaja en la cabecera, así que no sirve un enlace directo: se pide el JSON y se descarga como archivo.
+  $('soap-fhir').addEventListener('click', async () => {
+    if (!state.soap) return;
+    const id = state.soap.session.id;
+    try {
+      const obs = await A.call('therapist', 'GET', `/api/sessions/${id}/fhir`);
+      const blob = new Blob([JSON.stringify(obs, null, 2)], { type: 'application/fhir+json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `axonfas-observation-sesion-${id}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      soapStatus(obs.status === 'final' ? 'Observation descargada (final).'
+        : 'Observation descargada (preliminary: la nota todavía es borrador).');
+    } catch (err) { soapStatus(err.message); }
+  });
+
+  $('soap-close').addEventListener('click', () => {
+    const back = document.querySelector(`#p-sessions button[data-session="${state.soapTrigger}"]`);
+    resetSoap();
+    if (back) back.focus();
+  });
 
   // ------------------------------------------------------------------ perfil y sugerencias (ADR-017)
   function renderProfile(d) {
@@ -253,7 +440,8 @@
 
   function renderSuggestions(d) {
     if (!S) return;
-    state.suggestions = S.forTherapist({ profile: d.patient.profile, plan: d.plan, metrics: d.metrics, sessions: d.sessions, events: d.events });
+    state.suggestions = S.forTherapist({ profile: d.patient.profile, plan: d.plan, metrics: d.metrics, sessions: d.sessions, events: d.events,
+      symptoms: d.symptoms });
     S.renderList($('p-suggest'), state.suggestions, {
       title: 'Sugerencias para ti, fisioterapeuta',
       note: 'Calculadas con reglas a partir del perfil y los datos del paciente. Son propuestas: nada cambia hasta que revisas y guardas el plan.',
@@ -338,14 +526,23 @@
     const row = el('div', 'field-row');
     row.append(input('sets', 'Series', v.sets, 1, 10), input('reps', 'Repeticiones', v.reps, 1, 50),
       input('hold_seconds', 'Sostener (s)', v.hold_seconds, 0, 120), input('per_week', 'Veces por semana', v.per_week, 1, 7));
-    fields.append(el('p', 'muted', `Referencia: ${ex.dose.text}`), row);
+    const rest = v.rest && !v.rest.default ? v.rest : {};
+    const restRow = el('div', 'field-row');
+    restRow.append(input('rest_min_seconds', 'Descanso entre series, mínimo (s)', rest.min ?? '', 10, 180),
+      input('rest_max_seconds', 'Descanso entre series, máximo (s)', rest.max ?? '', 10, 180));
+    fields.append(el('p', 'muted', `Referencia: ${ex.dose.text}`), row, restRow,
+      el('p', 'muted', 'Recomendación para el paciente, no un límite: puede saltarlo o alargarlo. Vacío = 60 s (valor de partida, no clínico).'));
     if (ex.monitoring === 'auto') {
       const env = v.safety_envelope || {};
       const envRow = el('div', 'field-row');
       envRow.append(input('trunk_margin', 'Margen tronco (°)', env.trunk_margin ?? 15, 5, 35),
         input('valgus_margin', 'Margen valgo (°)', env.valgus_margin ?? 10, 3, 25),
         input('max_reps', 'Reps por sesión (incl. 3 de calibración)', env.max_reps ?? 10, 4, 20));
-      fields.append(el('p', 'muted', 'Sobre de seguridad: márgenes sobre la línea base del paciente.'), envRow);
+      const romRow = el('div', 'field-row');
+      romRow.append(input('rom_min', 'Rango mínimo de rodilla (°), opcional', env.rom_min ?? '', 10, 140),
+        input('rom_max', 'Rango máximo de rodilla (°), opcional', env.rom_max ?? '', 10, 140));
+      fields.append(el('p', 'muted', 'Sobre de seguridad: márgenes sobre la línea base del paciente.'), envRow, romRow,
+        el('p', 'muted', 'Límites para los ajustes del agente clínico; sin ellos, el agente no puede cambiar el rango.'));
     }
     const notes = el('div', 'field');
     const nl = el('label', null, 'Nota para el paciente (opcional)');
@@ -397,20 +594,47 @@
     }
   }
 
+  // Un código nuevo corta los dispositivos anteriores del paciente (TD-41): se avisa cuántos.
+  $('p-reinvite').addEventListener('click', async () => {
+    const status = $('p-reinvite-status');
+    if (!window.confirm('Se generará un código nuevo y se cerrará la sesión del paciente en sus dispositivos. ¿Continuar?')) return;
+    status.textContent = '';
+    try {
+      const res = await A.call('therapist', 'POST', `/api/patients/${state.selected}/invite`, {});
+      await loadDetail();
+      status.textContent = res.revoked_devices > 0
+        ? `Se cerró la sesión en ${res.revoked_devices} dispositivo(s) del paciente: tendrá que entrar con el código nuevo. `
+          + 'Hasta que se vuelva a afiliar no se registran sesiones.'
+        : 'Código nuevo generado.';
+    } catch (err) { status.textContent = err.message; }
+  });
+
   $('btn-plan').addEventListener('click', () => openPlanEditor(null));
   $('plan-close').addEventListener('click', () => $('plan-dialog').close());
   $('plan-save').addEventListener('click', async () => {
     const exercises = [];
+    let incompleteRange = false;
     document.querySelectorAll('#plan-list .plan-ex[data-on="true"]').forEach((box) => {
       const val = (name) => { const i = box.querySelector(`[data-name="${name}"]`); return i ? i.value : null; };
       const num = (name) => Number(val(name));
       const item = { exercise_id: box.dataset.id, sets: num('sets'), reps: num('reps'), hold_seconds: num('hold_seconds'),
         per_week: num('per_week'), notes: val('notes') || null };
+      // El descanso es opcional: Number('') da 0, así que solo viaja lo que tiene valor.
+      ['rest_min_seconds', 'rest_max_seconds'].forEach((name) => { const t = (val(name) || '').trim(); if (t) item[name] = Number(t); });
       if (box.querySelector('[data-name="trunk_margin"]')) {
         item.safety_envelope = { trunk_margin: num('trunk_margin'), valgus_margin: num('valgus_margin'), max_reps: num('max_reps') };
+        // Number('') da 0: el rango opcional solo viaja si los dos campos tienen valor.
+        const romMin = (val('rom_min') || '').trim();
+        const romMax = (val('rom_max') || '').trim();
+        if (romMin && romMax) Object.assign(item.safety_envelope, { rom_min: Number(romMin), rom_max: Number(romMax) });
+        else if (romMin || romMax) incompleteRange = true;
       }
       exercises.push(item);
     });
+    if (incompleteRange) {
+      $('plan-error').textContent = 'Completa el rango mínimo y el máximo, o deja los dos vacíos.';
+      return;
+    }
     try {
       await A.call('therapist', 'PUT', `/api/patients/${state.selected}/plan`, { exercises });
       $('plan-dialog').close();
@@ -444,6 +668,12 @@
   function onLive(msg) {
     if (msg.kind === 'hello') { if (msg.last) onLive(msg.last); return; }
     if (msg.kind === 'profile_updated') { loadDetail().catch(() => {}); return; }
+    if (msg.kind === 'symptom_reported') {
+      announceSymptom(msg);
+      loadDetail().catch(() => {});
+      refreshPatients().catch(() => {});
+      return;
+    }
     if (msg.kind === 'session_saved') {
       loadDetail().catch(() => {});
       refreshPatients().catch(() => {});

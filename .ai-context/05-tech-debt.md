@@ -1,6 +1,6 @@
 # 05 · Deuda técnica y pendientes
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-11
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-17
 > Prioridad: **P1** entregable del hackathon (fecha límite fija) · **P2** bloqueante para pasar a Producción · **P3** mejora futura.
 > Cada pendiente tiene un ID único `TD-NN`. Lo resuelto pasa a "Hechos" con fecha; los IDs no se reutilizan.
 
@@ -18,7 +18,7 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
   tecnología suya "elegible", sin decir cuál. AXONFAS ya usa MediaPipe, que es de Google (ver TD-27).
 - **Sin publicar todavía:** el cronograma y las fechas de evaluación ("Event Schedule: To be announced").
 
-## Antes del hackathon (hasta el 2026-10-11)
+## Abiertos desde antes del hackathon (creados hasta el 2026-10-11)
 
 | ID | P | Pendiente | Relación |
 |---|---|---|---|
@@ -36,14 +36,15 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 |---|---|---|---|
 | TD-07 | P1 | Bucle rápido funcionando con alerta < 250 ms medida en `alert_latency_ms` | ADR-004 |
 | TD-08 | P1 | Benchmark de sesiones concurrentes en 1× MI300X (gráfico latencia vs. sesiones). **Listo para correr:** `axonfas-cloud.ps1 bench` (`src/backend/gpu/bench.py`: turnos del agente clínico y de voz por sesión, p50/p95 por nivel, corta cuando dos niveles pasan el objetivo; deja `bench.json`, `.md` y `.svg`). Mide el bucle lento; el rápido entra con el lifter (TD-05) | ADR-006, ADR-016 |
-| TD-09 | P1 | Panel del terapeuta: aprobar el borrador SOAP. Ver sesiones, eventos, indicadores y la sesión en vivo ya funciona en Staging (`doctor.html`, ADR-012/013) | ADR-002, ADR-008, ADR-012 |
-| TD-10 | P1 | Export FHIR R4 validado con un validador público | ADR-008 |
+| TD-10 | P1 | Export FHIR R4 validado con un validador público. **Hecho en Staging el 2026-10-17:** `GET /api/sessions/{id}/fhir` y la descarga en el panel (`src/backend/fhir.py`, 6 tests y 1 de la API). Falta solo el paso manual con el validador oficial de HL7 (`src/backend/README.md`, "Validar el export FHIR") y el PDF (TD-77) | ADR-008 |
 | TD-11 | P1 | Entrega en lablab: repo público, video demo, slides, imagen de portada, prototipo con URL funcionando, descripciones y tags. Confirmar si se exige app en contenedor (el brief de Evolus lo cita como regla de entrega). Avance 2026-10-15: textos del paso 1 (`docs/submission/lablab-paso-1.md`), portada 16:9 (`docs/submission/cover.html` → `axonfas-cover.png`), presentación de 10 diapositivas en un artifact y guion del video (`docs/submission/lablab-paso-2.md`); falta grabar el video y subir todo | — |
 | TD-23 | P1 | URL del demo para los jueces. La evaluación es en línea y probablemente dura hasta mediados de noviembre: Evolus deja sus espacios gratis hasta el 2026-11-15 "so it stays up through judging". La GPU encendida cuesta ~USD 48 al día (más de USD 1,300 si quedara prendida del 18 de octubre al 15 de noviembre) y los créditos dan ~50 h. Propuesta: la URL vive en un hosting barato con un modo "repetición" de una sesión real grabada en la GPU, con latencias medidas, y el modo en vivo se enciende en ventanas avisadas. El droplet se destruye al final de cada jornada | ADR-006, TD-27 |
 | TD-24 | P1 | Pitch y demo de la pista 2: mostrar un caso completo y explicar cómo AXONFAS maneja respuestas incorrectas, información sensible, incertidumbre, decisiones de alto riesgo y revisión humana (tabla en [01](01-logic.md)) | ADR-004, ADR-005 |
-| TD-25 | P1 | Hacer visible la incertidumbre: mostrar la confianza de los puntos de la pose y definir qué hace el sistema con frames de baja confianza. El prototipo de TD-28 ya lo hace (no evalúa, avisa y marca la repetición); falta llevarlo a la versión del hackathon y validarlo en TD-06 | ADR-004, TD-28 |
-| TD-26 | P1 | Licencia MIT en el repo (regla "MIT-compliant") y licencias de los modelos usados en el README | TD-05 |
-
+| TD-25 | P1 | Hacer visible la incertidumbre: mostrar la confianza de los puntos de la pose y definir qué hace el sistema con frames de baja confianza. El prototipo de TD-28 ya lo hace (no evalúa, avisa y marca la repetición); falta llevarlo a la versión del hackathon y validarlo en TD-06. La tabla de la pista en [01](01-logic.md) ya lo da como hecho en el prototipo | ADR-004, TD-28 |
+| TD-26 | P1 | Licencia MIT en el repo (regla "MIT-compliant") y licencias de los modelos usados en el README. **2026-10-17:** el README ya tiene la sección "Licencias" (13 filas, revisadas contra el código; falta confirmarlas en las fichas oficiales). Queda abierto por el archivo `LICENSE`: CLAUDE.md no lo permite en la raíz y decide el owner. `espeak-ng` es GPL-3.0 (TD-76). | TD-05 |
+| TD-61 | P1 | Conectar el turno de voz y el agente clínico al Prototipo: grabar la voz del paciente en el navegador, mandarla por la API de Staging al túnel de la GPU y aplicar en pantalla el ajuste aprobado. Hoy el turno corre por línea de comandos (`py -m agents.turn`). Ya existe el traductor del sobre de Staging (`safety.agent_envelope`); falta decidir el valor actual de `rom_target` que se le pasa al agente y guardar `agent_decision` y `voice_turn` (TD-75). Para las molestias ya existen `safety.symptom_record` (el turno devuelve `symptom`) y `_assess_symptom` en la API, que se reusará con `source = 'voice_turn'` (TD-81). El `current.rest_seconds` del agente será `rest.min` del plan (ADR-019) | ADR-016, ADR-018, TD-07 |
+| TD-75 | P1 | Guardar en Staging las decisiones del agente (`agent_decision`) y los turnos de voz (`voice_turn`) cuando se conecte TD-61. Hoy la nota SOAP los recibe vacíos | TD-61, TD-09 |
+| TD-81 | P1 | Guardar en `symptom_report` las molestias del turno de voz con `source = 'voice_turn'` cuando se conecte TD-61 (reusar `_assess_symptom` y `safety.symptom_record`) | TD-61, ADR-018 |
 ## Bloqueantes para pasar a Producción
 
 | ID | P | Pendiente | Relación |
@@ -54,14 +55,19 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 | TD-15 | P2 | Consentimiento informado digital y política de retención de datos | ADR-010, 03 |
 | TD-16 | P2 | Pruebas de sesgo: distintas contexturas, edades, iluminación y ángulos de cámara | ADR-010 |
 | TD-29 | P2 | Pesos del lifter con licencia clara: revisión legal, licencia comercial de los datasets o reentrenar con datos propios o con licencia (ver [02](02-architecture.md)) | TD-05 |
-| TD-41 | P2 | Autenticación real antes de Producción: contraseña o SSO, verificación de la matrícula del fisioterapeuta, expiración y revocación de tokens, y no guardarlos en localStorage. Hoy son cuentas de demostración (ADR-012) | ADR-012, TD-14 |
+| TD-41 | P2 | Autenticación real antes de Producción: contraseña o SSO, verificación de la matrícula del fisioterapeuta, expiración de tokens (la revocación al generar un código nuevo ya está hecha, 2026-10-17), y no guardarlos en localStorage. Hoy son cuentas de demostración (ADR-012) | ADR-012, TD-14 |
 | TD-43 | P2 | Validar con fisioterapeutas o con literatura de electromiografía la estimación de carga muscular de la vista en vivo, antes de mostrarla como algo más que educativa | ADR-013, TD-06 |
-| TD-61 | P1 | Conectar el turno de voz y el agente clínico al Prototipo: grabar la voz del paciente en el navegador, mandarla por la API de Staging al túnel de la GPU y aplicar en pantalla el ajuste aprobado. Hoy el turno corre por línea de comandos (`py -m agents.turn`) | ADR-016, TD-07 |
 | TD-62 | P2 | Medir en la GPU si Kokoro en español y Whisper large-v3-turbo dan la calidad y el tiempo que hacen falta; si no, probar otra voz o Whisper más chico. La prueba de humo ya compara lo que dice el TTS con lo que entiende Whisper | ADR-016 |
 | TD-65 | P2 | Validar con fisioterapeutas las reglas de las sugerencias (ADR-017): qué exige cada ejercicio (`NEEDS`), qué bloquea y qué solo pide precaución, el 70 % de repeticiones ante dolor, el umbral de cumplimiento y las alternativas elegidas | ADR-017, TD-06 |
 | TD-66 | P2 | Probar con lectores de pantalla reales (NVDA en Windows y TalkBack en Android) y con personas mayores con baja visión: la auditoría automática (axe-core) no cubre todo WCAG | ADR-017 |
 | TD-57 | P2 | Validar con cámara real los valores de partida de la preparación de la cámara: calidad por plano y vista (`PLANE` de `camera-setup.js`), cortes del ángulo detectado (28° y 62°), distancia mínima y la altura de la cadera para "de pie" (85 %) | ADR-015, TD-55, TD-06 |
 | TD-48 | P2 | Validar con fisioterapeutas las medidas y los valores de partida del seguimiento (`SPECS` de `tracker.js`): recorrido pedido, sentido, sostén y lugar de la cámara de cada ejercicio. Empezar por los 14 "aproximados" | ADR-014, TD-06 |
+| TD-73 | P2 | Validar con fisioterapeutas las palabras de molestia (`DISCOMFORT`), sus categorías (`DISCOMFORT_CATEGORY`), la regla de dirección y la reducción determinista de ADR-018, y los falsos positivos de las frases de alarma nuevas ("debilidad" o "me duele mucho" detienen la sesión) | ADR-018, TD-06 || TD-77 | P2 | PDF de la nota de cada sesión (ADR-008). El export FHIR ya existe; el PDF no | ADR-008, TD-10 || TD-79 | P2 | En la nota SOAP de sesiones monitoreadas, "N de M repeticiones" incluye las 3 de calibración en los dos números (`reps_done` y `max_reps`), mientras la flexión media de rodilla las excluye. Decidir con fisioterapeutas cómo mostrarlo | TD-09, TD-06 |
+| TD-80 | P2 | Validar con fisioterapeutas los valores de partida de la reducción por molestia (`ROM_STEP_DEG = 10`, `REPS_FACTOR = 0.7`) y el descanso por defecto de 60 s | ADR-018, ADR-019, TD-06 |
+| TD-82 | P2 | Una nota SOAP ya creada no se actualiza si llega una molestia después. Decidir si se regenera el borrador no firmado | ADR-018, TD-09 |
+| TD-83 | P2 | Aviso fuera del panel (correo o notificación) cuando el fisioterapeuta no está conectado. Hoy la molestia solo le llega por el canal en vivo y la lista | ADR-018 |
+| TD-84 | P2 | El texto libre de la molestia puede traer datos personales. En Staging solo hay una advertencia en el formulario. Revisar con la protección de datos y el consentimiento | ADR-018, TD-14, TD-15 |
+| TD-85 | P2 | Probar con cámara real el ajuste en vivo de sentarse y pararse tras una molestia (`window.AxonApp.adjust`). Hoy está verificado con el demo sintético en un navegador headless | ADR-018, TD-32 |
 
 ## Mejoras futuras
 
@@ -75,11 +81,23 @@ Roma, Milán e Imperia (sin viaje ni alojamiento cubiertos). Equipos de 1 a 6 pe
 | TD-37 | P3 | Borrar `src/frontend/validation-prototype/preview.html`: es una copia vieja de `index.html` (no tiene nada propio, le falta el indicador de fase y falla al iniciar una sesión). Espera la aprobación del owner, porque borrar archivos la requiere | TD-35 |
 | TD-42 | P3 | Vista 3D anatómica (huesos y músculos) en la nube, con three.js y un modelo abierto. Revisar licencias: muchos son CC BY-SA, a contrastar con la regla "MIT-compliant" | ADR-013 |
 | TD-45 | P3 | Pasar la API de Staging al gateway de la nube: FastAPI, PostgreSQL con el modelo de 03 y WebSocket para el canal en vivo, con el mismo contrato | ADR-012, ADR-006 |
+| TD-87 | P3 | Una alarma reportada fuera de una sesión se guarda como `session_stopped` y el panel dice "Se detuvo la sesión", aunque no hubiera una sesión en curso. Decidir si se usa otra acción o solo otro texto | ADR-018 |
 
 ## Hechos
 
 | ID | Fecha | Pendiente | Resultado |
 |---|---|---|---|
+| TD-74 | 2026-10-17 | Decidir si `rest_seconds` lleva límite del fisioterapeuta en el sobre | No: el descanso es una recomendación (ADR-019). `rest_min_seconds` y `rest_max_seconds` (10–180 s) en el plan, fuera del sobre; 60 s por defecto como valor de partida; cuenta regresiva que se puede saltar o alargar en la vista guiada y el seguimiento (`rest-timer.js`). El agente sigue con los límites fijos 10–180 |
+| TD-76 | 2026-10-17 | Revisar la licencia de `espeak-ng` (GPL-3.0) | Decisión documentada: se deja como está. Se instala con `apt` dentro del contenedor de la GPU y no se distribuye con el repo; el README lo marca en "Licencias" |
+| TD-78 | 2026-10-17 | `consent_given` quedaba en 1 tras un código de afiliación nuevo | `POST /invite` pone `consent_given = 0`: hasta que el paciente se vuelva a afiliar y acepte, no se registran sesiones ni molestias. El panel muestra "Sin consentimiento" y "el consentimiento se vuelve a pedir con el código nuevo" |
+| TD-86 | 2026-10-17 | Auditoría de la ronda 2 (molestias y descanso) | `POST /api/me/discomfort` con `option` o `exercise_id` de tipo equivocado (lista u objeto) daba 500 o una excepción sin capturar: ahora 400. El botón "+30 s" del descanso ya incluye su texto visible en el nombre accesible y, al saltar el descanso con el teclado, el foco pasa al aviso en vez de perderse. El aviso de alarma del panel ya no repite "señal de alarma". La sugerencia por molestia no propone "1 en vez de 1" repeticiones. 4 tests |
+| TD-09 | 2026-10-17 | Panel del terapeuta: aprobar el borrador SOAP | En Staging: tabla `clinical_report`, `POST/GET /api/sessions/{id}/report` y `POST .../report/approve`; columna "Nota SOAP" y sección de la nota en `doctor.html`. Sin GPU usa la plantilla y dice "sin IA"; S y O no se editan; firmar guarda `reviewed_by` y no se puede volver a firmar; otro fisioterapeuta recibe 404 (I-10). 6 tests de la API. Falta probar el recorrido con teclado en el navegador |
+| TD-67 | 2026-10-17 | El filtro de cifras de los agentes confundía 10, 100 y 1 y no veía cifras en letras (I-6) | `coach.numbers()` normaliza solo decimales ("10,50" → "10.5") y suma las cifras en letras ("treinta y cinco" → 35; "un" o "una" sueltos no cuentan). Lo usan la frase al paciente, la nota SOAP y el resumen de sugerencias. La nota ya no acepta la fecha como dato citable. 5 tests |
+| TD-68 | 2026-10-17 | Frases de alarma que no detenían la sesión (I-7) | `RED_FLAGS` suma "pérdida de fuerza súbita", dolor punzante, "me duele mucho", sentirse débil, pierna dormida u hormigueo, "se me dobló la rodilla" y "no puedo mover la pierna". El turno se detiene sin consultar al LLM. 2 tests |
+| TD-69 | 2026-10-17 | El rango se podía ajustar sin límite del fisioterapeuta (I-3) | `safety.validate` rechaza `rom_target` sin `rom_min` y `rom_max` (o con `rom_min >= rom_max`) y `reps` sin `max_reps`. La API de Staging acepta `rom_min`/`rom_max` opcionales en el sobre y el editor del plan tiene los dos campos. `safety.agent_envelope` traduce el sobre de Staging. 2 tests de agentes, 1 de la API, 1 de la UI |
+| TD-70 | 2026-10-17 | Tras "me molesta", un ajuste que subía la exigencia se aplicaba | Regla de dirección (ADR-018, Propuesta): subir la exigencia tras una molestia → `escalated_to_therapist` con `within_envelope = true`. La demo `py -m agents.turn --fake` sigue dando `applied` 90 → 70. 1 test |
+| TD-71 | 2026-10-17 | Un evento con números mal formados tumbaba `POST /api/sessions` con un 500 | `value`, `peak` y `threshold` no numéricos → 400; `alertLatencyMs` fuera de 0–60000 se guarda vacío; un error de SQLite responde 500 con mensaje en vez de lanzar. Un código de afiliación nuevo borra los tokens del paciente y devuelve `revoked_devices` (parte de TD-41). 2 tests |
+| TD-72 | 2026-10-17 | Auditoría de la nota SOAP | La nota de una sesión con el reloj del dispositivo atrasado salía "5 de None": ahora usa el plan más antiguo de ese ejercicio y, sin meta, escribe "5 repeticiones". Al cambiar de paciente, cerrar la nota o fallar la carga, la sección se vacía, para no firmar la nota de otra sesión. 3 tests |
 | TD-01 | 2026-10-06 | Confirmar disponibilidad de dominio, usuario de GitHub e Instagram | Libres: `axonfas.ai`, `axonfas.app`, `axonfas.com` y `axonfas.health` sin registro (RDAP); `github.com/axonfas` libre y ningún repo con ese nombre; `@axonfas` no existe en Instagram; sin resultados de "AXONFAS" en lablab.ai. Registrarlos es TD-22 |
 | TD-03 | 2026-10-06 | Revisar las pistas oficiales y elegir la que encaje | Pistas publicadas: Intelligent Industry, Health and Wellbeing, Reinvent Commerce y Create a New Kind of Experience (más la de Evolus). AXONFAS encaja en Health and Wellbeing. El ajuste del pitch sigue en TD-24 |
 | TD-02 | 2026-10-08 | Inscribirse en lablab.ai, Discord y el AMD AI Developer Program | Hecho por el owner |

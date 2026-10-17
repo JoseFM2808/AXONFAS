@@ -581,6 +581,46 @@
     }
   }
 
+  // ---------------------------------------------------------------- ajuste por molestia (ADR-018)
+  // patient-link.js lo usa cuando el paciente avisa de una molestia en plena sesión: el motor de reglas del servidor ya
+  // validó el cambio contra el sobre del fisioterapeuta; aquí solo se aplica. Solo baja la exigencia.
+  window.AxonApp = {
+    /** Valores vigentes de la sesión en curso: { rom_target, reps (las que faltan) }, o null sin sesión. */
+    current() {
+      if (!session) return null;
+      const snap = session.snapshot();
+      if (snap.phase === 'ended') return null;
+      const out = {};
+      if (snap.thresholds && Number.isFinite(snap.thresholds.romTarget)) out.rom_target = Math.round(snap.thresholds.romTarget);
+      const left = session.config.maxReps - session.reps.length;
+      if (left >= 1) out.reps = left;
+      return Object.keys(out).length ? out : null;
+    },
+    /** Aplica { param, new } de la respuesta de la API. Devuelve true si cambió algo. */
+    adjust(adj) {
+      if (!session || !adj || session.snapshot().phase === 'ended') return false;
+      if (adj.param === 'rom_target') {
+        ui.romAuto.checked = false;
+        ui.romTarget.min = Math.min(Number(ui.romTarget.min), adj.new);
+        ui.romTarget.value = adj.new;
+        ui.romTarget.dispatchEvent(new Event('input', { bubbles: true }));       // setConfig + salidas de la pantalla
+        announce(`Bajamos el rango: ahora se pide al menos ${adj.new}°`, { ms: 4000 });
+        return true;
+      }
+      if (adj.param === 'reps') {
+        const keep = AxonEngine.DEFAULTS.calibrationReps + 1;                   // nunca menos que calibrar y una más
+        const total = Math.min(session.config.maxReps, Math.max(session.reps.length + adj.new, keep));
+        ui.maxReps.value = total;
+        ui.maxReps.dispatchEvent(new Event('input', { bubbles: true }));
+        announce(`Bajamos las repeticiones: ${total - session.reps.length} más`, { ms: 4000 });
+        return true;
+      }
+      return false;
+    },
+    /** Dolor fuerte o alarma: termina la sesión como "dolor: detener" (I-7). */
+    stop() { endSession('pain_stop'); },
+  };
+
   // ---------------------------------------------------------------- eventos de la página
   ui.btnCamera.addEventListener('click', startCamera);
   ui.btnDemo.addEventListener('click', startDemo);

@@ -87,7 +87,8 @@
       repeticiones o el tiempo sostenido con valores de partida, no clínicos. <strong>No avisa de compensaciones:</strong> eso
       solo lo hace <a class="link" href="index.html">Sentarse y pararse</a>, en el Prototipo. El video no sale de este equipo.</p>
     <p class="notice" id="ex-limited" hidden></p>
-    <section class="panel-card" id="patient-banner" hidden><p id="patient-text" class="muted"></p></section>
+    <section class="panel-card" id="patient-banner" hidden><p id="patient-text" class="muted"></p>
+      <div id="symptom-track"></div></section>
   </div>
 
   <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
@@ -159,6 +160,7 @@
         <button class="btn" id="btn-stop" type="button" disabled>Terminar</button>
       </div>
     </div>
+    <div id="rest-track"></div>
   </main>
 
   <div class="track-grid">
@@ -206,6 +208,8 @@
 <script src="catalog.js"></script>
 <script src="tracker.js"></script>
 <script src="suggestions.js"></script>
+<script src="symptom-form.js"></script>
+<script src="rest-timer.js"></script>
 <script src="camera-setup.js"></script>
 <script src="guide-figure.js"></script>
 <script src="api-client.js"></script>

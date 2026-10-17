@@ -2,7 +2,8 @@
 
 Lee lo que dijo el paciente y cómo van las repeticiones, y puede proponer UN ajuste {param, old, new, reason}. No aplica
 nada: la propuesta pasa por safety.validate(), que es determinista. Si el LLM falla o responde algo inválido, no hay
-cambio y queda registrado.
+cambio y queda registrado. Ante una molestia del paciente, si el LLM no propone una baja válida, la propone el motor de
+reglas (safety.reduce_demand) dentro del sobre; sin nada que bajar se pausa y se avisa (ADR-018).
 """
 from __future__ import annotations
 
@@ -44,7 +45,27 @@ def build_messages(utterance: str, ctx: dict) -> list[dict]:
 
 
 def propose(llm, utterance: str, ctx: dict) -> dict:
-    """Pide una propuesta al LLM y la valida. Devuelve la decisión (forma de `agent_decision`) más tiempos y texto crudo."""
+    """Pide una propuesta al LLM y la valida; ante una molestia, el motor de reglas respalda al LLM (ADR-018).
+    Devuelve la decisión (forma de `agent_decision`) más tiempos y texto crudo."""
+    return _protect(_ask(llm, utterance, ctx), utterance, ctx)
+
+
+def _protect(decision: dict, utterance: str, ctx: dict) -> dict:
+    """Con molestia, la exigencia nunca queda igual si el sobre permite bajarla, haya respondido bien o mal el LLM."""
+    if not safety.discomfort(utterance):
+        return {**decision, "source": "llm"}
+    if decision.get("outcome") == "applied":              # el LLM propuso una baja válida
+        return {**decision, "source": "llm"}
+    envelope, current = ctx.get("envelope") or {}, ctx.get("current") or {}
+    fallback = safety.reduce_demand(envelope, current)
+    if fallback is None:                                    # no hay qué bajar: se pausa y se avisa
+        return {**decision, "paused": True, "source": "rules"}
+    return {**safety.validate(fallback, envelope, current, utterance), "action": "adjust", "source": "rules",
+            "llm_outcome": decision.get("outcome"), "llm_proposal": decision.get("proposal"),
+            "llm_ms": decision.get("llm_ms"), "raw": decision.get("raw")}
+
+
+def _ask(llm, utterance: str, ctx: dict) -> dict:
     try:
         reply = llm.chat(build_messages(utterance, ctx), json_mode=True, max_tokens=160)
     except LLMError as err:
@@ -59,5 +80,5 @@ def propose(llm, utterance: str, ctx: dict) -> dict:
         return {**base, "proposal": None, "within_envelope": True, "outcome": "none", "action": "none",
                 "note": str(data.get("reason") or "sin cambios")}
     proposal = {k: data.get(k) for k in ("param", "old", "new", "reason")}
-    decision = safety.validate(proposal, ctx.get("envelope") or {}, ctx.get("current") or {})
+    decision = safety.validate(proposal, ctx.get("envelope") or {}, ctx.get("current") or {}, utterance)
     return {**base, **decision, "action": "adjust"}

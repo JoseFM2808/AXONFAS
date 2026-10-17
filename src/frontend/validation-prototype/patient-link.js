@@ -18,11 +18,12 @@
   let lastSent = 0;
   let inFlight = false;
   let saved = false;
+  let symptomIds = [];
 
   const banner = document.createElement('section');
   banner.className = 'panel-card';
   banner.style.marginBottom = '16px';
-  banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p>';
+  banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p><div id="symptom-index"></div>';
   document.querySelector('.wrap').prepend(banner);
   const text = (msg) => { $('pl-text').textContent = msg; };
 
@@ -43,6 +44,7 @@
     startedAt = e.detail.startedAt;
     source = e.detail.source;
     saved = false;
+    symptomIds = [];
   });
 
   window.addEventListener('axon:frame', (e) => {
@@ -73,7 +75,7 @@
       await post('/api/sessions', {
         exercise_id: exerciseId, mode: 'monitored', source: d.source === 'camera' ? 'camera' : 'demo',
         started_at: startedAt || d.endedAt, ended_at: d.endedAt, end_reason: d.endReason, reps_done: d.reps.length,
-        baseline: d.baseline || undefined, reps: d.reps, events: d.events,
+        baseline: d.baseline || undefined, reps: d.reps, events: d.events, symptom_report_ids: symptomIds,
       });
       text(`Sesión guardada y enviada a tu fisioterapeuta (${d.reps.length} repeticiones). Puedes volver a tu plan.`);
     } catch (err) {
@@ -104,6 +106,16 @@
       back.className = 'link';
       back.textContent = 'Volver a mi plan';
       $('pl-text').append(p, back);
+      // Molestia en plena sesión (ADR-018): el servidor decide con reglas; aquí se aplica la baja o se detiene (I-7).
+      if (window.AxonSymptom) {
+        AxonSymptom.render($('symptom-index'), { exerciseId, inSession: () => Boolean(window.AxonApp && AxonApp.current()),
+          current: () => (window.AxonApp ? AxonApp.current() : null),
+          onResult: (res) => {
+            symptomIds.push(res.report.id);
+            if (res.stop && window.AxonApp) AxonApp.stop();
+            else if (res.action === 'demand_lowered' && window.AxonApp) AxonApp.adjust(res.adjustment);
+          } });
+      }
       AxonApi.stream('patient', '/api/me/stream', (msg) => {
         if (msg.kind === 'highlight' && window.AxonTeach) AxonTeach.show(msg);
       });

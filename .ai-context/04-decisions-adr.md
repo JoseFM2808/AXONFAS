@@ -1,6 +1,6 @@
 # 04 · Decisiones (ADRs)
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-11
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-17
 > Solo decisiones formales, técnicas o de negocio con impacto técnico. Nada de conversaciones exploratorias.
 > Formato: `ADR-NNN` consecutivo · fecha · estado (Propuesta | Aceptada | Reemplazada) · contexto → decisión → consecuencias.
 
@@ -19,6 +19,12 @@
 | 011 | 2026-10-11 | Aceptada | Galería de ejercicios desde fuentes documentadas; solo sentarse-pararse con monitoreo automático |
 | 012 | 2026-10-11 | Aceptada | Cuentas de demostración de fisioterapeuta y paciente en Staging, con API local y SQLite fuera del repo |
 | 013 | 2026-10-11 | Aceptada | Vista corporal 2D en vivo con carga muscular estimada; el modelo 3D anatómico queda para la nube |
+| 014 | 2026-10-11 | Aceptada | Seguimiento con cámara y conteo en todos los ejercicios de la galería |
+| 015 | 2026-10-11 | Aceptada | Preparar la cámara antes de cada sesión y no evaluar lo que no se ve bien |
+| 016 | 2026-10-15 | Aceptada | Pila de la GPU lista para correr: modelos, acceso por túnel y un script para el ciclo del droplet |
+| 017 | 2026-10-15 | Aceptada | Sugerencias por rol, perfil del paciente y accesibilidad WCAG 2.2 AA |
+| 018 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
+| 019 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
 
 ---
 
@@ -253,6 +259,62 @@
   - Las reglas de encaje y las sugerencias son valores de partida que se validan con fisioterapeutas (TD-65).
   - El perfil es un dato de salud: solo en Staging, con seudónimo y consentimiento (ADR-010); entra en la revisión de
     protección de datos (TD-14).
+
+## ADR-018 · Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta — Aceptada
+
+- **Fecha:** 2026-10-17 (propuesta y aceptada el mismo día, con la ampliación del equipo).
+- **Contexto:** con ADR-005, un ajuste que cabía en el sobre se aplicaba siempre. Si el paciente decía "me molesta" y el
+  LLM proponía subir el rango o las repeticiones dentro del sobre, el ajuste se aplicaba. Además:
+  - el sobre que guarda la API de Staging no tenía `rom_min` ni `rom_max`;
+  - sin GPU, el paciente no tenía cómo avisar de una molestia;
+  - el fisioterapeuta no se enteraba.
+- **Decisión:**
+  - **Regla de dirección.** `safety.validate` recibe lo que dijo el paciente. Si trae una palabra de molestia
+    (`DISCOMFORT`) y la propuesta sube la exigencia (`LESS_DEMAND`), el resultado es `escalated_to_therapist` con
+    `within_envelope = true`. Cada parámetro necesita su límite: `rom_target` exige `rom_min` y `rom_max`, y `reps`
+    exige `max_reps` (I-3).
+  - **Reducción determinista** (`safety.reduce_demand`): primero el rango, 10° menos hacia `rom_min`; si no se puede, las
+    repeticiones × 0,7, nunca más que `max_reps`. Siempre dentro del sobre: pasa por `validate` antes de usarse. Nunca
+    toca el descanso (ADR-019).
+  - **Respaldo del agente.** Con molestia, si el LLM no propone una baja válida (falla, no propone o propone subir), la
+    baja la propone el motor de reglas. La decisión lleva `source: "rules"` y guarda `llm_outcome` y `llm_proposal`.
+    Sin límites o sin nada que bajar: pausa y aviso (`paused: true`).
+  - **Registro y aviso.** Toda molestia se guarda en `symptom_report`, le llega en vivo al fisioterapeuta
+    (`symptom_reported`), cuenta en "Molestias 30 días" (`discomfort_30d`, `red_flags_30d`), genera una sugerencia para
+    revisar la dosis que nunca se aplica sola (I-13) y entra en la S de la nota SOAP.
+  - **Vía sin GPU.** El formulario "Tengo una molestia" (`symptom-form.js`) llama a `POST /api/me/discomfort`, que decide
+    con las mismas reglas, sin LLM.
+  - **Las alarmas no cambian.** Dolor agudo, mareo o pérdida de fuerza detienen la sesión sin consultar al LLM (I-7);
+    en la clasificación, la alarma gana siempre.
+  - Es más restrictiva que ADR-005 y no lo reemplaza.
+- **Consecuencias:**
+  - Con una molestia, la exigencia nunca queda igual si el sobre permite bajarla.
+  - El escalado deja de ser el camino principal: una propuesta del LLM que sube la exigencia ya no pausa el ejercicio;
+    se baja con reglas y se avisa.
+  - Los valores 10° y × 0,7 son de partida, no clínicos (TD-80). Las palabras y categorías se validan con
+    fisioterapeutas (TD-73).
+  - La molestia es un dato de salud: solo Staging, seudónimo y consentimiento (ADR-010).
+  - Invariante I-14 en [01](01-logic.md).
+
+## ADR-019 · Descanso entre series como recomendación del fisioterapeuta, no como límite — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:** TD-74 preguntaba si `rest_seconds` debía tener un límite del fisioterapeuta en el sobre. Un descanso más
+  largo nunca es inseguro, y el paciente necesita poder seguir cuando esté listo.
+- **Decisión:**
+  - El fisioterapeuta recomienda un descanso por ejercicio en el plan: `rest_min_seconds` y `rest_max_seconds`
+    (10–180 s). Si da uno solo, el otro toma el mismo valor; mínimo mayor que máximo → 400.
+  - No forma parte de `safety_envelope`. Vale para todo ejercicio, monitoreado o no.
+  - Sin valor se sugiere 60 s (`REST_DEFAULT_SECONDS` en `catalog.js` y en la API), un valor de partida y no clínico.
+    Todo texto lo dice.
+  - El paciente ve una cuenta regresiva (`rest-timer.js`) al terminar una serie y tras una pausa por molestia. Puede
+    saltarla o sumar 30 s. Nunca bloquea el siguiente paso.
+  - El agente: el `current.rest_seconds` que reciba con TD-61 será `rest.min`; se valida solo con los límites fijos
+    10–180; tras una molestia solo puede subirlo (`LESS_DEMAND`). Un `rest_seconds` aplicado cambia la cuenta de esa
+    sesión, nunca el plan. La reducción determinista de ADR-018 nunca lo usa.
+- **Consecuencias:**
+  - Resuelve TD-74 sin extender el contrato del sobre.
+  - El valor de 60 s se valida con fisioterapeutas (TD-80).
 
 ---
 

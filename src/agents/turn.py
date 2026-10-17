@@ -53,6 +53,7 @@ def run_turn(llm, utterance: str, ctx: dict, *, voice: VoiceClient | None = None
     said = coach.reply(None if flag else llm, utterance, decision)
     out["timings_ms"]["coach_llm"] = said.get("llm_ms")
     out.update(decision=decision, reply=said["text"], reply_source=said["source"])
+    out["symptom"] = safety.symptom_record(utterance, decision)     # Staging lo guardará con source 'voice_turn' (TD-61)
     if voice is not None:
         try:
             tts = voice.tts(said["text"], voice=tts_voice)

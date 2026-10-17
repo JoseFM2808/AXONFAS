@@ -1,8 +1,10 @@
 # 01 · Lógica del sistema
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-11
-> Estado de implementación: diseño. Solo existe el prototipo de validación del navegador (sección al final); el sistema
-> completo todavía no tiene código.
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Estado de implementación: hay código en Staging. Existen el prototipo de validación del navegador (secciones al
+> final), la API de Staging con cuentas, nota SOAP y export FHIR, y los agentes con sus reglas deterministas, probados
+> sin GPU. El paciente ya puede avisar de una molestia sin GPU (ADR-018) y ver el descanso recomendado (ADR-019).
+> Falta lo que corre en la GPU (TD-04) y conectar el turno de voz al prototipo (TD-61).
 
 ## Idea central
 
@@ -82,11 +84,12 @@ sequenceDiagram
 
 | Paso | Quién | Regla |
 |---|---|---|
-| 1. Alarma | `safety.red_flag` (determinista) | Dolor agudo, fuerte o intenso, mareo, pérdida de fuerza o debilidad súbita, desmayo, dolor de pecho, falta de aire, "algo se rompió". Si aparece, la sesión termina con `pain_stop` y **no se consulta al LLM** (I-7). Ante la duda, detener |
-| 2. Propuesta | `clinical.propose` (LLM, JSON) | Un solo ajuste de `rom_target`, `reps` o `rest_seconds`, o ninguno. Respuesta rota o sin LLM = sin cambio (`rejected`) |
-| 3. Validación | `safety.validate` (determinista) | `old` igual al valor actual, motivo no vacío, valor numérico. Dentro de `[rom_min, rom_max]` y `max_reps` del sobre → `applied`; fuera → `escalated_to_therapist` y se pausa el ejercicio; forma inválida → `rejected`. Sin sobre no hay ajuste (I-3) |
-| 4. Frase | `coach.reply` (LLM opcional) | Dice lo que decidió el motor. Si el LLM agrega un número que no está en la decisión, pasa de 30 palabras o devuelve JSON, se usa la plantilla |
-| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras que no están en los datos (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8) |
+| 1. Alarma | `safety.red_flag` (determinista) | Dolor agudo, fuerte, intenso, punzante o "me duele mucho"; mareo; pérdida de fuerza (también "pérdida de fuerza súbita"), sentirse débil o debilidad; pierna dormida, adormecida, entumecida u hormigueo; "se me dobló la rodilla"; "no puedo mover la pierna"; desmayo, dolor de pecho, falta de aire, "algo se rompió". Si aparece, la sesión termina con `pain_stop` y **no se consulta al LLM** (I-7). Ante la duda, detener: un falso positivo solo corta la sesión |
+| 2. Propuesta | `clinical.propose` (LLM, JSON) | Un solo ajuste de `rom_target`, `reps` o `rest_seconds`, o ninguno. Respuesta rota o sin LLM = sin cambio (`rejected`). **Con molestia** (ADR-018), si el LLM no propone una baja válida, la propone el motor de reglas (`safety.reduce_demand`) y la decisión lleva `source: "rules"`, con lo que dijo el LLM en `llm_outcome` y `llm_proposal`; si no hay nada que bajar, `paused: true`. Las demás decisiones llevan `source: "llm"` |
+| 3. Validación | `safety.validate` (determinista) | `old` igual al valor actual, motivo no vacío, valor numérico. Cada parámetro necesita su límite del fisioterapeuta: `rom_target` exige `rom_min` y `rom_max` (con `rom_min < rom_max`) y `reps` exige `max_reps`; si falta → `rejected` (I-3). `rest_seconds` solo tiene los límites fijos 10–180. Dentro del sobre → `applied`; fuera → `escalated_to_therapist` y se pausa el ejercicio. **Regla de dirección (ADR-018):** si el paciente acaba de decir una molestia (`DISCOMFORT`: molestia, duele, dolor, pinchazo, punzada, tirón, ardor, calambre, cansado, fatiga, agotado, "me cuesta", "no aguanto", rígido, incómodo), solo se acepta bajar la exigencia; subirla → `escalated_to_therapist` con `within_envelope = true` (I-14). El sobre de Staging se traduce con `safety.agent_envelope` |
+| 4. Frase | `coach.reply` (LLM opcional) | Dice lo que decidió el motor. Si el LLM agrega un número que no está en la decisión (en cifras o en letras, como "veinte"), pasa de 30 palabras o devuelve JSON, se usa la plantilla |
+| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras (en cifras o en letras) que no están en los datos; la fecha no cuenta como dato citable (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8). En Staging la genera y la firma el fisioterapeuta desde el panel (sección "Cuentas y seguimiento") |
+| 6. Molestia | `safety.classify_symptom` y `safety.symptom_record` (deterministas) | Clasifica lo que dijo el paciente: `red_flag` (gana siempre) o `discomfort` con categoría `pain`, `cramp`, `fatigue`, `stiffness` u `other`. El turno devuelve `symptom` = `{kind, category, text (≤ 200), action, adjustment}`, con `action` `session_stopped`, `demand_lowered` o `paused`. Staging lo guardará con `source = 'voice_turn'` cuando se conecte TD-61 (TD-81) |
 
 Sin propuesta (`action: none`) no se guarda `agent_decision`. La alarma no es una decisión del agente: es un fin de sesión.
 
@@ -116,6 +119,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
 | I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
 | I-13 | Una sugerencia nunca cambia el plan por sí sola: el fisioterapeuta la revisa y guarda. Las del usuario nunca tocan la dosis, y la IA solo resume las que ya calcularon las reglas | ADR-005, ADR-017 |
+| I-14 | Ante una molestia, el sistema solo baja la exigencia: si el agente no propone una baja válida, la aplica el motor de reglas dentro del sobre; sin límites, pausa. Toda molestia se registra y se avisa al fisioterapeuta | ADR-005, ADR-018 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -128,9 +132,9 @@ sepa cuándo una persona debe revisar o tomar el caso. Así responde el diseño 
 | Sin diagnóstico ni tratamiento autónomo | El plan lo prescribe el fisioterapeuta; el agente solo ajusta dentro de su sobre; el reporte es borrador hasta que lo firma | ADR-005, ADR-008 |
 | Respuestas incorrectas o sin soporte | El agente solo propone en JSON y el motor de reglas valida; la nota SOAP solo usa campos de la BD | I-2, I-6 |
 | Información sensible | El video no sale de casa; pacientes con seudónimo; en Staging solo datos sintéticos | ADR-003, ADR-010 |
-| Resultados inciertos | **Pendiente:** mostrar la confianza de la pose y definir qué pasa con los frames de baja confianza | TD-25 |
-| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio | I-1, I-7 |
-| Revisión humana | `outcome = 'escalated_to_therapist'` marca el caso para el terapeuta, que aprueba la nota SOAP en el panel | ADR-005, TD-09 |
+| Resultados inciertos | **Hecho en el prototipo; falta validarlo con fisioterapeutas (TD-06).** Se muestra la confianza de la pose; los frames poco confiables no se evalúan, se avisa y la repetición queda marcada; la preparación de la cámara no alerta lo que no se ve bien desde la vista real | TD-25, ADR-015 |
+| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio; ante una molestia solo se baja la exigencia, con reglas y dentro del sobre, y se avisa al fisioterapeuta | I-1, I-7, I-14 |
+| Revisión humana | `outcome = 'escalated_to_therapist'` marca el caso para el terapeuta. Cada molestia le llega en vivo al panel, cuenta en "Molestias 30 días" y genera una sugerencia que él revisa (I-13). En Staging, el fisioterapeuta revisa, completa y firma la nota SOAP en el panel; sin firma es borrador y la Observation sale `preliminary` | ADR-005, ADR-018, TD-09 |
 
 ## Prototipo de validación (TD-28)
 
@@ -247,6 +251,49 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 | Rodilla (ROM) | Flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada |
 | Con cámara (TD-49) | Por ejercicio del plan, en las sesiones con conteo de cámara: recorrido medio por repetición (cuánto se alejó la medida de la posición inicial, en su unidad) y sostén medio, de la primera y la última sesión. El sostén solo se muestra si la dosis lo pide |
 | Detenciones por dolor | Sesiones con `end_reason = 'pain_stop'` en 30 días: bandera roja para el fisioterapeuta |
+
+### Nota SOAP y export FHIR en Staging (TD-09, TD-10)
+
+1. En el historial de sesiones de `doctor.html`, el fisioterapeuta pulsa "Crear borrador".
+2. La API arma la entrada de `soap.draft` solo con datos guardados de la sesión: repeticiones, meta del plan vigente,
+   eventos, flexión media de rodilla (sin calibración), motivo de fin y dolor. Staging todavía no guarda
+   `agent_decision` ni `voice_turn`: la nota los recibe vacíos (TD-61, TD-75).
+3. Sin GPU, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
+4. S y O no se editan. El fisioterapeuta completa A y P y firma: queda `reviewed_by` y `reviewed_at`, y la nota ya no
+   cambia (una segunda firma da 409).
+5. "Descargar Observation FHIR (JSON)" baja la `Observation` R4 de la sesión: `preliminary` mientras es borrador y
+   `final` cuando está firmada (I-8). Se genera al pedirla y no se guarda.
+6. Un código de afiliación nuevo cierra la sesión del paciente en todos sus dispositivos y deja `consent_given` en 0
+   (TD-78): hasta que se vuelva a afiliar y acepte el consentimiento no se registran sesiones ni molestias.
+7. La S de la nota lista las molestias de la sesión y las del mismo día sin sesión, con la categoría, el texto del
+   paciente y lo que se hizo. No lleva horas, para no sumar cifras citables (I-6).
+
+### Molestias del paciente, sin GPU (ADR-018)
+
+1. El paciente toca "Tengo una molestia" (`symptom-form.js`) en el plan, en la vista guiada, en el seguimiento con
+   cámara o en sentarse y pararse (`index.html?plan=`). Elige una opción (dolor leve o pinchazo, cansancio, calambre,
+   rigidez, o "dolor fuerte, mareo o pérdida de fuerza") o escribe una frase de hasta 200 caracteres.
+2. `POST /api/me/discomfort` decide con reglas, sin LLM:
+   - una frase de alarma o la opción de alarma → `session_stopped` y se detiene la sesión (I-7);
+   - en sesión, en un ejercicio monitoreado → `demand_lowered` con `safety.reduce_demand` (rango −10° hacia `rom_min`;
+     si no, repeticiones × 0,7), siempre dentro del sobre;
+   - en sesión, sin sobre o sin nada que bajar (guiados, seguimiento) → `paused`: pausa y descanso recomendado;
+   - fuera de sesión → `logged`.
+3. Se guarda en `symptom_report` (dato de salud: solo Staging, seudónimo y consentimiento) y le llega al fisioterapeuta
+   en vivo (`symptom_reported`). Al guardar la sesión se une por id (`symptom_report_ids`), no por hora.
+4. El panel muestra "Molestias 30 días", la lista "Molestias reportadas" y una sugerencia para revisar la dosis
+   (`discomfort-<id>`). La sugerencia nunca se aplica sola (I-13).
+5. En `index.html?plan=`, una baja aprobada se aplica en vivo con `window.AxonApp.adjust` (solo baja; nunca menos que
+   calibrar y una repetición más).
+
+### Descanso entre series (ADR-019)
+
+- El fisioterapeuta recomienda un descanso por ejercicio (`rest_min_seconds` y `rest_max_seconds`, 10–180 s). Es una
+  recomendación, no un límite, y no va en el sobre.
+- Sin valor se sugiere 60 s (`REST_DEFAULT_SECONDS`), un valor de partida y no clínico (TD-80).
+- El paciente ve una cuenta regresiva (`rest-timer.js`) al terminar una serie, en la vista guiada y en el seguimiento, y
+  tras una pausa por molestia. Puede saltarla o sumar 30 s. Nunca bloquea: "Terminé la serie" y empezar la siguiente
+  serie la cierran.
 
 ## Sugerencias por rol (ADR-017)
 

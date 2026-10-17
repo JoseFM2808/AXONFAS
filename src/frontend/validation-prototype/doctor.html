@@ -23,6 +23,12 @@
 .plan-ex { border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
 .plan-ex[data-on="false"] .plan-fields { display: none; }
 .plan-fields { margin-top: 10px; }
+.soap-body { display: grid; gap: 12px; margin: 12px 0; }
+.soap-body dt { font: 700 0.85rem var(--font-body); color: var(--ink-secondary); margin: 0; }
+.soap-body dd { margin: 4px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.soap-body textarea { width: 100%; min-height: 5em; resize: vertical; font: 500 0.95rem var(--font-body); color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--surface-border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.soap-body textarea:focus { outline: 2px solid var(--tape); outline-offset: 1px; }
 @media (max-width: 900px) {
   .detail-grid, .live-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -84,6 +90,10 @@
       <div class="row-between">
         <h2 class="page-title" id="p-title"></h2>
         <span class="muted" id="p-status"></span>
+      </div>
+      <div class="chips">
+        <button class="btn" id="p-reinvite" type="button">Generar código nuevo</button>
+        <span class="status-line" id="p-reinvite-status" role="status" aria-live="polite"></span>
       </div>
       <div id="p-invite" class="panel-card" hidden></div>
       <div class="kpis" id="p-kpis"></div>
@@ -149,16 +159,34 @@
           <section class="panel-card">
             <h2>Plan de ejercicios <button class="btn" id="btn-plan" type="button">Editar plan</button></h2>
             <div class="table-wrap" tabindex="0" role="region" aria-label="Plan de ejercicios"><table>
-              <thead><tr><th>Ejercicio</th><th>Dosis</th><th>Semana</th><th>Con cámara</th><th>Sobre</th></tr></thead>
+              <thead><tr><th>Ejercicio</th><th>Dosis</th><th>Semana</th><th>Con cámara</th><th>Sobre</th><th>Descanso</th></tr></thead>
               <tbody id="p-plan"></tbody>
             </table></div>
           </section>
           <section class="panel-card">
             <h2>Historial de sesiones</h2>
             <div class="table-wrap" tabindex="0" role="region" aria-label="Historial de sesiones"><table>
-              <thead><tr><th>Fecha</th><th>Ejercicio</th><th>Fuente</th><th>Reps</th><th>Fin</th><th>Alertas</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Ejercicio</th><th>Fuente</th><th>Reps</th><th>Fin</th><th>Alertas</th><th>Nota SOAP</th></tr></thead>
               <tbody id="p-sessions"></tbody>
             </table></div>
+          </section>
+          <section class="panel-card" id="soap-card" aria-labelledby="soap-title" hidden>
+            <h2 id="soap-title" tabindex="-1">Nota SOAP · <span id="soap-when"></span></h2>
+            <p id="soap-state"></p>
+            <p class="muted" id="soap-source"></p>
+            <dl class="soap-body" id="soap-body"></dl>
+            <div class="chips">
+              <button class="btn primary" id="soap-approve" type="button">Firmar y aprobar la nota</button>
+              <button class="btn" id="soap-fhir" type="button" hidden>Descargar Observation FHIR (JSON)</button>
+              <button class="btn" id="soap-close" type="button">Cerrar la nota</button>
+            </div>
+            <p class="muted" id="soap-fhir-note"></p>
+            <p class="status-line" id="soap-status" role="status" aria-live="polite"></p>
+          </section>
+          <section class="panel-card" aria-labelledby="p-symptoms-title">
+            <h2 id="p-symptoms-title">Molestias reportadas</h2>
+            <p class="status-line" id="p-symptom-alert" role="status" aria-live="polite"></p>
+            <div class="feed" id="p-symptoms" style="max-height:none;"></div>
           </section>
           <section class="panel-card">
             <h2>Compensaciones recientes</h2>

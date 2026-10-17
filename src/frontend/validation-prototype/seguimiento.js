@@ -51,7 +51,7 @@
     ex: null, spec: null, dose: null, tracker: null, map: null,
     cam: null, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
-    patient: null, item: null, lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
+    patient: null, item: null, symptomIds: [], lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
   };
 
   const cssCache = {};
@@ -81,7 +81,22 @@
     const tg = T.targetFor(st.spec, d);
     const what = st.spec.mode === 'reps' ? `${plural(d.sets, 'serie', 'series')} de ${d.reps}${st.spec.perSide ? ' por lado' : ''}`
       : `${plural(d.reps, 'vez', 'veces')}${st.spec.perSide ? ' por lado' : ''}`;
-    return `${what}${d.hold ? ` · sostener ${d.hold} s` : ''} (${tg.total} en total)`;
+    const r = st.item && st.item.rest ? st.item.rest : { min: C.REST_DEFAULT_SECONDS, max: C.REST_DEFAULT_SECONDS, default: true };
+    const rest = `${r.min === r.max ? `${r.min} s` : `${r.min}–${r.max} s`}${r.default ? ' (sugerido)' : ''}`;
+    return `${what}${d.hold ? ` · sostener ${d.hold} s` : ''} · descanso ${rest} (${tg.total} en total)`;
+  }
+
+  /** Descanso recomendado al terminar una serie (ADR-019): es una guía, el conteo sigue activo y no bloquea nada. */
+  let restView = null;
+  function startRest() {
+    stopRest();
+    if (!window.AxonRest) return;
+    const rest = st.item && st.item.rest ? st.item.rest : { min: C.REST_DEFAULT_SECONDS, max: C.REST_DEFAULT_SECONDS, default: true };
+    restView = AxonRest.mount($('rest-track'), { rest, speak: (t) => speak(t) });
+  }
+  function stopRest() {
+    if (restView) { restView.stop(); restView = null; }
+    if ($('rest-track')) $('rest-track').replaceChildren();
   }
 
   function setExercise(id) {
@@ -224,6 +239,7 @@
     st.startedAt = new Date().toISOString();
     st.ended = false;
     st.saved = false;
+    st.symptomIds = [];
     st.lowStreak = 0;
     st.frames = 0;
     st.lowFrames = 0;
@@ -290,7 +306,7 @@
     const tg = st.tracker.target;
     switch (e.type) {
       case 'ready': announce('Listo. Empieza', { ms: 1800 }); break;
-      case 'hold_start': if (e.seconds) speak('Sostén'); break;
+      case 'hold_start': stopRest(); if (e.seconds) speak('Sostén'); break;
       case 'hold_done':
         st.holdFlashUntil = performance.now() + 1500;
         speak(st.spec.mode === 'reps' ? 'Bien. Baja despacio' : 'Bien. Suelta');
@@ -309,12 +325,13 @@
         break;
       }
       case 'rep': {
+        stopRest();                                       // empezó la siguiente serie: el descanso se cierra en silencio
         const n = e.index % tg.perSet || tg.perSet;
         if (e.index < tg.total && n < tg.perSet) speak(String(n));
         renderReps();
         break;
       }
-      case 'set_done': announce(`Serie ${e.set} lista. Descansa y sigue`, { ms: 3200 }); break;
+      case 'set_done': announce(`Serie ${e.set} lista. Descansa y sigue`, { ms: 3200 }); startRest(); break;
       default: break;
     }
   }
@@ -329,6 +346,7 @@
     }
     if (!st.tracker || st.ended) return;
     st.ended = true;
+    stopRest();
     ui.holdBadge.hidden = true;
     st.tracker.end();
     stopCamera();
@@ -609,7 +627,7 @@
     try {
       await A.call('patient', 'POST', '/api/sessions', {
         exercise_id: st.ex.id, mode: 'guided', source: 'camera', started_at: st.startedAt || new Date().toISOString(),
-        ended_at: new Date().toISOString(), end_reason: reason, reps_done: reps,
+        ended_at: new Date().toISOString(), end_reason: reason, reps_done: reps, symptom_report_ids: st.symptomIds,
         // Por repetición (TD-49): recorrido máximo desde la posición inicial, sostén, duración y lado. Nunca video.
         reps: st.tracker.reps.slice(0, 100).map((r) => ({
           index: r.index, side: r.side || undefined, peak: r.peak ?? undefined, holdSec: r.holdSec ?? undefined,
@@ -620,6 +638,13 @@
     } catch (err) {
       $('patient-text').textContent = `No se pudo guardar la sesión: ${err.message}`;
     }
+  }
+
+  /** Respuesta del formulario de molestia: se une a la sesión por id; una alarma la termina por dolor (I-7). */
+  function onSymptom(res) {
+    st.symptomIds.push(res.report.id);
+    if (res.stop) { finish('pain_stop'); return; }
+    if (st.tracker && !st.ended) announce(res.message, { ms: 4000 });
   }
 
   async function bootPatient(exerciseId) {
@@ -645,6 +670,11 @@
       p.textContent = `Hola, ${me.patient.alias}. Plan de ${me.therapist.name}: ${doseText()}. Tu fisioterapeuta ve en vivo tu `
         + 'esqueleto y tus repeticiones, nunca el video. Al terminar, la sesión se guarda sola.';
       $('patient-text').replaceChildren(p);
+      // La molestia es un reporte del paciente, no una alerta del sistema: el seguimiento nunca alerta (I-12).
+      if (window.AxonSymptom) {
+        AxonSymptom.render($('symptom-track'), { exerciseId: st.ex.id, inSession: () => Boolean(st.tracker) && !st.ended,
+          current: () => null, onResult: onSymptom });
+      }
       A.stream('patient', '/api/me/stream', (msg) => {
         if (msg.kind === 'highlight' && window.AxonTeach) AxonTeach.show(msg);
       });

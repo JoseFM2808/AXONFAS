@@ -96,3 +96,31 @@ test('las páginas cargan el módulo y marcan regiones, saltos y estados para le
   const tokens = fs.readFileSync(path.join(SRC, '..', '..', '..', 'docs', 'design-system', 'tokens.css'), 'utf8');
   assert.ok(tokens.includes('--alert-ink') && tokens.includes('--alert-strong'));
 });
+
+test('una molestia reciente propone revisar la dosis, sin aplicarla (ADR-018, I-13)', () => {
+  const now = Date.parse('2026-10-17T12:00:00Z');
+  const day = 864e5;
+  const calf = [{ exercise_id: 'calf-raises', sets: 2, reps: 10, per_week: 6 }];
+  const rep = (over) => ({ exercise_id: 'calf-raises', kind: 'discomfort', category: 'fatigue', action: 'paused',
+    reported_at: new Date(now - day).toISOString(), ...over });
+  const find = (symptoms, plan = calf) => S.forTherapist({ profile: null, plan, metrics: {}, sessions: [], events: [], symptoms, now })
+    .find((s) => s.id === 'discomfort-calf-raises');
+  const one = find([rep()]);
+  assert.equal(one.priority, 2);
+  assert.equal(one.action.value, 7);
+  assert.equal(one.action.field, 'reps');
+  assert.equal(find([rep(), rep()]).priority, 1);
+  assert.equal(find([rep({ kind: 'red_flag', category: 'red_flag', action: 'session_stopped' })]).priority, 1);
+  assert.equal(find([rep({ reported_at: new Date(now - 15 * day).toISOString() })]), undefined);
+  assert.equal(find([rep()], []).action, undefined, 'fuera del plan no hay acción');
+  const single = find([rep()], [{ exercise_id: 'calf-raises', sets: 2, reps: 1, per_week: 6 }]);
+  assert.equal(single.action, undefined, 'con 1 repetición no se propone "1 en vez de 1"');
+  assert.ok(!single.detail.includes('en vez de'));
+  const before = JSON.stringify(calf);
+  find([rep()]);
+  assert.equal(JSON.stringify(calf), before);
+  const general = S.forTherapist({ profile: null, plan: [], metrics: {}, sessions: [], events: [], now,
+    symptoms: [rep({ exercise_id: null })] }).find((s) => s.id === 'discomfort-general');
+  assert.equal(general.priority, 2);
+  assert.equal(general.action, undefined);
+});

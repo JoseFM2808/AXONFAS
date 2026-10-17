@@ -62,6 +62,8 @@
     'scapula-setting': { arm: true, areas: ['shoulder'] },
   };
 
+  const SYMPTOM_CATEGORY = { pain: 'dolor o molestia', cramp: 'calambre', fatigue: 'cansancio', stiffness: 'rigidez',
+    other: 'otra molestia', red_flag: 'señal de alarma' };
   const areaName = (id) => (PAIN_AREAS.find((a) => a.id === id) || { label: id }).label.toLowerCase();
   const exName = (id) => { const e = C && C.get(id); return e ? e.name : id; };
   const has = (profile, id) => Boolean(profile && Array.isArray(profile.limitations) && profile.limitations.includes(id));
@@ -122,6 +124,29 @@
         detail: 'Con sus limitaciones físicas y zonas con dolor, las sugerencias adaptan los ejercicios. Puede completarlo el paciente en su página o tú aquí.',
         because: 'El perfil está vacío.' });
     }
+
+    // Molestias que el paciente reportó en los últimos 14 días (ADR-018): una propuesta por ejercicio, que el fisioterapeuta revisa.
+    const recentSymptoms = (data.symptoms || []).filter((x) => now - Date.parse(x.reported_at) <= 14 * 864e5);
+    const symptomsBy = {};
+    recentSymptoms.forEach((x) => { (symptomsBy[x.exercise_id || ''] = symptomsBy[x.exercise_id || ''] || []).push(x); });
+    Object.entries(symptomsBy).forEach(([id, list]) => {
+      const cats = [...new Set(list.map((x) => SYMPTOM_CATEGORY[x.category] || 'otra molestia'))].join(', ');
+      const stopped = list.filter((x) => x.action === 'session_stopped').length;
+      const because = `${list.length} molestia(s) en 14 días (${cats})${stopped ? `; ${stopped} detuvo la sesión` : ''}.`;
+      const priority = list.length >= 2 || list.some((x) => x.kind === 'red_flag') ? 1 : 2;
+      if (!id) {
+        push({ id: 'discomfort-general', kind: 'review', priority: 2, title: 'El paciente refirió molestias fuera de un ejercicio',
+          detail: 'Hablar con el paciente antes de subir la exigencia.', because });
+        return;
+      }
+      const item = plan.find((p) => p.exercise_id === id);
+      const reps = item ? Math.max(1, Math.round(item.reps * 0.7)) : null;
+      const lower = item && reps < item.reps;               // con 1 repetición no hay qué bajar: solo hablar con el paciente
+      push({ id: `discomfort-${id}`, kind: 'dose', priority, title: `Revisar ${exName(id)}: refirió molestias`,
+        detail: lower ? `Proponer ${reps} repeticiones en vez de ${item.reps}, o un rango menor, y hablar con el paciente.`
+          : item ? 'Hablar con el paciente y revisar la dosis o el ejercicio.' : 'Hablar con el paciente antes de volver a indicarlo.',
+        because, action: lower ? { type: 'dose', exercise_id: id, field: 'reps', value: reps } : undefined });
+    });
 
     const painStops = sessions.filter((s) => s.end_reason === 'pain_stop');
     const byExercise = {};

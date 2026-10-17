@@ -13,6 +13,10 @@ from .llm import LLMError, parse_json
 
 END = {"completed": "completada", "pain_stop": "detenida por dolor", "user_quit": "terminada por el paciente",
        "envelope_breach": "detenida por salir del sobre de seguridad"}
+SYMPTOM = {"pain": "dolor o molestia", "cramp": "calambre", "fatigue": "cansancio", "stiffness": "rigidez",
+           "other": "otra molestia", "red_flag": "señal de alarma"}
+SYMPTOM_ACTION = {"session_stopped": "se detuvo la sesión", "demand_lowered": "se bajó la exigencia",
+                  "paused": "se hizo una pausa", "logged": "quedó registrada"}
 EVENT = {"trunk_flexion": "flexión de tronco", "knee_valgus": "valgo de rodilla"}
 
 
@@ -33,6 +37,10 @@ def facts(session: dict) -> dict:
         "dolor_reportado": bool(session.get("pain_reported")),
         "ajustes_del_agente": [d.get("proposal") for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
         "lo_que_dijo_el_paciente": session.get("utterances") or [],
+        # Sin horas: añadirían cifras citables a I-6. Los textos son lo que escribió el paciente.
+        "molestias": [{"categoria": SYMPTOM.get(x.get("category"), "otra molestia"), "texto": x.get("text"),
+                       "accion": SYMPTOM_ACTION.get(x.get("action"), "quedó registrada"), "en_la_sesion": bool(x.get("in_session"))}
+                      for x in session.get("symptom_reports") or []],
     }
 
 
@@ -41,8 +49,15 @@ def template(f: dict) -> dict:
     s = ("Refiere: " + "; ".join(f["lo_que_dijo_el_paciente"])) if f["lo_que_dijo_el_paciente"] else "Sin comentarios del paciente."
     if f["dolor_reportado"]:
         s += " Reportó dolor."
-    o = (f"{f['ejercicio']}, {f['fecha']}: {f['repeticiones_hechas']} de {f['repeticiones_indicadas']} repeticiones, "
-         f"sesión {f['fin']}. Compensaciones: {comp}.")
+    if f["molestias"]:
+        items = []
+        for m in f["molestias"]:
+            parts = ([f"«{m['texto']}»"] if m["texto"] else []) + ([] if m["en_la_sesion"] else ["fuera de la sesión"]) + [m["accion"]]
+            items.append(f"{m['categoria']} ({'; '.join(parts)})")
+        s += " Molestias reportadas: " + "; ".join(items) + "."
+    done = (f"{f['repeticiones_hechas']} repeticiones" if f["repeticiones_indicadas"] is None    # sin meta no se escribe "de None"
+            else f"{f['repeticiones_hechas']} de {f['repeticiones_indicadas']} repeticiones")
+    o = f"{f['ejercicio']}, {f['fecha']}: {done}, sesión {f['fin']}. Compensaciones: {comp}."
     if f["rom_medio_grados"] is not None:
         o += f" Flexión media de rodilla: {f['rom_medio_grados']}°."
     if f["ajustes_del_agente"]:
@@ -70,7 +85,8 @@ def draft(llm, session: dict) -> dict:
             out = parse_json(llm.chat(messages, json_mode=True, max_tokens=220)["text"]) or {}
         except LLMError:
             out = {}
-        allowed = numbers(json.dumps(f, ensure_ascii=False))
+        # La fecha no cuenta como cifra citable: sus partes (año, mes, día) dejarían pasar "quince" o "100" por casualidad.
+        allowed = numbers(json.dumps({k: v for k, v in f.items() if k != "fecha"}, ensure_ascii=False))
         if all(isinstance(out.get(k), str) and out[k].strip() and numbers(out[k]) <= allowed for k in ("A", "P")):
             note["A"], note["P"] = out["A"].strip(), out["P"].strip()
             source = "llm"

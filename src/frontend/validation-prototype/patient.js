@@ -10,7 +10,7 @@
   const A = window.AxonApi;
   const S = window.AxonSuggest;
   const $ = (id) => document.getElementById(id);
-  const state = { me: null, guided: null, stream: null, holdTimer: 0, guide: null };
+  const state = { me: null, guided: null, stream: null, holdTimer: 0, guide: null, rest: null };
 
   function show(view) {
     $('join').hidden = view !== 'join';
@@ -67,9 +67,28 @@
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+  function restShort(rest) {
+    if (!rest) return '60 s (sugerido)';
+    return `${rest.min === rest.max ? `${rest.min} s` : `${rest.min}–${rest.max} s`}${rest.default ? ' (sugerido)' : ''}`;
+  }
+
   function doseText(item) {
     return `${plural(item.sets, 'serie', 'series')} de ${item.reps}${item.hold_seconds ? ` · sostener ${item.hold_seconds} s` : ''} · `
+      + `descanso ${restShort(item.rest)} · `
       + `${plural(item.per_week, 'vez', 'veces')} por semana · esta semana: ${item.done_7d} de ${item.per_week}`;
+  }
+
+  /** Descanso recomendado (ADR-019): cuenta regresiva que se puede saltar o alargar; nunca bloquea nada. */
+  function startRest() {
+    const g = state.guided;
+    if (!g || !window.AxonRest) return;
+    stopRest();
+    state.rest = AxonRest.mount($('g-rest'), { rest: g.item.rest, speak });
+  }
+
+  function stopRest() {
+    if (state.rest) { state.rest.stop(); state.rest = null; }
+    if ($('g-rest')) $('g-rest').replaceChildren();
   }
 
   /** Rol usuario (ADR-017): consejos de uso y el perfil que el fisioterapeuta usa para adaptar el plan. */
@@ -92,6 +111,7 @@
     const me = state.me;
     $('hello').textContent = `Hola, ${me.patient.alias}`;
     $('therapist').textContent = `Tu fisioterapeuta: ${me.therapist.name}. Toca "Cómo se hace" para ver los pasos.`;
+    if (window.AxonSymptom) AxonSymptom.render($('symptom-plan'), { inSession: false });      // fuera de sesión: solo se registra
     if (!keepForm) renderHelp();
     else if (S) S.renderList($('tips'), S.forUser({ page: 'patient', profile: me.patient.profile, plan: me.plan }), {
       title: 'Sugerencias para ti',
@@ -144,7 +164,7 @@
   }
 
   function startGuided(item, ex) {
-    state.guided = { item, ex, setsDone: 0, startedAt: new Date().toISOString() };
+    state.guided = { item, ex, setsDone: 0, startedAt: new Date().toISOString(), symptomIds: [] };
     $('g-title').textContent = ex.name;
     B.render($('g-map'), { intensities: B.staticLoad(ex), caption: `Trabajas: ${B.muscleNames(ex.muscles).join(', ')}. Huesos: ${ex.bones.join(', ')}.` });
     if (state.guide) state.guide.stop();
@@ -157,11 +177,25 @@
     $('g-dose').textContent = doseText(item);
     $('g-hold').hidden = !item.hold_seconds;
     $('g-status').textContent = '';
+    stopRest();
+    if (window.AxonSymptom) {
+      AxonSymptom.render($('g-symptom'), { exerciseId: ex.id, inSession: true, current: () => null, onResult: onSymptom });
+    }
     renderGuided();
     show('guided');
     speak(`${ex.name}. ${item.sets} series de ${item.reps}.`);
     publish();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /** Respuesta del formulario de molestia en la vista guiada: se une a la sesión por id; una alarma la detiene (I-7). */
+  function onSymptom(res) {
+    const g = state.guided;
+    if (!g) return;
+    g.symptomIds.push(res.report.id);
+    if (res.stop) { endGuided('pain_stop'); return; }
+    speak(res.message);
+    if (res.action === 'paused') startRest();             // tras una molestia, el descanso recomendado
   }
 
   function renderGuided() {
@@ -174,12 +208,14 @@
     const g = state.guided;
     if (!g) return;
     clearInterval(state.holdTimer);
+    stopRest();
     if (state.guide) { state.guide.stop(); state.guide = null; }
     publish({ ended: reason });
     state.guided = null;
     try {
       await A.call('patient', 'POST', '/api/sessions', { exercise_id: g.ex.id, mode: 'guided', source: 'guided',
-        started_at: g.startedAt, ended_at: new Date().toISOString(), end_reason: reason, reps_done: g.setsDone * g.item.reps });
+        started_at: g.startedAt, ended_at: new Date().toISOString(), end_reason: reason, reps_done: g.setsDone * g.item.reps,
+        symptom_report_ids: g.symptomIds });
       if (reason === 'pain_stop') speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
       else if (reason === 'completed') speak('Listo. Ejercicio completado.');
     } catch (err) {
@@ -191,11 +227,12 @@
   $('g-set').addEventListener('click', () => {
     const g = state.guided;
     if (!g) return;
+    stopRest();                                           // "Terminé la serie" siempre está disponible y corta el descanso
     g.setsDone += 1;
     publish();
     if (g.setsDone >= g.item.sets) { endGuided('completed'); return; }
-    speak(`Serie ${g.setsDone} lista. Descansa y sigue con la siguiente.`);
     renderGuided();
+    startRest();
   });
   $('g-pain').addEventListener('click', () => endGuided('pain_stop'));
   $('g-quit').addEventListener('click', () => endGuided('user_quit'));

@@ -18,7 +18,12 @@ Toda la parte pesada (pose 3D, LLM, voz) corre junta en **una sola GPU AMD Insti
 | Benchmark de sesiones concurrentes en 1× MI300X | ⏳ hackathon |
 | Galería de 24 ejercicios con fuentes (AAOS, NHS, CDC STEADI) | ✅ prototipo |
 | Cuentas de fisioterapeuta y paciente, plan, indicadores y vista en vivo (red local) | ✅ prototipo (Staging) |
-| Panel del fisioterapeuta en la nube + export FHIR R4 | ⏳ hackathon |
+| Agentes y pila de la GPU (ADR-016): lista para correr, sin GPU todavía | ⏳ hackathon |
+| Sugerencias por rol, perfil del paciente y accesibilidad WCAG 2.2 AA (ADR-017) | ✅ prototipo |
+| Nota SOAP (borrador y firma) y export FHIR R4 desde el panel, en Staging local | ✅ prototipo (falta validar con el validador de HL7) |
+| Aviso de molestias del paciente: baja la exigencia con reglas, registra y avisa al fisioterapeuta, sin GPU (ADR-018) | ✅ prototipo (Staging) |
+| Descanso recomendado entre series, que se puede saltar o alargar (ADR-019) | ✅ prototipo |
+| Panel del fisioterapeuta en la nube | ⏳ hackathon |
 
 ## Estructura
 
@@ -46,7 +51,31 @@ AXONFAS/
 ## Documentación
 
 Todo lo técnico vive en [`.ai-context/`](.ai-context/llms.txt): lógica de los dos bucles, arquitectura, modelo de
-datos, decisiones (ADRs) y pendientes. Los agentes de IA empiezan por [`CLAUDE.md`](CLAUDE.md).
+datos, decisiones (ADRs, hasta el ADR-019 aceptado) y pendientes. Los agentes de IA empiezan por [`CLAUDE.md`](CLAUDE.md).
+
+## Licencias
+
+El código de AXONFAS todavía no tiene archivo de licencia: la regla de la entrega pide que sea compatible con MIT y el
+owner decide si se agrega `LICENSE` (MIT) en la raíz. Estas son las licencias de lo que usa el proyecto (según la ficha
+de cada modelo o proyecto, revisado 2026-10-17; pendiente de confirmar en las fichas oficiales, TD-26):
+
+| Componente | Para qué | Licencia | Dónde |
+|---|---|---|---|
+| Qwen2.5-7B-Instruct | LLM de los 3 agentes | Apache-2.0 | `src/backend/gpu/bootstrap.sh` (`MODEL=`) |
+| Whisper large-v3-turbo (`openai/whisper-large-v3-turbo`) | Voz a texto | MIT | `src/backend/gpu/voice_server.py` |
+| Kokoro-82M (`hexgrad/Kokoro-82M`) y su paquete `kokoro` | Texto a voz | Apache-2.0 | `voice_server.py`, `requirements-gpu.txt` |
+| vLLM | Servidor del LLM | Apache-2.0 | Imagen del droplet (ADR-016) |
+| PyTorch | Inferencia en ROCm | BSD-3-Clause | Imagen del droplet |
+| Transformers (Hugging Face) | Carga de Whisper | Apache-2.0 | `voice_server.py` |
+| FastAPI, Uvicorn, soundfile | Servidor de voz | MIT, BSD-3-Clause, BSD-3-Clause | `requirements-gpu.txt` |
+| MediaPipe Tasks Vision 1.1.0 y el modelo `pose_landmarker_full` | Pose 2D en el navegador | Apache-2.0 | `src/frontend/validation-prototype/pose-camera.js` |
+| react-body-highlighter (polígonos del mapa muscular) | Mapa muscular | MIT | `body-map-data.js` |
+| qrcode-generator 1.4.4 | QR para afiliar y abrir en otro equipo | MIT | `share.js`, `doctor.html`, `index.html` |
+| Space Grotesk, Outfit y JetBrains Mono (Google Fonts) | Tipografía | SIL OFL-1.1 | `<head>` de las páginas |
+| espeak-ng | Fonemas del TTS en español; se instala con `apt` dentro del contenedor de la GPU y no se distribuye con el repo | **GPL-3.0** (decisión documentada: se deja así, TD-76) | `bootstrap.sh` |
+| Lifter 2D a 3D | Pose 3D | Por elegir (TD-05; licencias de pesos en TD-29) | - |
+
+Los ejercicios citan AAOS OrthoInfo, NHS WWL y CDC STEADI; las descripciones y las figuras son propias (ADR-011).
 
 ## Seguridad y privacidad
 
