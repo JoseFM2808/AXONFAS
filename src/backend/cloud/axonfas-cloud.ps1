@@ -16,6 +16,12 @@
     status   Droplets de AXONFAS, horas encendidas y costo estimado.
     down     Trae los resultados y DESTRUYE el droplet (con -Snapshot guarda antes una imagen). Pide -Yes.
 
+  Servidor web (ADR-020), en un droplet pequeño SIN GPU (s-1vcpu-1gb, unos USD 0.009/h), etiqueta 'axonfas-web':
+    web-up      Crea el droplet con Docker (cloud-init clona el repo público). Pide -Yes.
+    web-deploy  Copia tu archivo de entorno (-EnvFile, por defecto ~/.axonfas/axonfas.env) como config/.env.web,
+                actualiza el código y levanta Docker Compose con HTTPS (Caddy). Sin AXONFAS_DOMAIN usa <ip>.sslip.io.
+    web-down    Respalda la base SQLite en ~/.axonfas/ y DESTRUYE el droplet web. Pide -Yes.
+
   El token de la nube lo configura el owner con `doctl auth init --context <nombre> --api-url https://api.devcloud.amd.com`;
   este script nunca lo pide ni lo guarda. Todo recurso lleva la etiqueta 'axonfas'.
 
@@ -29,7 +35,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0, Mandatory = $true)]
-  [ValidateSet('check', 'up', 'deploy', 'tunnel', 'key', 'smoke', 'bench', 'fetch', 'status', 'down')]
+  [ValidateSet('check', 'up', 'deploy', 'tunnel', 'key', 'smoke', 'bench', 'fetch', 'status', 'down', 'web-up', 'web-deploy', 'web-down')]
   [string]$Command,
   [string]$Context = 'amd-write',
   [string]$Region = 'atl1',
@@ -40,6 +46,8 @@ param(
   [int[]]$Levels = @(1, 2, 4, 8, 16, 32, 64),
   [int]$Duration = 60,
   [switch]$Snapshot,
+  [string]$WebSize = 's-1vcpu-1gb',
+  [string]$EnvFile = (Join-Path $HOME '.axonfas\axonfas.env'),
   [switch]$Yes
 )
 
@@ -67,6 +75,31 @@ function Get-DoctlJson {
 
 function Get-AxonDroplets { Get-DoctlJson compute droplet list --tag-name $Tag }
 
+# Servidor web (ADR-020): etiqueta propia para que su firewall (22, 80 y 443) no choque con el de la GPU (solo 22).
+$WebTag = 'axonfas-web'
+$WebName = 'axonfas-web'
+$WebPricePerHour = 0.009
+function Get-WebDroplets { Get-DoctlJson compute droplet list --tag-name $WebTag }
+
+function Get-WebTarget {
+  $d = @(Get-WebDroplets)
+  if ($d.Count -eq 0) { throw "No hay droplet web. Créalo con: .\axonfas-cloud.ps1 web-up -Yes" }
+  $ip = Get-Ip $d[0]
+  if (-not $ip) { throw "El droplet web todavía no tiene IP pública." }
+  return @{ Droplet = $d[0]; Ip = $ip }
+}
+
+function Get-SshKeyId {
+  $pub = "$SshKey.pub"
+  if (-not (Test-Path $pub)) { throw "Falta la llave $pub. Créala con: ssh-keygen -t ed25519 -C axonfas-amd -f `"$SshKey`"" }
+  $mine = (Get-Content $pub -Raw).Trim().Split(' ')[0..1] -join ' '
+  $known = @(Get-DoctlJson compute ssh-key list | Where-Object { ($_.public_key.Trim().Split(' ')[0..1] -join ' ') -eq $mine })
+  if ($known.Count -eq 0) { $known = @(Get-DoctlJson compute ssh-key import axonfas-amd --public-key-file $pub) }
+  return $known[0].id
+}
+
+function Get-SslipDomain([string]$ip) { ($ip -replace '\.', '-') + '.sslip.io' }
+
 function Get-Ip($droplet) {
   ($droplet.networks.v4 | Where-Object { $_.type -eq 'public' } | Select-Object -First 1).ip_address
 }
@@ -88,10 +121,10 @@ function Invoke-Remote([string]$ip, [string]$cmd) {
   if ($LASTEXITCODE -ne 0) { throw "El comando remoto falló ($LASTEXITCODE): $cmd" }
 }
 
-function Show-Cost($droplet) {
+function Show-Cost($droplet, [double]$price = $PricePerHour) {
   $created = [datetime]::Parse($droplet.created_at).ToUniversalTime()
   $hours = ((Get-Date).ToUniversalTime() - $created).TotalHours
-  '{0}: {1:N2} h encendido, unos USD {2:N2} hasta ahora (USD {3}/h hasta destruirlo)' -f $droplet.name, $hours, ($hours * $PricePerHour), $PricePerHour
+  '{0}: {1:N2} h encendido, unos USD {2:N2} hasta ahora (USD {3}/h hasta destruirlo)' -f $droplet.name, $hours, ($hours * $price), $price
 }
 
 function Test-GpuEnabled {
@@ -207,8 +240,77 @@ switch ($Command) {
 
   'status' {
     $d = @(Get-AxonDroplets)
-    if ($d.Count -eq 0) { Write-Host 'Ningún droplet de AXONFAS: no se está cobrando nada.' }
-    else { $d | ForEach-Object { Write-Host "$(Show-Cost $_)  IP $(Get-Ip $_)  estado $($_.status)" } }
+    $w = @(Get-WebDroplets)
+    if ($d.Count -eq 0 -and $w.Count -eq 0) { Write-Host 'Ningún droplet de AXONFAS: no se está cobrando nada.' }
+    $d | ForEach-Object { Write-Host "GPU: $(Show-Cost $_)  IP $(Get-Ip $_)  estado $($_.status)" }
+    $w | ForEach-Object { Write-Host "Web: $(Show-Cost $_ $WebPricePerHour)  https://$(Get-SslipDomain (Get-Ip $_))  estado $($_.status)" }
+  }
+
+  'web-up' {
+    if (-not $Yes) { throw "Crear el droplet web cobra unos USD $WebPricePerHour/h ($WebSize) hasta destruirlo. Repite con -Yes." }
+    if (@(Get-WebDroplets).Count -gt 0) { throw "Ya hay un droplet web. Usa 'web-deploy' o 'web-down -Yes'." }
+    $keyId = Get-SshKeyId
+    try { Invoke-Doctl compute tag create $WebTag | Out-Null } catch { }
+    if (@(Get-DoctlJson compute firewall list | Where-Object { $_.name -eq 'axonfas-web-fw' }).Count -eq 0) {
+      try {
+        Invoke-Doctl compute firewall create --name axonfas-web-fw --tag-names $WebTag `
+          --inbound-rules 'protocol:tcp,ports:22,address:0.0.0.0/0,address:::/0 protocol:tcp,ports:80,address:0.0.0.0/0,address:::/0 protocol:tcp,ports:443,address:0.0.0.0/0,address:::/0' `
+          --outbound-rules 'protocol:icmp,address:0.0.0.0/0,address:::/0 protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0' | Out-Null
+      } catch { Write-Warning "Sin firewall de la nube: $_. El droplet igual activa ufw (22, 80, 443) con cloud-init." }
+    }
+    $init = Join-Path $Root 'config\deploy\cloud-init.yml'
+    Write-Host "Creando $WebName ($WebSize, $Region, Ubuntu 24.04 + Docker)…"
+    $d = Get-DoctlJson compute droplet create $WebName --region $Region --size $WebSize --image ubuntu-24-04-x64 `
+      --ssh-keys $keyId --tag-names $WebTag --user-data-file $init --wait
+    $ip = Get-Ip $d[0]
+    Write-Host "Listo: $WebName  IP $ip"
+    Write-Host "Dominio sin comprar: $(Get-SslipDomain $ip)  (agrégalo como origen autorizado del Client ID de Google)"
+    Write-Host 'Siguiente: .\axonfas-cloud.ps1 web-deploy   (espera 2-3 min a que cloud-init instale Docker)'
+  }
+
+  'web-deploy' {
+    $t = Get-WebTarget
+    if (-not (Test-Path $EnvFile)) { throw "Falta $EnvFile. Cópialo de config\.env.web.example y complétalo (Google, administradores, Token Factory)." }
+    $domain = Get-SslipDomain $t.Ip
+    $lines = @(Get-Content $EnvFile | Where-Object { $_ -notmatch '^\s*AXONFAS_DOMAIN\s*=\s*$' })
+    if (-not ($lines | Where-Object { $_ -match '^\s*AXONFAS_DOMAIN\s*=\s*\S' })) { $lines += "AXONFAS_DOMAIN=$domain" } else {
+      $domain = (($lines | Where-Object { $_ -match '^\s*AXONFAS_DOMAIN\s*=' } | Select-Object -First 1) -split '=', 2)[1].Trim()
+    }
+    $tmp = Join-Path $env:TEMP "axonfas-env-$PID"
+    [System.IO.File]::WriteAllText($tmp, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+    try {
+      Write-Host 'Esperando a cloud-init (Docker y el repo)…'
+      Invoke-Remote $t.Ip 'for i in $(seq 1 60); do [ -f /opt/axonfas/.cloud-init-done ] && exit 0; sleep 5; done; echo "cloud-init no terminó"; exit 1'
+      $a = (SshArgs) + @($tmp, "root@$($t.Ip):/opt/axonfas/config/.env.web")
+      & scp @a
+      if ($LASTEXITCODE -ne 0) { throw 'No se pudo copiar el archivo de entorno.' }
+    } finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    Invoke-Remote $t.Ip 'chmod 600 /opt/axonfas/config/.env.web && cd /opt/axonfas && git pull --ff-only && cd config/deploy && docker compose --env-file ../.env.web up -d --build'
+    Write-Host "Probando https://$domain …"
+    Start-Sleep -Seconds 10
+    try {
+      $r = Invoke-RestMethod -Uri "https://$domain/api/auth/config" -TimeoutSec 30
+      Write-Host ("Funcionando: Google {0} · cuentas de demostración {1} · IA {2}" -f $(if ($r.google_client_id) { 'sí' } else { 'falta GOOGLE_CLIENT_ID' }), $r.demo_accounts, $(if ($r.ai_provider) { $r.ai_provider } else { 'sin configurar' }))
+    } catch { Write-Warning "Todavía no responde por HTTPS (el certificado tarda 1-2 min la primera vez): $_" }
+    Write-Host "Web: https://$domain   ·   $(Show-Cost $t.Droplet $WebPricePerHour)"
+  }
+
+  'web-down' {
+    if (-not $Yes) { throw 'Esto destruye el droplet web y su base de datos (se respalda antes en ~/.axonfas). Repite con -Yes.' }
+    $w = @(Get-WebDroplets)
+    if ($w.Count -eq 0) { Write-Host 'No hay droplet web.'; break }
+    foreach ($x in $w) {
+      $ip = Get-Ip $x
+      if ($ip) {
+        $backup = Join-Path $Local ("web-backup-{0}.sqlite3" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        $a = (SshArgs) + @("root@${ip}:/var/lib/docker/volumes/deploy_axonfas-data/_data/staging.sqlite3", $backup)
+        & scp @a
+        if ($LASTEXITCODE -eq 0) { Write-Host "Base respaldada en $backup" } else { Write-Warning 'No se pudo respaldar la base.' }
+      }
+      Write-Host (Show-Cost $x $WebPricePerHour)
+      Invoke-Doctl compute droplet delete $x.id --force | Out-Null
+      Write-Host "Destruido: $($x.name). Ya no cobra."
+    }
   }
 
   'down' {

@@ -181,3 +181,22 @@ Antes de cada sesión con cámara (`camera-setup.js`, ADR-015).
 - **Simetría:** las tarjetas de una fila (`.card-grid > .ex-card`) y los indicadores (`.kpis > .kpi`) usan `subgrid`.
   Una tarjeta nueva debe mantener el mismo número de hijos.
 
+## 8. Inicio de sesión y administración (`login.html`, `admin.html`)
+
+- **Tarjeta de acceso (`.auth-card`):** centrada y de hasta 46 rem de ancho.
+  - El botón oficial de Google ocupa `.auth-google`, con 44 px de alto reservados para que la página no salte al
+    cargarlo.
+  - Sin `GOOGLE_CLIENT_ID`, en su lugar va un `.notice` que dice qué falta.
+  - Las cuentas de demostración van abajo, separadas por `.auth-sep`, y desaparecen si el servidor las apaga.
+- **Elegir rol (`.auth-roles`):** dos formularios `.auth-role` lado a lado (uno debajo del otro en celular), con el
+  botón al fondo para que queden alineados. El código usa `.code-input` (mono y en mayúsculas). El consentimiento es
+  obligatorio y se anuncia si falta.
+- **Vista del Administrador:**
+  - los indicadores (`.kpis`);
+  - una lista de verificación (`.check-list`, con ✓ en `--safe` y ✗ en `--alert-ink`, siempre con el texto "Listo:"
+    o "Falta:");
+  - el panel de la IA de AMD con estado, uso y prueba;
+  - la tabla de cuentas, con selector de rol y botón de desactivar, cada uno con su nombre accesible.
+- Los estados de cada acción se anuncian con `role="status"`. La sesión vive en `localStorage` por rol
+  (`axonfas.admin`, `axonfas.therapist`, `axonfas.patient`, `axonfas.user`).
+

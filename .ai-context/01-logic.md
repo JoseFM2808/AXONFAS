@@ -116,6 +116,8 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
 | I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
 | I-13 | Una sugerencia nunca cambia el plan por sí sola: el fisioterapeuta la revisa y guarda. Las del usuario nunca tocan la dosis, y la IA solo resume las que ya calcularon las reglas | ADR-005, ADR-017 |
+| I-14 | El rol de Administrador sale solo de `AXONFAS_ADMIN_EMAILS` y su vista no muestra datos clínicos; todo inicio de sesión con Google se verifica en el servidor (firma, emisor, destinatario, vigencia y correo verificado) | ADR-019 |
+| I-15 | La IA solo sale de infraestructura de AMD (Token Factory o el vLLM propio en una MI300X); sin proveedor configurado no hay IA y la interfaz lo dice | ADR-018 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -266,6 +268,17 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 
 **Con la GPU conectada,** el fisioterapeuta puede pedir un resumen con IA. Solo se muestra si no trae cifras ni
 ejercicios ajenos a los datos.
+
+## Cuentas y roles (ADR-019)
+
+| Rol | Cómo se obtiene | Qué ve |
+|---|---|---|
+| Administrador | Correo en `AXONFAS_ADMIN_EMAILS` al entrar con Google; se quita si el correo sale de la lista | `admin.html`: conteos, configuración, IA de AMD (estado, catálogo, uso y prueba) y cuentas. Sin datos clínicos |
+| Fisioterapeuta | Cuenta de Google nueva que elige "Soy fisioterapeuta", o una cuenta que el Administrador deja como fisioterapeuta; también la cuenta de demostración | `doctor.html` |
+| Paciente | Cuenta de Google nueva con el código de su fisioterapeuta y el consentimiento; también el código sin cuenta (demostración) | `paciente.html` |
+| Pendiente | Cuenta de Google nueva que todavía no eligió | `login.html` para elegir |
+
+Una cuenta desactivada no puede entrar y pierde sus tokens. Con `AXONFAS_DEMO_ACCOUNTS=0` solo se entra con Google.
 
 ## Vista corporal en vivo (ADR-013)
 

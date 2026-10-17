@@ -5,7 +5,9 @@ AXONFAS detecta en el momento cuándo compensa con otro segmento del cuerpo y un
 dentro de los límites que fijó su fisioterapeuta. Al terminar, el terapeuta recibe un borrador de nota SOAP y un
 reporte FHIR R4. Se vende a clínicas; el paciente lo usa gratis.
 
-Toda la parte pesada (pose 3D, LLM, voz) corre junta en **una sola GPU AMD Instinct MI300X** con ROCm.
+La IA sale de **AMD Token Factory**, la API de modelos hospedada por AMD (regla del hackathon, ADR-018). La tesis de
+producto es correr toda la parte pesada (pose 3D, LLM y voz) en **una sola GPU AMD Instinct MI300X** con ROCm; esa
+pila ya está lista para encenderse (ADR-016).
 
 > **Estado: Staging.** Proyecto para el AMD Developer Hackathon: ACT III en lablab.ai, pista Health and Wellbeing
 > (12–18 de octubre de 2026). Solo datos sintéticos. No es un dispositivo médico ni sustituye la evaluación de un
@@ -19,6 +21,9 @@ Toda la parte pesada (pose 3D, LLM, voz) corre junta en **una sola GPU AMD Insti
 | Galería de 24 ejercicios con fuentes (AAOS, NHS, CDC STEADI) | ✅ prototipo |
 | Cuentas de fisioterapeuta y paciente, plan, indicadores y vista en vivo (red local) | ✅ prototipo (Staging) |
 | Panel del fisioterapeuta en la nube + export FHIR R4 | ⏳ hackathon |
+| IA con AMD Token Factory (agentes, resumen para el fisioterapeuta) | ✅ código; falta la clave (TD-70) |
+| Inicio de sesión con Google, roles y Administrador maestro | ✅ código; falta el Client ID (TD-70) |
+| Despliegue en la nube de AMD (Docker + HTTPS) y web en Vercel | ✅ listo para publicar ([`config/deploy/`](config/deploy/README.md), TD-71) |
 
 ## Estructura
 

@@ -1,10 +1,14 @@
-/* AXONFAS · cliente de la API de Staging (ADR-012). Lo usan doctor.js, patient.js y patient-link.js.
- * El token de cada cuenta de demostración vive en localStorage de este navegador y viaja en la cabecera
- * Authorization, nunca en la URL. El canal en vivo se lee con fetch (Server-Sent Events) por la misma razón.
+/* AXONFAS · cliente de la API de Staging (ADR-012, ADR-019). Lo usan todas las páginas con cuentas.
+ * El token de cada rol (fisioterapeuta, paciente, administrador o cuenta de Google sin rol todavía) vive en localStorage
+ * de este navegador y viaja en la cabecera Authorization, nunca en la URL. El canal en vivo se lee con fetch
+ * (Server-Sent Events) por la misma razón. Con la web en otro dominio (Vercel), config.js trae la dirección de la API
+ * (ADR-020); vacía = el mismo servidor.
  */
 (function (root) {
   'use strict';
-  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient' };
+  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user' };
+  const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
+  const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
 
   function load(role) {
     try { return JSON.parse(localStorage.getItem(KEYS[role]) || 'null'); } catch { return null; }
@@ -23,9 +27,9 @@
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
     let res;
     try {
-      res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
+      res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
     } catch {
-      const err = new Error('No hay conexión con el servidor de AXONFAS. ¿Está corriendo lanzar-prototipo.cmd?');
+      const err = new Error('No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.');
       err.status = 0;
       throw err;
     }
@@ -49,7 +53,7 @@
         try {
           if (onState) onState('connecting');
           const account = load(role);
-          const res = await fetch(path, { headers: { Authorization: `Bearer ${account && account.token}` }, signal: controller.signal, cache: 'no-store' });
+          const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}` }, signal: controller.signal, cache: 'no-store' });
           if (!res.ok) {
             if (onState) onState('error', res.status);
             if ([401, 403, 404].includes(res.status)) return;
@@ -85,6 +89,7 @@
 
   async function lanInfo() {
     try {
+      if (BASE) return null;                                  // en la nube no hay red local ni QR
       const res = await fetch('/lan.json', { cache: 'no-store' });
       return res.ok ? await res.json() : null;
     } catch { return null; }
@@ -105,5 +110,21 @@
     return qr.createSvgTag(6, 2);
   }
 
-  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg };
+  /** Configuración pública del servidor: ID de cliente de Google, cuentas de demostración y proveedor de IA. */
+  let configPromise = null;
+  function config() {
+    if (!configPromise) configPromise = call(null, 'GET', '/api/auth/config').catch(() => ({ google_client_id: null, demo_accounts: true, ai_provider: null }));
+    return configPromise;
+  }
+
+  /** Cierra la sesión de un rol en el servidor y en este navegador. */
+  async function logout(role) {
+    if (load(role)) { try { await call(role, 'POST', '/api/auth/logout', {}); } catch { /* ya no valía */ } }
+    save(role, null);
+  }
+
+  /** Página de inicio de cada rol. */
+  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html' };
+
+  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, HOME };
 })(typeof self !== 'undefined' ? self : this);

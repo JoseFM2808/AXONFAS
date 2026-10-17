@@ -11,6 +11,10 @@
   Se generan con el openssl que trae Git for Windows y se rehacen si cambia la IP.
 - /lan.json le dice a la página las direcciones para armar el QR. Solo se sirven los archivos de esta carpeta.
 Solo biblioteca estándar (Python 3.11+). Úsalo en redes de confianza (casa, oficina), no en wifi pública.
+
+En la nube (ADR-020) corre detrás de un proxy con HTTPS (Caddy en config/deploy/):
+    py src/frontend/validation-prototype/serve.py --cloud      escucha en 0.0.0.0:$PORT (8091), sin HTTPS propio ni QR
+La configuración y los secretos salen del entorno o de ~/.axonfas/axonfas.env (src/backend/settings.py).
 """
 from __future__ import annotations
 
@@ -35,6 +39,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "backend"))
 from staging_api import StagingApi, Stream, load_catalog, load_names  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
+import settings  # noqa: E402  (variables de entorno y ~/.axonfas/axonfas.env, ADR-018/019/020)
 
 DEFAULT_DB = Path.home() / ".axonfas" / "staging.sqlite3"   # fuera del repo y de Drive (ADR-012)
 DESIGN_DIR = HERE.parents[2] / "docs" / "design-system"    # index.html enlaza ../../../docs/design-system/tokens.css
@@ -86,6 +91,23 @@ class Handler(SimpleHTTPRequestHandler):
     system del proyecto en /docs/design-system/ (fuente única de tokens, TD-35)."""
     lan_info: dict = {}
     api: StagingApi | None = None
+    cors: list[str] = []
+
+    def _cors_headers(self) -> None:
+        """La web en otro dominio (por ejemplo Vercel) puede llamar a la API si su origen está en AXONFAS_CORS_ORIGINS."""
+        origin = self.headers.get("Origin")
+        if origin and origin in self.cors:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+            self.send_header("Access-Control-Max-Age", "600")
+
+    def do_OPTIONS(self):
+        self.send_response(204 if self.path.startswith("/api/") else 404)
+        self._cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     # ------------------------------------------------------------------ API de Staging (/api/...)
     def _api(self, method: str):
@@ -104,6 +126,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -116,6 +139,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")                  # que un proxy no acumule los eventos
+        self._cors_headers()
         self.end_headers()
         q = self.api.hub.subscribe(stream.channel)
         try:
@@ -194,11 +219,17 @@ def main() -> int:
     ap.add_argument("--http-port", type=int, default=8091)
     ap.add_argument("--https-port", type=int, default=8443)
     ap.add_argument("--local-only", action="store_true", help="escucha solo en 127.0.0.1 (sin red local ni QR)")
-    ap.add_argument("--db", default=str(DEFAULT_DB), help="base SQLite de las cuentas de demostración (fuera del repo)")
+    ap.add_argument("--db", default=None, help="base SQLite (fuera del repo); también AXONFAS_DB")
+    ap.add_argument("--cloud", action="store_true", help="nube: 0.0.0.0:$PORT, sin HTTPS propio ni QR (lo pone el proxy)")
     args = ap.parse_args()
-    Handler.api = StagingApi(args.db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"))
+    env_file = settings.load_env_file()
+    db = args.db or settings.get("AXONFAS_DB") or str(DEFAULT_DB)
+    Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"))
+    Handler.cors = settings.cors_origins()
+    if args.cloud:
+        args.http_port = int(settings.get("PORT") or args.http_port)
 
-    ip = None if args.local_only else lan_ip()
+    ip = None if (args.local_only or args.cloud) else lan_ip()
     bind = "127.0.0.1" if args.local_only else "0.0.0.0"
     handler = functools.partial(Handler, directory=str(HERE))
     info = {"ip": ip, "local": f"http://localhost:{args.http_port}/", "lan_http": None, "lan_https": None}
@@ -233,7 +264,9 @@ def main() -> int:
         print(f"  Otros equipos:      {info['lan_https']}   (cámara; aceptar el aviso del certificado)")
     if info["lan_http"]:
         print(f"  Otros, sin cámara:  {info['lan_http']}   (solo demo)")
-    print(f"  Cuentas de demostración (fisioterapeuta / paciente): {args.db}")
+    print(f"  Base de datos:      {db}")
+    print(f"  Configuración:      {env_file or 'variables de entorno'} · Google: {'sí' if settings.google_client_id() else 'falta GOOGLE_CLIENT_ID'}"
+          f" · cuentas de demostración: {'sí' if settings.demo_accounts() else 'no'}")
     if not args.local_only:
         print("  Si Windows pregunta, permite Python en redes privadas. Ctrl+C para detener.")
     for s in servers:

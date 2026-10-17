@@ -30,7 +30,11 @@
   async function boot() {
     const code = new URLSearchParams(location.search).get('code');
     if (code) $('join-code').value = code.toUpperCase();
-    if (!A.load('patient')) { show('join'); return; }
+    if (!A.load('patient')) {
+      show('join');
+      A.config().then((cfg) => { $('join-form').hidden = !cfg.demo_accounts; $('demo-join-note').hidden = !cfg.demo_accounts; });
+      return;
+    }
     try {
       state.me = await A.call('patient', 'GET', '/api/me');
       renderPlan();
@@ -59,8 +63,8 @@
     } catch (err) { $('join-error').textContent = err.message; }
   });
 
-  $('btn-forget').addEventListener('click', () => {
-    A.save('patient', null);
+  $('btn-forget').addEventListener('click', async () => {
+    await A.logout('patient');
     if (state.stream) { state.stream.stop(); state.stream = null; }
     show('join');
   });

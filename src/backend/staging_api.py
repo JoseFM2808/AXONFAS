@@ -28,6 +28,10 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # src/, para los agentes (ADR-016/017)
+sys.path.insert(0, str(Path(__file__).resolve().parent))       # src/backend, para settings y google_auth
+
+import google_auth  # noqa: E402
+import settings  # noqa: E402
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS therapist (
@@ -37,8 +41,13 @@ CREATE TABLE IF NOT EXISTS patient (
   alias TEXT NOT NULL, birth_year INTEGER, consent_given INTEGER NOT NULL DEFAULT 0,
   invite_code TEXT UNIQUE, joined_at TEXT, created_at TEXT NOT NULL, profile TEXT);
 CREATE TABLE IF NOT EXISTS token (
-  token TEXT PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('therapist', 'patient')),
+  token TEXT PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user')),
   subject_id INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS app_user (
+  id INTEGER PRIMARY KEY, google_sub TEXT NOT NULL UNIQUE, email TEXT NOT NULL, name TEXT,
+  role TEXT NOT NULL DEFAULT 'pending' CHECK (role IN ('admin', 'therapist', 'patient', 'pending')),
+  therapist_id INTEGER REFERENCES therapist(id), patient_id INTEGER REFERENCES patient(id),
+  disabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, last_login_at TEXT);
 CREATE TABLE IF NOT EXISTS plan_exercise (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id), exercise_id TEXT NOT NULL,
   sets INTEGER NOT NULL, reps INTEGER NOT NULL, hold_seconds INTEGER NOT NULL, per_week INTEGER NOT NULL,
@@ -255,6 +264,17 @@ class StagingApi:
         self.db.executescript(SCHEMA)
         if "profile" not in {r["name"] for r in self.db.execute("PRAGMA table_info(patient)")}:
             self.db.execute("ALTER TABLE patient ADD COLUMN profile TEXT")    # bases creadas antes de ADR-017
+        token_sql = self.db.execute("SELECT sql FROM sqlite_master WHERE name = 'token'").fetchone()["sql"]
+        if "'admin'" not in token_sql:                                        # bases creadas antes de ADR-019
+            with self.db:
+                self.db.executescript("""
+                  CREATE TABLE token_new (token TEXT PRIMARY KEY,
+                    role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user')),
+                    subject_id INTEGER NOT NULL, created_at TEXT NOT NULL);
+                  INSERT INTO token_new SELECT token, role, subject_id, created_at FROM token;
+                  DROP TABLE token;
+                  ALTER TABLE token_new RENAME TO token;""")
+        self.jwks = google_auth.Jwks()
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
@@ -273,6 +293,16 @@ class StagingApi:
             ("POST", r"/api/patients/(\d+)/advice", self.advice, "therapist"),
             ("GET", r"/api/ai/status", self.ai_status, "therapist"),
             ("POST", r"/api/join", self.join, None),
+            ("GET", r"/api/auth/config", self.auth_config, None),
+            ("POST", r"/api/auth/google", self.auth_google, None),
+            ("POST", r"/api/auth/role", self.auth_role, "user"),
+            ("GET", r"/api/auth/me", self.auth_me, "*"),
+            ("POST", r"/api/auth/logout", self.auth_logout, "*"),
+            ("GET", r"/api/admin/overview", self.admin_overview, "admin"),
+            ("GET", r"/api/admin/users", self.admin_users, "admin"),
+            ("PUT", r"/api/admin/users/(\d+)", self.admin_update_user, "admin"),
+            ("GET", r"/api/admin/ai", self.admin_ai, "admin"),
+            ("POST", r"/api/admin/ai/test", self.admin_ai_test, "admin"),
             ("GET", r"/api/me", self.patient_me, "patient"),
             ("POST", r"/api/sessions", self.create_session, "patient"),
             ("POST", r"/api/live", self.publish_live, "patient"),
@@ -293,7 +323,10 @@ class StagingApi:
                     data = json.loads(body.decode("utf-8")) if body else {}
                     if not isinstance(data, dict):
                         raise ApiError(400, "Se esperaba un objeto JSON.")
-                    subject = self._auth(headers, role) if role else None
+                    if role == "*":
+                        subject = self._who(headers)
+                    else:
+                        subject = self._auth(headers, role) if role else None
                     return fn(subject, data, *[int(g) for g in match.groups()])
             if any(re.fullmatch(p, path) for _, p, _, _ in self.routes):
                 raise ApiError(405, "Método no permitido.")
@@ -314,6 +347,17 @@ class StagingApi:
         if row["role"] != role:
             raise ApiError(403, "Esta acción no corresponde a tu tipo de cuenta.")
         return row["subject_id"]
+
+    def _who(self, headers) -> dict:
+        """Cualquier token válido: {role, subject_id, token}."""
+        value = (headers.get("Authorization") or "").strip()
+        if not value.startswith("Bearer "):
+            raise ApiError(401, "Falta el token. Vuelve a entrar.")
+        with self.lock:
+            row = self.db.execute("SELECT token, role, subject_id FROM token WHERE token = ?", (value[7:].strip(),)).fetchone()
+        if not row:
+            raise ApiError(401, "El token no es válido. Vuelve a entrar.")
+        return dict(row)
 
     def _token(self, role: str, subject_id: int) -> str:
         token = secrets.token_urlsafe(32)
@@ -377,6 +421,8 @@ class StagingApi:
 
     # -------------------------------------------------------------------------------------- fisioterapeuta
     def create_therapist(self, _subject, data):
+        if not settings.demo_accounts():
+            raise ApiError(403, "Las cuentas de demostración están apagadas en este servidor: entra con Google.")
         name = self._text(data, "name", 80)
         with self.lock, self.db:
             cur = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)", (name, now_iso()))
@@ -463,6 +509,173 @@ class StagingApi:
             self.db.execute("UPDATE patient SET invite_code = ?, joined_at = NULL WHERE id = ?", (code, patient_id))
         return 200, {"invite_code": code}
 
+    # ------------------------------------------------------------------ inicio de sesión con Google (ADR-019)
+    def _user_public(self, row) -> dict:
+        return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"],
+                "therapist_id": row["therapist_id"], "patient_id": row["patient_id"], "disabled": bool(row["disabled"]),
+                "created_at": row["created_at"], "last_login_at": row["last_login_at"]}
+
+    def _session_for(self, user) -> dict:
+        """Token del rol que la cuenta ya tiene; si todavía no eligió, un token 'user' para elegirlo."""
+        role = user["role"]
+        if role == "admin":
+            return {"role": "admin", "token": self._token("admin", user["id"])}
+        if role == "therapist" and user["therapist_id"]:
+            return {"role": "therapist", "token": self._token("therapist", user["therapist_id"])}
+        if role == "patient" and user["patient_id"]:
+            return {"role": "patient", "token": self._token("patient", user["patient_id"])}
+        return {"role": "user", "token": self._token("user", user["id"])}
+
+    def auth_config(self, _subject, _data):
+        from agents import providers
+        cfg = providers.config()
+        return 200, {"google_client_id": settings.google_client_id() or None, "demo_accounts": settings.demo_accounts(),
+                     "ai_provider": cfg["label"] if cfg else None}
+
+    def auth_google(self, _subject, data):
+        credential = data.get("credential")
+        if not isinstance(credential, str) or len(credential) > 4096:
+            raise ApiError(400, "Falta el token de Google.")
+        try:
+            claims = google_auth.verify_id_token(credential, settings.google_client_id(), self.jwks)
+        except google_auth.AuthError as err:
+            raise ApiError(401, f"No se pudo verificar el inicio de sesión con Google: {err}")
+        email = str(claims["email"]).lower()
+        name = str(claims.get("name") or claims.get("given_name") or email.split("@")[0])[:80]
+        is_admin = email in settings.admin_emails()
+        with self.lock, self.db:
+            user = self.db.execute("SELECT * FROM app_user WHERE google_sub = ?", (claims["sub"],)).fetchone()
+            if user is None:
+                cur = self.db.execute("INSERT INTO app_user (google_sub, email, name, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                                      (claims["sub"], email, name, "admin" if is_admin else "pending", now_iso()))
+                user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (cur.lastrowid,)).fetchone()
+            if user["disabled"]:
+                raise ApiError(403, "Esta cuenta está desactivada. Habla con el equipo de AXONFAS.")
+            # El rol de Administrador sale solo de AXONFAS_ADMIN_EMAILS: se da y se quita en cada inicio de sesión.
+            new_role = "admin" if is_admin else ("pending" if user["role"] == "admin" else user["role"])
+            self.db.execute("UPDATE app_user SET email = ?, name = ?, role = ?, last_login_at = ? WHERE id = ?",
+                            (email, name, new_role, now_iso(), user["id"]))
+            user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user["id"],)).fetchone()
+            session = self._session_for(user)
+        return 200, {**session, "user": self._user_public(user)}
+
+    def auth_role(self, user_id, data):
+        """Una cuenta de Google nueva elige su rol: fisioterapeuta, o paciente con el código de su fisioterapeuta."""
+        role = data.get("role")
+        with self.lock:
+            user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
+        if not user or user["disabled"]:
+            raise ApiError(403, "Cuenta no disponible.")
+        if user["role"] != "pending":
+            raise ApiError(409, "Esta cuenta ya tiene un rol.")
+        if role == "therapist":
+            name = self._text(data, "name", 80, required=False) or user["name"]
+            with self.lock, self.db:
+                cur = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)", (name, now_iso()))
+                self.db.execute("UPDATE app_user SET role = 'therapist', therapist_id = ? WHERE id = ?", (cur.lastrowid, user_id))
+                token = self._token("therapist", cur.lastrowid)
+            return 201, {"role": "therapist", "token": token, "therapist": {"id": cur.lastrowid, "name": name}}
+        if role == "patient":
+            status, body = self._join(data, user_id=user_id)
+            return status, {"role": "patient", **body}
+        raise ApiError(400, "Elige 'therapist' o 'patient'.")
+
+    def auth_me(self, who, _data):
+        out = {"role": who["role"]}
+        with self.lock:
+            if who["role"] in ("admin", "user"):
+                row = self.db.execute("SELECT * FROM app_user WHERE id = ?", (who["subject_id"],)).fetchone()
+            else:
+                col = "therapist_id" if who["role"] == "therapist" else "patient_id"
+                row = self.db.execute(f"SELECT * FROM app_user WHERE {col} = ?", (who["subject_id"],)).fetchone()
+        out["user"] = self._user_public(row) if row else None          # None = cuenta de demostración
+        return 200, out
+
+    def auth_logout(self, who, _data):
+        with self.lock, self.db:
+            self.db.execute("DELETE FROM token WHERE token = ?", (who["token"],))
+        return 200, {"ok": True}
+
+    # ------------------------------------------------------------------ Administrador maestro (ADR-019)
+    def admin_overview(self, _admin_id, _data):
+        from agents import providers
+        q = lambda sql, *a: self.db.execute(sql, a).fetchone()[0]  # noqa: E731
+        week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        month = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        with self.lock:
+            roles = {r["role"]: r["n"] for r in self.db.execute("SELECT role, COUNT(*) AS n FROM app_user GROUP BY role")}
+            data = {
+                "users": roles, "users_total": sum(roles.values()),
+                "therapists": q("SELECT COUNT(*) FROM therapist"),
+                "patients": q("SELECT COUNT(*) FROM patient"), "patients_joined": q("SELECT COUNT(*) FROM patient WHERE joined_at IS NOT NULL"),
+                "sessions_total": q("SELECT COUNT(*) FROM session"), "sessions_7d": q("SELECT COUNT(*) FROM session WHERE ended_at >= ?", week),
+                "pain_stops_30d": q("SELECT COUNT(*) FROM session WHERE end_reason = 'pain_stop' AND ended_at >= ?", month),
+                "events_total": q("SELECT COUNT(*) FROM compensation_event"),
+            }
+        cfg = providers.config()
+        data["config"] = {"google_login": bool(settings.google_client_id()), "demo_accounts": settings.demo_accounts(),
+                          "admins_configured": len(settings.admin_emails()), "ai_provider": cfg["label"] if cfg else None,
+                          "cors_origins": settings.cors_origins()}
+        data["ai_usage"] = providers.usage()
+        return 200, data
+
+    def admin_users(self, _admin_id, _data):
+        with self.lock:
+            rows = self.db.execute("SELECT * FROM app_user ORDER BY last_login_at DESC, id DESC LIMIT 500").fetchall()
+        return 200, {"users": [self._user_public(r) for r in rows]}
+
+    def admin_update_user(self, admin_id, data, user_id):
+        """Cambia el rol (pendiente, fisioterapeuta) o desactiva una cuenta. El rol de Administrador solo sale del entorno."""
+        if user_id == admin_id:
+            raise ApiError(400, "No puedes cambiar tu propia cuenta de Administrador.")
+        with self.lock, self.db:
+            user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
+            if not user:
+                raise ApiError(404, "No existe esa cuenta.")
+            if user["role"] == "admin":
+                raise ApiError(400, "El rol de Administrador se maneja con AXONFAS_ADMIN_EMAILS.")
+            if "disabled" in data:
+                if not isinstance(data["disabled"], bool):
+                    raise ApiError(400, "'disabled' debe ser true o false.")
+                self.db.execute("UPDATE app_user SET disabled = ? WHERE id = ?", (int(data["disabled"]), user_id))
+                if data["disabled"]:
+                    self._revoke(user)
+            if "role" in data:
+                role = data["role"]
+                if role not in ("pending", "therapist"):
+                    raise ApiError(400, "Desde aquí solo se puede dejar 'pending' o 'therapist'; un paciente se afilia con su código.")
+                if role == "therapist" and not user["therapist_id"]:
+                    cur = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)", (user["name"] or user["email"], now_iso()))
+                    self.db.execute("UPDATE app_user SET therapist_id = ? WHERE id = ?", (cur.lastrowid, user_id))
+                self.db.execute("UPDATE app_user SET role = ? WHERE id = ?", (role, user_id))
+                self._revoke(user)                       # la próxima vez entra con el rol nuevo
+            user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
+        return 200, {"user": self._user_public(user)}
+
+    def _revoke(self, user) -> None:
+        self.db.execute("DELETE FROM token WHERE role = 'user' AND subject_id = ?", (user["id"],))
+        if user["therapist_id"]:
+            self.db.execute("DELETE FROM token WHERE role = 'therapist' AND subject_id = ?", (user["therapist_id"],))
+        if user["patient_id"]:
+            self.db.execute("DELETE FROM token WHERE role = 'patient' AND subject_id = ?", (user["patient_id"],))
+
+    def admin_ai(self, _admin_id, _data):
+        from agents import providers
+        return 200, {"status": providers.status(timeout=6), "usage": providers.usage(), "missing": providers.missing()}
+
+    def admin_ai_test(self, _admin_id, data):
+        """Una pregunta corta al modelo de AMD, para comprobar la conexión desde la vista de control."""
+        prompt = self._text(data, "prompt", 300, required=False) or "Responde en una frase: ¿qué es la fisioterapia en casa?"
+        llm = self._llm("admin-test")
+        if llm is None:
+            raise ApiError(503, "Sin proveedor de IA: configura AMD Token Factory (AMD_TOKENFACTORY_BASE_URL y AMD_TOKENFACTORY_API_KEY).")
+        from agents.llm import LLMError
+        try:
+            out = llm.chat([{"role": "user", "content": prompt}], max_tokens=120, temperature=0.3)
+        except LLMError as err:
+            raise ApiError(502, f"El modelo de AMD no respondió: {err}")
+        return 200, {"model": llm.model, "text": out["text"], "ms": out["ms"], "completion_tokens": out.get("completion_tokens")}
+
     # ------------------------------------------------------------------ perfil y sugerencias (ADR-017)
     def _save_profile(self, patient_id: int, data: dict) -> dict:
         profile = clean_profile(data)
@@ -482,26 +695,19 @@ class StagingApi:
         self.hub.publish(("patient", patient_id), {"kind": "profile_updated", "at": now_iso()})
         return 200, {"profile": profile}
 
-    def _llm(self):
-        from agents.llm import OpenAICompatible
-        return OpenAICompatible(timeout=20)
+    def _llm(self, purpose: str = "advice"):
+        from agents import providers
+        return providers.client(purpose, timeout=30)
 
     def ai_status(self, _therapist_id, _data):
-        """¿Hay un LLM conectado (túnel a la GPU con AXONFAS_LLM_KEY)? Se revisa como mucho cada 30 s."""
-        import os
-        import urllib.request
-        if not os.environ.get("AXONFAS_LLM_KEY"):
-            return 200, {"available": False, "reason": "sin GPU conectada (falta AXONFAS_LLM_KEY)"}
+        """¿Hay IA de AMD conectada (Token Factory o vLLM propio)? Se consulta el catálogo como mucho cada 30 s."""
+        from agents import providers
+        if not providers.config():
+            return 200, {"available": False, "provider": None, "reason": "sin proveedor de IA configurado"}
         if time.time() - self._ai["checked"] > 30:
-            llm = self._llm()
-            req = urllib.request.Request(f"{llm.url}/models", headers={"Authorization": f"Bearer {llm.key}"})
-            try:
-                with urllib.request.urlopen(req, timeout=2):
-                    self._ai["available"] = True
-            except Exception:  # noqa: BLE001 — cualquier falla = no disponible
-                self._ai["available"] = False
-            self._ai["checked"] = time.time()
-        return 200, {"available": self._ai["available"], "reason": None if self._ai["available"] else "el LLM no responde"}
+            st = providers.status(timeout=4)
+            self._ai.update(checked=time.time(), available=st["available"], provider=st["provider"], reason=st["reason"])
+        return 200, {"available": self._ai["available"], "provider": self._ai.get("provider"), "reason": self._ai.get("reason")}
 
     def advice(self, therapist_id, data, patient_id):
         """Resumen con IA de las sugerencias que ya calcularon las reglas. Sin LLM conectado: 503."""
@@ -514,12 +720,15 @@ class StagingApi:
             p = self._own_patient(therapist_id, patient_id)
             plan = self._plan(patient_id)
         if not self.ai_status(therapist_id, {})[1]["available"]:
-            raise ApiError(503, "La IA no está conectada: abre el túnel a la GPU (axonfas-cloud.ps1 tunnel) con AXONFAS_LLM_KEY.")
+            raise ApiError(503, "La IA no está conectada: falta configurar AMD Token Factory en el servidor.")
         from agents import advisor
         text_all = " ".join(f"{s['title']} {s['detail']}" for s in clean)
         known = [self.names.get(x["exercise_id"], x["exercise_id"]) for x in plan]
         known += [n for n in self.names.values() if n in text_all]
-        out = advisor.summarize(self._llm(), json.loads(p["profile"]) if p["profile"] else None, clean, known)
+        llm = self._llm()
+        if llm is None:
+            raise ApiError(503, "La IA no está conectada: falta configurar AMD Token Factory en el servidor.")
+        out = advisor.summarize(llm, json.loads(p["profile"]) if p["profile"] else None, clean, known)
         if out.get("text") and advisor.mentions_unknown(out["text"], known, list(self.names.values())):
             out = {"text": None, "source": "rejected", "reason": "el resumen nombra ejercicios que no están en el plan ni en las sugerencias"}
         return 200, out
@@ -547,6 +756,11 @@ class StagingApi:
 
     # -------------------------------------------------------------------------------------- paciente
     def join(self, _subject, data):
+        if not settings.demo_accounts():
+            raise ApiError(403, "Las cuentas de demostración están apagadas en este servidor: entra con Google.")
+        return self._join(data)
+
+    def _join(self, data, user_id: int | None = None):
         code = (self._text(data, "code", 12) or "").upper().replace(" ", "").replace("-", "")
         if data.get("consent") is not True:
             raise ApiError(400, "Para continuar hay que aceptar el consentimiento.")
@@ -557,6 +771,8 @@ class StagingApi:
             self.db.execute("UPDATE patient SET consent_given = 1, joined_at = ?, invite_code = NULL WHERE id = ?",
                             (now_iso(), p["id"]))
             token = self._token("patient", p["id"])
+            if user_id is not None:
+                self.db.execute("UPDATE app_user SET role = 'patient', patient_id = ? WHERE id = ?", (p["id"], user_id))
             therapist = self.db.execute("SELECT name FROM therapist WHERE id = ?", (p["therapist_id"],)).fetchone()
         return 201, {"token": token, "patient": {"id": p["id"], "alias": p["alias"]}, "therapist": {"name": therapist["name"]}}
 

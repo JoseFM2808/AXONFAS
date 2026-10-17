@@ -34,11 +34,20 @@ class OpenAICompatible:
         headers = {"Content-Type": "application/json"}
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
-        req = urllib.request.Request(f"{self.url}/chat/completions", data=json.dumps(body).encode(), headers=headers)
         t0 = time.perf_counter()
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read())
+            data = self._post(body, headers)
+        except urllib.error.HTTPError as err:
+            # Algunos servicios (por ejemplo, un catálogo hospedado) no aceptan response_format: se repite sin él y
+            # parse_json() rescata el JSON del texto.
+            if json_mode and err.code in (400, 422):
+                body.pop("response_format", None)
+                try:
+                    data = self._post(body, headers)
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err2:
+                    raise LLMError(f"el LLM no respondió: {err2}") from err2
+            else:
+                raise LLMError(f"el LLM respondió {err.code}: {err.reason}") from err
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err:
             raise LLMError(f"el LLM no respondió: {err}") from err
         ms = round((time.perf_counter() - t0) * 1000)
@@ -48,6 +57,25 @@ class OpenAICompatible:
             raise LLMError("respuesta del LLM sin contenido") from err
         usage = data.get("usage") or {}
         return {"text": text, "ms": ms, "completion_tokens": usage.get("completion_tokens"), "prompt_tokens": usage.get("prompt_tokens")}
+
+    def _post(self, body: dict, headers: dict) -> dict:
+        req = urllib.request.Request(f"{self.url}/chat/completions", data=json.dumps(body).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read())
+
+    def models(self) -> list[str]:
+        """IDs del catálogo de modelos (GET /models). Sirve para comprobar la clave y elegir modelo."""
+        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+        req = urllib.request.Request(f"{self.url}/models", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=min(self.timeout, 10)) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as err:
+            raise LLMError(f"el catálogo respondió {err.code}: {err.reason}") from err
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err:
+            raise LLMError(f"sin respuesta del catálogo: {err}") from err
+        items = data.get("data") if isinstance(data, dict) else data
+        return [m.get("id") for m in (items or []) if isinstance(m, dict) and m.get("id")]
 
 
 class FakeLLM:

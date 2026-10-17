@@ -27,7 +27,11 @@
   }
 
   async function boot() {
-    if (!A.load('therapist')) { show('login'); return; }
+    if (!A.load('therapist')) {
+      show('login');
+      A.config().then((cfg) => { $('demo-login').hidden = !cfg.demo_accounts; });
+      return;
+    }
     try {
       await refreshPatients();
       show('dashboard');
@@ -50,8 +54,8 @@
     } catch (err) { $('login-error').textContent = err.message; }
   });
 
-  $('btn-logout').addEventListener('click', () => {
-    A.save('therapist', null);
+  $('btn-logout').addEventListener('click', async () => {
+    await A.logout('therapist');
     selectPatient(null);
     clearInterval(state.refreshTimer);
     show('login');

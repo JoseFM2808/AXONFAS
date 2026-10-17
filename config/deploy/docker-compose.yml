@@ -1,0 +1,36 @@
+# AXONFAS · despliegue en un droplet de AMD Developer Cloud (ADR-020).
+# En el droplet, desde /opt/axonfas/config/deploy:
+#   docker compose --env-file ../.env.web up -d --build
+# config/.env.web sale de config/.env.web.example (git lo ignora): dominio, Google, administradores y Token Factory.
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: config/deploy/Dockerfile
+    env_file:
+      - ../.env.web
+    volumes:
+      - axonfas-data:/data
+    expose:
+      - "8091"
+    restart: unless-stopped
+
+  caddy:                                   # HTTPS automático (Let's Encrypt): Google y la cámara lo exigen
+    image: caddy:2.8.4
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      AXONFAS_DOMAIN: ${AXONFAS_DOMAIN:?define AXONFAS_DOMAIN en config/.env.web}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  axonfas-data:
+  caddy-data:
+  caddy-config:
