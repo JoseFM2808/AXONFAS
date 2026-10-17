@@ -341,7 +341,7 @@
 - **Consecuencias:**
   - Una sola URL con todo en la nube de AMD, o la web en Vercel y la API en AMD.
   - Crear el droplet gasta créditos: pide `-Yes` y el visto bueno del owner.
-  - Falta compilar la imagen con Docker corriendo, ya sea en el droplet o con Docker Desktop (TD-72).
+  - La imagen se compiló y se probó en local con Docker: web, API, volumen, usuario sin privilegios y healthcheck (TD-72).
 
 ---
 
