@@ -49,7 +49,7 @@ con "❚❚ Pausa"), los pasos y dónde va la cámara.
 |---|---|---|
 | Flexión de rodilla | 180° menos el ángulo cadera-rodilla-tobillo, en 3D (puntos "world" de MediaPipe) | La profundidad de MediaPipe es aproximada |
 | Flexión de tronco | Ángulo entre el tronco (centro de caderas a centro de hombros) y la vertical | Supone la cámara nivelada |
-| Valgo de rodilla | Proxy: desplazamiento de la rodilla hacia la línea media respecto de la línea cadera-tobillo, en grados contra la longitud de la pierna | Necesita ver a la persona de frente o casi; no es el ángulo de proyección frontal clásico |
+| Valgo de rodilla | Desplazamiento de la rodilla hacia la línea media respecto de la línea cadera-tobillo, en grados contra la tibia, medido en un marco de la pelvis: origen entre las caderas, escala = ancho de cadera y giro anulado (ADR-024) | Funciona de frente y en diagonal (giro corregido hasta ±45°); de lado no se evalúa (ADR-015). No es el ángulo de proyección frontal clásico |
 | Confianza | La menor visibilidad entre hombros, caderas, rodillas y tobillos | Por debajo del mínimo, el frame no se evalúa |
 | Latencia | Desde que entra el frame hasta que la alerta se pinta en el navegador | No incluye la red ni la GPU de la arquitectura final |
 

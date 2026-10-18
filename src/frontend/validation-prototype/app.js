@@ -32,6 +32,12 @@
     knee_valgus_left: 'Rodilla izquierda hacia afuera',
     knee_valgus_right: 'Rodilla derecha hacia afuera',
   };
+  // La voz dice qué pasa y qué hacer (TD-97): el paciente se corrige sin mirar la pantalla. La pantalla queda corta.
+  const VOICE = {
+    trunk_flexion: 'Te estás inclinando mucho hacia adelante: sube el pecho',
+    knee_valgus_left: 'Tu rodilla izquierda se está yendo hacia adentro: llévala hacia afuera',
+    knee_valgus_right: 'Tu rodilla derecha se está yendo hacia adentro: llévala hacia afuera',
+  };
   const NAMES = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDES = { left: 'izquierda', right: 'derecha' };
   const END_TEXT = { completed: 'Sesión completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano' };
@@ -444,7 +450,7 @@
     ui.alert.hidden = false;
     activeAlert = { key, until: performance.now() + 2500 };
     alertTimer = setTimeout(hideAlert, 2500);
-    speak(phrase, 'alert');
+    speak(VOICE[key] || phrase, 'alert');
   }
 
   /** Voz en español. Una alerta corta lo que se estaba diciendo; un aviso de progreso espera su turno. */

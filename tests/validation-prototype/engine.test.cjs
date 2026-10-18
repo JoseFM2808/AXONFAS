@@ -182,3 +182,73 @@ test('una compensación que la cámara no ve bien no se evalúa (ADR-015)', () =
   const events = session.events.map((e) => e.type);
   assert.deepEqual(events, ['trunk_flexion'], 'el valgo no alerta con la cámara de lado; el tronco sí');
 });
+
+// ---------------------------------------------------------------- valgo en el marco de la pelvis (ADR-024, TD-96)
+
+/** Gira una pose alrededor de la vertical (cámara en diagonal), la escala y la traslada. */
+function transform(pts, { yawDeg = 0, scale = 1, dx = 0, dz = 0 } = {}) {
+  const c = Math.cos((yawDeg * Math.PI) / 180), s = Math.sin((yawDeg * Math.PI) / 180);
+  return pts.map((p) => ({ x: (p.x * c + p.z * s) * scale + dx, y: p.y * scale, z: (p.z * c - p.x * s) * scale + dz, visibility: p.visibility }));
+}
+/** El proxy anterior (marco de la cámara), para comparar. */
+const legacyL = (pts) => E.valgusProxy(pts[23], pts[25], pts[27], pts[24]);
+
+test('normalizar: caderas en x = ±0,5, origen en su punto medio y sin giro', () => {
+  const { points, hipWidth, yawDeg } = E.normalizeSkeleton(transform(pose(), { yawDeg: 20, scale: 1.3, dx: 0.4, dz: -2 }));
+  near(points[23].x, 0.5, 1e-9, 'cadera izquierda');
+  near(points[24].x, -0.5, 1e-9, 'cadera derecha');
+  near(points[23].z, 0, 1e-9, 'sin profundidad entre caderas');
+  near(points[23].y, 0, 1e-9, 'origen a la altura de la cadera');
+  near(hipWidth, 0.26, 1e-9, 'ancho de cadera en metros (0,2 × 1,3)');
+  near(Math.abs(yawDeg), 20, 1e-9, 'giro detectado');
+});
+
+test('el valgo no cambia con la estatura, la distancia ni la posición en la imagen', () => {
+  const base = E.computeAngles(pose({ shiftL: 0.08 })).valgusL;
+  for (const t of [{ scale: 0.6 }, { scale: 1.5 }, { dx: 0.7 }, { dz: -1.5 }, { scale: 0.8, dx: -0.3, dz: 1 }]) {
+    near(E.computeAngles(transform(pose({ shiftL: 0.08 }), t)).valgusL, base, 1e-6, JSON.stringify(t));
+  }
+});
+
+test('con la cámara en diagonal el valgo ya no se achica (el proxy anterior perdía el coseno del giro)', () => {
+  const front = pose({ shiftL: 0.08 });
+  const base = E.computeAngles(front).valgusL;
+  for (const yawDeg of [15, 30, 45, -30]) {
+    const turned = transform(front, { yawDeg });
+    near(E.computeAngles(turned).valgusL, base, 0.05, `giro ${yawDeg}°`);
+  }
+  const turned30 = transform(front, { yawDeg: 30 });
+  assert.ok(base - legacyL(turned30) > 1, `el proxy anterior subestima: ${legacyL(turned30).toFixed(1)}° vs ${base.toFixed(1)}°`);
+});
+
+test('el giro corregido se limita a ±45°; de espaldas se mide igual que de frente', () => {
+  const front = pose({ shiftL: 0.08 });
+  const side = E.computeAngles(transform(front, { yawDeg: 70 }));
+  near(Math.abs(side.pelvisYaw), 45, 1e-9, 'giro aplicado limitado');
+  near(Math.abs(side.rawPelvisYaw), 70, 1e-6, 'giro real');
+  assert.ok(Number.isFinite(side.valgusL));
+  const back = E.computeAngles(transform(front, { yawDeg: 180 }));
+  near(back.pelvisYaw, 0, 1e-6, 'de espaldas = el mismo plano frontal');
+  near(back.valgusL, E.computeAngles(front).valgusL, 1e-6, 'valgo de espaldas');
+});
+
+test('demo con la cámara en diagonal: las mismas alertas y el mismo pico de valgo que de frente', () => {
+  const runYaw = (yawDeg) => {
+    const session = E.createSession();
+    S.generateSession({ seed: 11, yawDeg }).forEach((f) => session.update({ t: f.t, world: f.world, visibility: f.image }));
+    return session;
+  };
+  const front = runYaw(0), diag = runYaw(30);
+  const key = (s) => s.events.map((e) => `${e.rep}:${e.type}${e.side ? ':' + e.side : ''}`);
+  assert.deepEqual(key(diag), ['5:trunk_flexion', '7:knee_valgus:left']);
+  near(diag.reps[6].peakValgusL, front.reps[6].peakValgusL, 1.5, 'pico de valgo de la repetición 7');
+  near(diag.snapshot().baseline.valgusL, front.snapshot().baseline.valgusL, 1.5, 'línea base de valgo');
+});
+
+test('la voz de cada alerta dice qué pasa, de qué lado y qué hacer (TD-97)', () => {
+  const app = require('node:fs').readFileSync(path.join(SRC, 'app.js'), 'utf8');
+  assert.ok(app.includes("knee_valgus_left: 'Tu rodilla izquierda se está yendo hacia adentro: llévala hacia afuera'"));
+  assert.ok(app.includes("knee_valgus_right: 'Tu rodilla derecha se está yendo hacia adentro: llévala hacia afuera'"));
+  assert.ok(app.includes("trunk_flexion: 'Te estás inclinando mucho hacia adelante: sube el pecho'"));
+  assert.ok(app.includes('speak(VOICE[key] || phrase'), 'la alerta habla con la frase situacional');
+});

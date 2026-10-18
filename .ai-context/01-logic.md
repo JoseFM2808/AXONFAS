@@ -122,6 +122,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-14 | El rol de Administrador sale solo de `AXONFAS_ADMIN_EMAILS` y su vista no muestra datos clínicos; todo inicio de sesión con Google se verifica en el servidor (firma, emisor, destinatario, vigencia y correo verificado) | ADR-019 |
 | I-15 | La IA solo sale de infraestructura de AMD (Token Factory o el vLLM propio en una MI300X); sin proveedor configurado no hay IA y la interfaz lo dice | ADR-018 |
 | I-16 | Ante una molestia, el sistema solo baja la exigencia: si el agente no propone una baja válida, la aplica el motor de reglas dentro del sobre; sin límites, pausa. Toda molestia se registra y se avisa al fisioterapeuta | ADR-005, ADR-021 |
+| I-17 | Sin descargo aceptado y triaje vigente no hay rutinas de autogestión; una bandera roja las bloquea y recomienda urgencias o una consulta. El triaje es de reglas fijas: ningún LLM lo decide ni lo resume, y las respuestas no salen del navegador | ADR-023 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -135,7 +136,7 @@ sepa cuándo una persona debe revisar o tomar el caso. Así responde el diseño 
 | Respuestas incorrectas o sin soporte | El agente solo propone en JSON y el motor de reglas valida; la nota SOAP solo usa campos de la BD | I-2, I-6 |
 | Información sensible | El video no sale de casa; pacientes con seudónimo; en Staging solo datos sintéticos | ADR-003, ADR-010 |
 | Resultados inciertos | **Hecho en el prototipo; falta validarlo con fisioterapeutas (TD-06).** Se muestra la confianza de la pose; los frames poco confiables no se evalúan, se avisa y la repetición queda marcada; la preparación de la cámara no alerta lo que no se ve bien desde la vista real | TD-25, ADR-015 |
-| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio; ante una molestia solo se baja la exigencia, con reglas y dentro del sobre, y se avisa al fisioterapeuta | I-1, I-7, I-16 |
+| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio; ante una molestia solo se baja la exigencia, con reglas y dentro del sobre, y se avisa al fisioterapeuta; sin plan del fisioterapeuta, un triaje de banderas rojas bloquea las rutinas y deriva a urgencias o a una consulta | I-1, I-7, I-16, I-17 |
 | Revisión humana | `outcome = 'escalated_to_therapist'` marca el caso para el terapeuta. Cada molestia le llega en vivo al panel, cuenta en "Molestias 30 días" y genera una sugerencia que él revisa (I-13). En Staging, el fisioterapeuta revisa, completa y firma la nota SOAP en el panel; sin firma es borrador y la Observation sale `preliminary` | ADR-005, ADR-021, TD-09 |
 
 ## Prototipo de validación (TD-28)
@@ -146,7 +147,7 @@ No usa GPU, LLM ni voz de entrada, y no guarda nada.
 
 | Paso | Regla implementada | Valor de partida (a validar) |
 |---|---|---|
-| Ángulos | Flexión de rodilla (3D), flexión de tronco contra la vertical y proxy de valgo, con los puntos "world" de MediaPipe en lugar del lifter de ADR-006 | — |
+| Ángulos | Flexión de rodilla (3D), flexión de tronco contra la vertical y valgo en el plano frontal de la pelvis (ADR-024), con los puntos "world" de MediaPipe en lugar del lifter de ADR-006 | Giro corregido hasta ±45°, suavizado 0,15 por frame |
 | Repetición | Empieza cuando la rodilla baja del umbral de sentado y termina al volver a sentarse habiendo llegado a estar de pie; si no llegó a pararse, no cuenta y se dice por qué. **De pie de verdad** (TD-55): las dos rodillas estiradas, la cadera a la altura de estar de pie sobre los tobillos y los dos pies en el suelo. Estirar una pierna sentado baja el promedio de las rodillas casi igual, pero no sube la cadera y deja un tobillo en el aire: no cuenta ("ponte de pie con los dos pies apoyados") | Sentado ≥ 65°; de pie: promedio ≤ 25° y cada rodilla ≤ 35°, cadera ≥ 85 % del largo de la pierna, pies a menos del 15 % de diferencia de altura |
 | Línea base | Media de los picos de las 3 primeras repeticiones válidas (I-5). Una repetición con más del 20 % de frames dudosos no sirve para calibrar y se repite | 3 repeticiones |
 | Umbrales | Línea base + margen del terapeuta para tronco (X) y valgo (Y); rango pedido = línea base − 10° si el terapeuta no lo fija | X = 15°, Y = 10° |
@@ -155,9 +156,47 @@ No usa GPU, LLM ni voz de entrada, y no guarda nada.
 | Incertidumbre | Si la menor visibilidad de los puntos clave baja del mínimo, el frame no se evalúa, se avisa y la repetición queda marcada (adelanto de TD-25) | 0.6 |
 | Fin | `completed` al llegar a las repeticiones pedidas, `pain_stop` con el botón de dolor (I-7), `user_quit` al terminar a mano | 10 repeticiones |
 
-El proxy de valgo mide cuánto se desplaza la rodilla hacia la línea media respecto de la línea cadera-tobillo, solo en el
-eje horizontal, y lo expresa en grados contra la longitud de la pierna. Así no le afecta que el muslo apunte a la cámara
-al estar sentado, pero necesita ver a la persona de frente o casi.
+**Valgo en el marco de la pelvis (ADR-024, TD-96).** Una cámara sola mide mal lo que pasa en el plano frontal mientras el
+movimiento principal es sagital: el error de paralaje del estudio de tele-rehabilitación. Antes de medir, el motor lleva
+el esqueleto a un marco propio de la pelvis (`normalizeSkeleton` en `engine.js`):
+
+1. **Origen** en el punto medio de las caderas (puntos 23 y 24 de MediaPipe).
+2. **Giro anulado:** se rota alrededor de la vertical para que la línea entre las caderas quede sobre el eje x. El giro
+   sale de la profundidad (z), que MediaPipe estima peor, así que la sesión lo suaviza (0,15 por frame, unos 0,2 s a
+   30 fps) y lo limita a ±45°; de espaldas se toma el mismo plano frontal. Más allá de 62° la preparación de la cámara ya
+   apaga el valgo (ADR-015).
+3. **Escala** = ancho de cadera: las caderas quedan en x = ±0,5, así que la estatura y la distancia a la cámara no
+   cambian nada.
+
+En ese marco, el valgo es el desplazamiento de la rodilla hacia la línea media respecto de la línea cadera-tobillo, en
+grados contra la tibia proyectada en el plano frontal (sin la profundidad). Positivo = valgo; negativo = varo. Al muslo
+que apunta a la cámara estando sentado no le afecta. Con la cámara a 30°, el proxy anterior perdía el coseno del giro
+(9,0° en vez de 10,4°); ahora da lo mismo que de frente, y el demo sintético girado 30° da las mismas alertas. La validez
+contra un sistema con marcadores (Vicon o Qualisys) sigue pendiente (TD-16, TD-57).
+
+**Voz situacional (TD-97).** La pantalla muestra una orden corta, legible a 2–3 m ("Rodilla izquierda hacia afuera"), y
+la voz dice qué pasa, de qué lado y qué hacer ("Tu rodilla izquierda se está yendo hacia adentro: llévala hacia
+afuera"), para que el paciente se corrija sin mirar la pantalla.
+
+## Triaje del Nivel 1 (ADR-023)
+
+AXONFAS se organiza en tres niveles, según el estudio de tele-rehabilitación del 2026-10-17: **Nivel 1**, autogestión
+preventiva con triaje; **Nivel 2**, tele-rehabilitación guiada por el plan del fisioterapeuta (lo que ya hace ADR-012);
+**Nivel 3**, empresa B2B (TD-102). El Nivel 1 cubre las rutinas que alguien usa sin un plan: la galería, el seguimiento
+libre y el Prototipo sin `?plan=`.
+
+| Paso | Regla (`triage.js`) | Valor de partida (TD-98) |
+|---|---|---|
+| Descargo | Cinco puntos (no diagnostica ni trata, no es un dispositivo médico, no reemplaza a un profesional, ante un síntoma agudo detenerse, la cámara estima) y una casilla obligatoria | — |
+| Banderas rojas | Ocho preguntas de sí o no, todas obligatorias: incontinencia o retención reciente, anestesia en silla de montar, cáncer, pérdida de peso sin causa, trauma reciente, dolor nocturno que no cede (las seis del estudio), fiebre con el dolor y debilidad u hormigueo que avanza (guías habituales) | — |
+| Bloqueo | Una sola bandera roja bloquea las rutinas en ese equipo y recomienda urgencias (SAMU 106 en Perú o el número de emergencias del país) o una consulta; ofrece entrar como paciente. Antes se pide confirmar lo marcado, para que un toque equivocado no bloquee | 24 h |
+| Banderas amarillas | Tres preguntas opcionales (miedo a moverse, catastrofismo, evitación). Nunca bloquean: solo hacen más cuidadoso el tono del mensaje | — |
+| Vigencia | Sin banderas rojas, el triaje vale una semana; cambiar las preguntas (`VERSION`) obliga a responder de nuevo | 7 días |
+| Exentos | Modo paciente (`?plan=` con cuenta de paciente: su fisioterapeuta ya lo evaluó) y cuentas de fisioterapeuta o Administrador | — |
+
+Son reglas fijas y sin IA (I-17). Las respuestas no salen del navegador ni se guardan; solo queda el resultado, su
+vencimiento y el tono (03 · `axonfas.triage`). Es una puerta del lado del cliente: sirve para orientar y proteger a quien
+la usa, no como control de acceso. Esa parte vendrá con las cuentas reales (TD-41).
 
 ## Galería de ejercicios (ADR-011)
 

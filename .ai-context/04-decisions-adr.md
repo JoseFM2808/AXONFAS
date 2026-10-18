@@ -28,6 +28,8 @@
 | 020 | 2026-10-17 | Aceptada | Despliegue: web estática en Vercel y servidor completo en la nube de AMD con Docker y HTTPS |
 | 021 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
 | 022 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
+| 023 | 2026-10-17 | Aceptada | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
+| 024 | 2026-10-17 | Aceptada | El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera |
 
 ---
 
@@ -400,6 +402,65 @@
 - **Consecuencias:**
   - Resuelve TD-81 sin extender el contrato del sobre.
   - El valor de 60 s se valida con fisioterapeutas (TD-87).
+
+## ADR-023 · Nivel 1: descargo médico y triaje de banderas rojas antes de la autogestión — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - El estudio de tele-rehabilitación que trajo el owner (2026-10-17) separa AXONFAS en niveles. En el Nivel 1, la
+    autogestión sin prescripción, el riesgo es que alguien con una patología grave haga ejercicio por su cuenta y que el
+    software parezca un dispositivo médico sin certificar.
+  - Las guías de fisioterapia descartan esas patologías con banderas rojas antes de indicar ejercicio.
+  - Hasta hoy, la galería, el seguimiento y el Prototipo solo tenían un aviso de "no es un dispositivo médico".
+- **Decisión:**
+  - Toda página de autogestión carga `triage.js` con `data-gate="self-care"`: hoy son `galeria.html`, `seguimiento.html`
+    e `index.html`.
+  - Sin un triaje vigente, el contenido se oculta hasta aceptar el descargo y responder las 8 banderas rojas.
+  - Una bandera roja, ya confirmada, bloquea esas páginas 24 h en el equipo y recomienda urgencias o una consulta. Sin
+    banderas, el triaje vale 7 días.
+  - Las banderas amarillas son opcionales y solo cambian el tono.
+  - Reglas fijas, sin IA (I-17). Las respuestas no salen del navegador ni se guardan: solo el resultado, su vencimiento
+    y el tono, en `localStorage` (`axonfas.triage`).
+  - Exentos: el modo paciente con su plan (Nivel 2: su fisioterapeuta ya lo evaluó) y las cuentas de fisioterapeuta o
+    Administrador.
+- **Consecuencias:**
+  - Una pantalla más antes de la galería y del Prototipo sin cuenta. Los jueces del hackathon la pasan en menos de un
+    minuto respondiendo que no.
+  - Es una puerta del lado del cliente: borrar el almacenamiento la reinicia. Orienta y protege, pero no es un control
+    de acceso; para eso hacen falta cuentas reales (TD-41).
+  - Las preguntas, el texto y las vigencias se validan con fisioterapeutas y en la revisión regulatoria (TD-98, TD-13).
+  - Cambiar las preguntas exige subir `VERSION`.
+  - No amplía el alcance clínico de ADR-009: no agrega ejercicios ni compensaciones.
+
+## ADR-024 · El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - El estudio de tele-rehabilitación señala el punto débil de medir el valgo con una sola cámara: es un ángulo del plano
+    frontal dentro de un movimiento sagital, y la profundidad estimada acumula error (paralaje).
+  - Recomienda normalizar el esqueleto con el punto medio de las caderas como origen y el ancho de cadera (puntos 23 y
+    24) como escala.
+  - El proxy anterior (TD-28) ya era un cociente, así que no le afectaban la estatura ni la distancia. Pero medía en el
+    marco de la cámara: con la persona en diagonal, el desplazamiento medial se achicaba por el coseno del giro, y la
+    preparación de la cámara recomienda justamente la diagonal (ADR-015).
+- **Decisión:**
+  - `engine.js` normaliza cada frame con `normalizeSkeleton`: origen en el punto medio de las caderas, giro alrededor
+    de la vertical anulado y escala = ancho de cadera.
+  - El valgo (`frontalValgus`) es el desplazamiento medial de la rodilla contra la tibia proyectada en el plano frontal
+    de la pelvis.
+  - El giro sale de la profundidad de las caderas. Para que su ruido no entre en el valgo, la sesión lo suaviza
+    (`yawSmoothing = 0.15`) y lo limita a ±45° (`maxYawCorrectionDeg`); de espaldas se toma el mismo plano frontal.
+  - `computeAngles` devuelve además `pelvisYaw`, `rawPelvisYaw` y `hipWidth`.
+  - `valgusProxy` queda exportado solo para comparar en los tests.
+  - `synthetic.js` acepta `yawDeg` para generar sesiones con la cámara en diagonal.
+- **Consecuencias:**
+  - A 30° de giro, el valgo coincide con el de frente (antes perdía 1,4° de 10,4°), y el demo girado da las mismas
+    alertas.
+  - Los márgenes y líneas base siguen en grados, y la línea base es la de cada paciente (I-5), así que el umbral no
+    cambia de significado.
+  - Cambiar la escala o el origen no mejora un cociente que ya era invariante; lo que corrige errores es anular el giro.
+    Con giros mayores a 45° el valgo sigue siendo poco confiable, y ADR-015 lo apaga desde 62°.
+  - La validez contra un sistema con marcadores sigue pendiente (TD-16, TD-57).
 
 ---
 

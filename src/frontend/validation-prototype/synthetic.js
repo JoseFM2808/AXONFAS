@@ -85,9 +85,12 @@
   /**
    * Puntos de un frame. Coordenadas internas: x a la derecha de la imagen, y hacia arriba, z hacia la cámara (el
    * paciente mira a la cámara). Se devuelven como MediaPipe: y hacia abajo y z negativo hacia la cámara.
+   * `yawDeg` gira a la persona alrededor de la vertical (cámara en diagonal, ADR-024).
    */
-  function landmarksFor(st, rand) {
+  function landmarksFor(st, rand, yawDeg = 0) {
     const noise = () => (rand() - 0.5) * 0.008;
+    const c = Math.cos(rad(yawDeg)), s = Math.sin(rad(yawDeg));
+    const turn = (p) => ({ x: p.x * c + p.z * s, y: p.y, z: p.z * c - p.x * s });
     const pts = new Array(33);
     const leg = (side, shiftMedial) => {
       const xs = side * BODY.hipHalf;                       // side +1 = izquierda del paciente (derecha de la imagen)
@@ -104,7 +107,7 @@
     const f = rad(st.trunk);
     const shMid = { x: 0, y: hipMid.y + BODY.trunk * Math.cos(f), z: hipMid.z + BODY.trunk * Math.sin(f) };
     const nose = { x: 0, y: shMid.y + BODY.head * Math.cos(f), z: shMid.z + BODY.head * Math.sin(f) + 0.06 };
-    const set = (i, p, vis) => { pts[i] = { x: p.x + noise(), y: p.y + noise(), z: p.z + noise(), visibility: vis }; };
+    const set = (i, p0, vis) => { const p = turn(p0); pts[i] = { x: p.x + noise(), y: p.y + noise(), z: p.z + noise(), visibility: vis }; };
     for (let i = 0; i < 33; i++) set(i, hipMid, 0);
     set(0, nose, 0.95);
     set(11, { x: BODY.shoulderHalf, y: shMid.y, z: shMid.z }, 0.95);
@@ -112,7 +115,8 @@
     set(23, L.hip, 0.95); set(24, R.hip, 0.95);
     set(25, L.knee, st.kneeVisibility); set(26, R.knee, st.kneeVisibility);
     set(27, L.ankle, 0.95); set(28, R.ankle, 0.95);
-    const world = pts.map((p) => ({ x: p.x - hipMid.x, y: -(p.y - hipMid.y), z: -(p.z - hipMid.z), visibility: p.visibility }));
+    const center = turn(hipMid);
+    const world = pts.map((p) => ({ x: p.x - center.x, y: -(p.y - center.y), z: -(p.z - center.z), visibility: p.visibility }));
     // 2D: proyección oblicua (la profundidad se ve un poco de lado) en coordenadas normalizadas de imagen
     const image = pts.map((p) => ({ x: 0.5 + 0.75 * (p.x + 0.35 * p.z), y: 0.92 - 0.55 * p.y, z: 0, visibility: p.visibility }));
     return { world, image };
@@ -120,14 +124,14 @@
 
   /** Frames a `fps` para todo el guion: [{ t (ms), world, image }]. Determinista para una misma semilla. */
   function generateSession(options) {
-    const opts = Object.assign({ fps: 30, seed: 7, script: DEFAULT_SCRIPT }, options || {});
+    const opts = Object.assign({ fps: 30, seed: 7, script: DEFAULT_SCRIPT, yawDeg: 0 }, options || {});
     const rand = mulberry32(opts.seed);
     const repLen = TIMING.seatedHold + TIMING.rise + TIMING.standHold + TIMING.descent;
     const total = TIMING.lead + opts.script.length * repLen + TIMING.tail;
     const frames = [];
     for (let n = 0; n * (1 / opts.fps) <= total; n++) {
       const sec = n / opts.fps;
-      const { world, image } = landmarksFor(stateAt(sec, opts.script), rand);
+      const { world, image } = landmarksFor(stateAt(sec, opts.script), rand, opts.yawDeg);
       frames.push({ t: Math.round(sec * 1000), world, image });
     }
     return frames;

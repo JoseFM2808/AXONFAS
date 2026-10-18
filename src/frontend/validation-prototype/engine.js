@@ -6,7 +6,12 @@
  * y en Node (require) para tests/validation-prototype/. No guarda ni envía nada.
  *
  * Coordenadas: worldLandmarks de MediaPipe, en metros, con x hacia la derecha de la imagen, y hacia abajo y z hacia la
- * cámara negativa. Supone la cámara nivelada y el paciente de frente o en ligera diagonal.
+ * cámara negativa. Supone la cámara nivelada y el paciente de frente o en diagonal.
+ *
+ * El valgo se mide en un marco de la pelvis (ADR-024): origen en el punto medio de las caderas (23 y 24), escala = ancho
+ * de cadera y giro de la pelvis anulado. Así no cambia con la estatura, la distancia a la cámara ni una cámara en
+ * diagonal (de frente se ve todo el desplazamiento medial; en diagonal, sin corregir, solo su coseno). El giro se
+ * suaviza entre frames y se limita a ±45°, porque sale de la profundidad (z), la coordenada que MediaPipe estima peor.
  */
 (function (root, factory) {
   const api = factory();
@@ -35,9 +40,12 @@
     minConfidence: 0.6,     // visibilidad mínima de los puntos clave para evaluar (TD-25)
     maxLowConfidenceRatio: 0.2, // una repetición con más frames dudosos no sirve para calibrar
     disabled: {},           // compensaciones que no se evalúan porque la cámara no las ve bien (ADR-015)
+    maxYawCorrectionDeg: 45,// giro de la pelvis que se corrige como máximo (más allá, el valgo es "poco confiable")
+    yawSmoothing: 0.15,     // suavizado exponencial del giro por frame (30 fps → unos 0,2 s)
   };
 
   const deg = (rad) => (rad * 180) / Math.PI;
+  const toRad = (d) => (d * Math.PI) / 180;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
   const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
@@ -53,26 +61,68 @@
   /** Ángulo en el vértice b del triángulo a-b-c, en grados. */
   const angleAt = (a, b, c) => angleBetween(sub(a, b), sub(c, b));
 
-  /**
-   * Proxy de valgo: desplazamiento medial de la rodilla respecto de la línea cadera-tobillo, medido solo en el eje x
-   * (no le afecta que el muslo apunte a la cámara al estar sentado) y expresado en grados contra la longitud de la
-   * pierna. Positivo = rodilla hacia la línea media (valgo); negativo = hacia afuera (varo).
-   */
-  function valgusProxy(hip, knee, ankle, otherHip) {
+  /** Desplazamiento medial de la rodilla respecto de la línea cadera-tobillo, en el eje x. Positivo = hacia la línea media. */
+  function medialOffset(hip, knee, ankle, otherHip) {
     const dy = ankle.y - hip.y;
     const t = Math.abs(dy) < 1e-6 ? 0.5 : clamp((knee.y - hip.y) / dy, 0, 1);
     const lineX = hip.x + (ankle.x - hip.x) * t;
     const medialSign = Math.sign(otherHip.x - hip.x) || 1;
-    const medial = (knee.x - lineX) * medialSign;
+    return (knee.x - lineX) * medialSign;
+  }
+
+  /**
+   * Proxy de valgo anterior (TD-28), en el marco de la cámara: desplazamiento medial en x contra la tibia en 3D. Una
+   * cámara en diagonal lo achica por el coseno del giro. Queda para comparar en los tests; el motor usa frontalValgus.
+   */
+  function valgusProxy(hip, knee, ankle, otherHip) {
     const shank = norm(sub(knee, ankle)) || 1;
-    return deg(Math.atan2(medial, shank));
+    return deg(Math.atan2(medialOffset(hip, knee, ankle, otherHip), shank));
+  }
+
+  /**
+   * Valgo en el plano frontal de la pelvis (puntos ya normalizados con normalizeSkeleton): desplazamiento medial de la
+   * rodilla contra la tibia proyectada en ese plano, sin la profundidad. Positivo = valgo; negativo = varo.
+   */
+  function frontalValgus(hip, knee, ankle, otherHip) {
+    const shank = Math.hypot(knee.x - ankle.x, knee.y - ankle.y) || 1;
+    return deg(Math.atan2(medialOffset(hip, knee, ankle, otherHip), shank));
+  }
+
+  /** Giro de la pelvis alrededor de la vertical, en grados dentro de [-90, 90]: 0 = de frente a la cámara. */
+  function pelvisYaw(world) {
+    const l = world[LM.L_HIP], r = world[LM.R_HIP];
+    let yaw = deg(Math.atan2((l.z || 0) - (r.z || 0), l.x - r.x));
+    if (yaw > 90) yaw -= 180;              // de espaldas: el mismo plano frontal, visto desde atrás
+    else if (yaw < -90) yaw += 180;
+    return yaw;
+  }
+
+  /**
+   * Esqueleto en el marco de la pelvis (ADR-024): origen en el punto medio de las caderas, giro alrededor de la vertical
+   * anulado (la línea entre las caderas queda sobre x) y escala = ancho de cadera (las caderas quedan en x = ±0,5).
+   * `yawDeg` permite pasar un giro ya suavizado; se limita a ±maxYawDeg. Devuelve { points, yawDeg, rawYawDeg, hipWidth }.
+   */
+  function normalizeSkeleton(world, { yawDeg = null, maxYawDeg = DEFAULTS.maxYawCorrectionDeg } = {}) {
+    const l = world[LM.L_HIP], r = world[LM.R_HIP];
+    const o = mid(l, r);
+    const rawYawDeg = pelvisYaw(world);
+    const applied = clamp(yawDeg == null ? rawYawDeg : yawDeg, -maxYawDeg, maxYawDeg);
+    const c = Math.cos(toRad(applied)), s = Math.sin(toRad(applied));
+    const hipWidth = Math.hypot(l.x - r.x, (l.z || 0) - (r.z || 0));
+    const k = hipWidth > 1e-6 ? 1 / hipWidth : 1;
+    const points = world.map((p) => {
+      if (!p) return p;
+      const x = p.x - o.x, z = (p.z || 0) - o.z;
+      return { x: (x * c + z * s) * k, y: (p.y - o.y) * k, z: (z * c - x * s) * k, visibility: p.visibility };
+    });
+    return { points, yawDeg: applied, rawYawDeg, hipWidth };
   }
 
   /**
    * Ángulos de un frame. `world`: 33 puntos 3D. `visibilitySource`: puntos con `visibility` (los 2D de MediaPipe);
-   * si falta, se usa la de `world`.
+   * si falta, se usa la de `world`. `opts.yawDeg`: giro de la pelvis suavizado por la sesión (si falta, el del frame).
    */
-  function computeAngles(world, visibilitySource) {
+  function computeAngles(world, visibilitySource, opts = {}) {
     const vis = visibilitySource || world;
     const confidence = Math.min(...KEY_POINTS.map((i) => (vis[i] && Number.isFinite(vis[i].visibility) ? vis[i].visibility : 0)));
     const p = (i) => world[i];
@@ -87,13 +137,16 @@
     const legR = norm(sub(p(LM.R_HIP), p(LM.R_KNEE))) + norm(sub(p(LM.R_KNEE), p(LM.R_ANKLE)));
     const leg = (legL + legR) / 2 || 1;
     const ankleY = (p(LM.L_ANKLE).y + p(LM.R_ANKLE).y) / 2;
+    const pelvis = normalizeSkeleton(world, { yawDeg: opts.yawDeg, maxYawDeg: opts.maxYawDeg });
+    const n = (i) => pelvis.points[i];
     return {
       kneeL, kneeR, knee: (kneeL + kneeR) / 2,
       hipHeight: (ankleY - hipMid.y) / leg,
       feetLevel: Math.abs(p(LM.L_ANKLE).y - p(LM.R_ANKLE).y) / leg,
       trunk: angleBetween(sub(shoulderMid, hipMid), UP),
-      valgusL: valgusProxy(p(LM.L_HIP), p(LM.L_KNEE), p(LM.L_ANKLE), p(LM.R_HIP)),
-      valgusR: valgusProxy(p(LM.R_HIP), p(LM.R_KNEE), p(LM.R_ANKLE), p(LM.L_HIP)),
+      valgusL: frontalValgus(n(LM.L_HIP), n(LM.L_KNEE), n(LM.L_ANKLE), n(LM.R_HIP)),
+      valgusR: frontalValgus(n(LM.R_HIP), n(LM.R_KNEE), n(LM.R_ANKLE), n(LM.L_HIP)),
+      pelvisYaw: pelvis.yawDeg, rawPelvisYaw: pelvis.rawYawDeg, hipWidth: pelvis.hipWidth,
       confidence,
     };
   }
@@ -119,6 +172,7 @@
       reps: [],
       events: [],
       baseline: null,
+      yaw: null,            // giro de la pelvis suavizado (ADR-024); null hasta el primer frame confiable
     };
 
     const romTarget = () => (cfg.romTargetDeg != null ? cfg.romTargetDeg
@@ -202,9 +256,12 @@
     function update(frame) {
       const out = { angles: null, newEvents: [], completed: null, aborted: null, lowConfidence: false };
       if (s.phase === 'ended') return Object.assign(out, snapshot());
-      const a = computeAngles(frame.world, frame.visibility);
+      const a = computeAngles(frame.world, frame.visibility, { yawDeg: s.yaw, maxYawDeg: cfg.maxYawCorrectionDeg });
       out.angles = a;
       out.lowConfidence = a.confidence < cfg.minConfidence;
+      if (!out.lowConfidence) {
+        s.yaw = s.yaw == null ? a.rawPelvisYaw : s.yaw + cfg.yawSmoothing * (a.rawPelvisYaw - s.yaw);
+      }
       if (s.rep) {
         s.rep.frames += 1;
         if (out.lowConfidence) s.rep.lowConfidenceFrames += 1;
@@ -287,5 +344,8 @@
     };
   }
 
-  return { LM, KEY_POINTS, DEFAULTS, computeAngles, valgusProxy, severityFor, createSession };
+  return {
+    LM, KEY_POINTS, DEFAULTS, computeAngles, normalizeSkeleton, pelvisYaw, frontalValgus, valgusProxy, severityFor,
+    createSession,
+  };
 });

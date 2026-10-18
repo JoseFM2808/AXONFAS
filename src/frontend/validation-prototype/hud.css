@@ -1081,3 +1081,25 @@ details.panel-card > summary, .panel-card details > summary { cursor: pointer; f
 .check-list li.bad::before { content: '✗'; color: var(--alert-ink); }
 .admin-grid select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--surface-border); border-radius: 6px; padding: 6px 8px; min-height: 36px; }
 td select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--surface-border); border-radius: 6px; padding: 6px 8px; min-height: 36px; font: inherit; }
+
+/* ==========================================================================
+   TRIAJE DEL NIVEL 1 (triage.js · ADR-023)
+   ========================================================================== */
+.triage { display: grid; gap: 14px; max-width: 46rem; margin: 0 auto 18px; }
+.triage .page-title:focus { outline: none; }
+.triage .page-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.triage-list { display: grid; gap: 8px; padding-left: 1.2em; color: var(--ink-secondary); font-size: 0.92rem; line-height: 1.45; }
+.triage-sub { font: 700 0.95rem var(--font-display); color: var(--ink); margin-top: 6px; }
+.triage-q legend { color: var(--ink); font-size: 0.9rem; font-weight: 600; line-height: 1.4; }
+.triage-q.missing { border-color: var(--alert); }
+.triage-yn { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.triage-yn .check { min-height: 40px; min-width: 4.5rem; }
+.triage-yn input[type="radio"] { accent-color: var(--tape); width: 18px; height: 18px; }
+.triage .check input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+.triage .btn { justify-self: start; min-height: 44px; }
+.triage-status { color: var(--alert-ink); font-size: 0.9rem; font-weight: 600; min-height: 1.2em; }
+.triage-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.triage-alert { border-left: 4px solid var(--alert); background: var(--alert-soft); border-radius: 4px; padding: 12px 14px; }
+.triage-alert p { color: var(--ink); font-size: 0.95rem; line-height: 1.5; }
+.triage a { color: var(--tape); }
+.triage-tone { margin-bottom: 16px; }

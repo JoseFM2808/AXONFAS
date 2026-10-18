@@ -75,7 +75,7 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 ```bash
 py ../.claude/context-sync/context_sync.py     # después de cada cambio técnico, desde esta carpeta
 py src/frontend/context-panel/build_panel.py   # regenera el panel de contexto desde .ai-context/
-node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada, seguimiento y cámara (TD-28, ADR-011/013/014/015)
+node --test "tests/validation-prototype/*.test.cjs"   # motor, catálogo, carga estimada, seguimiento, cámara y triaje (TD-28, ADR-011/013/014/015/023/024)
 py -m unittest discover -s tests/backend              # API de Staging (ADR-012) y benchmark de la GPU con operaciones de mentira
 py -m unittest discover -s tests/agents               # agentes, sobre de seguridad y conexión HTTP, sin GPU (ADR-016)
 ```

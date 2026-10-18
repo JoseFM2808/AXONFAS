@@ -210,3 +210,12 @@ Reglas que aplica la API:
   activo (409). Su decisión es determinista y nunca sale del sobre.
 - `symptom_report_ids` de otro paciente o ya unidos a una sesión se ignoran sin error.
 - Un código de afiliación nuevo pone `consent_given = 0` (TD-85).
+
+## Almacenamiento en el navegador
+
+No es una base de datos: son claves de `localStorage` del navegador de quien usa la web. No viajan al servidor.
+
+| Clave | Contenido | Origen |
+|---|---|---|
+| `axonfas.therapist`, `axonfas.patient`, `axonfas.admin`, `axonfas.user` | Token de cada rol (`api-client.js`) | ADR-012, ADR-019, TD-41 |
+| `axonfas.triage` | Resultado del triaje del Nivel 1: `{v, status: 'clear' \| 'blocked', until, tone: 'standard' \| 'gentle'}`. Nunca las respuestas: ni qué bandera se marcó ni las amarillas. Vence a los 7 días (`clear`) o a las 24 h (`blocked`); con otra `v` se vuelve a preguntar | ADR-023 |
