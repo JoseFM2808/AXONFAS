@@ -177,3 +177,37 @@ test('en las tarjetas se anima solo la que se mira; dentro del ejercicio, siempr
   const css = read('hud.css');
   assert.ok(css.includes('.fig-play') && css.includes('[data-play="hover"]'), 'botón y estado de la tarjeta en el componente .fig');
 });
+
+test('en inglés, cada figura guía tiene sus textos traducidos y la forma de GUIDES no cambia (ADR-030)', () => {
+  const I = require(path.join(SRC, 'i18n.js'));
+  const file = require.resolve(path.join(SRC, 'guide-figure.js'));
+  const EN = require(path.join(SRC, 'i18n', 'library.js')).data.guides.en;
+  const spanish = /[áéíóúñ¿¡]|\b(de|del|la|las|el|los|con|sin|y|una?|para|por|que)\b/i;
+  assert.deepEqual(Object.keys(EN).sort(), Object.keys(G.GUIDES).sort(), 'una traducción por figura, sin sobrantes');
+  for (const [id, g] of Object.entries(G.GUIDES)) {
+    assert.deepEqual(Object.keys(EN[id]).sort(), Object.keys(g.cues).sort(), `${id}: mismas fases que en español`);
+  }
+  I.use('en');
+  delete require.cache[file];
+  try {
+    const GE = require(file);
+    for (const [id, g] of Object.entries(GE.GUIDES)) {
+      assert.deepEqual(g.cues, G.GUIDES[id].cues, `${id}: GUIDES sigue en español (fuente de verdad)`);
+      assert.deepEqual(g.seq, G.GUIDES[id].seq, `${id}: las poses no cambian`);
+      const cues = GE.cuesFor(id);
+      for (const k of Object.keys(g.cues)) {
+        assert.equal(cues[k], EN[id][k], `${id}.${k}`);
+        assert.ok(!spanish.test(cues[k]), `${id}.${k}: parece español: ${cues[k]}`);
+      }
+      assert.ok(cues.view && !spanish.test(cues.view), `${id}: vista en inglés`);
+    }
+    const texts = new Set();
+    const guide = GE.GUIDES['hip-abduction'];
+    for (let t = 0; t < GE.timeline(guide, 5).total; t += 97) texts.add(GE.frameAt(guide, 5, t).caption);
+    assert.ok(texts.has('Hold 5 s'), 'el sostén dice el tiempo real de la dosis, en inglés');
+    assert.ok(texts.has(EN['hip-abduction'].go));
+  } finally {
+    I.use('es');
+    delete require.cache[file];
+  }
+});

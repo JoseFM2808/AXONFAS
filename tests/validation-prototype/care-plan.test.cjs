@@ -9,6 +9,7 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'src', 'frontend', 'validation-prototype');
 const P = require(path.join(SRC, 'care-plan.js'));
+const I18N = require(path.join(SRC, 'i18n.js'));
 
 const at = (day, hour = 10) => new Date(2026, 9, day, hour);       // octubre de 2026, hora local
 const iso = (day, hour = 10) => at(day, hour).toISOString();
@@ -75,12 +76,23 @@ test('la agenda separa lo de hoy del resto y no confía en fechas futuras', () =
   assert.equal(day.all.find((x) => x.exercise_id === 'clamshell').weekDone, 0, 'una sesión con fecha futura no cuenta');
 });
 
-test('los textos dicen qué toca y cuándo vuelve', () => {
+test('los textos dicen qué toca y cuándo vuelve (en español y en inglés, ADR-030)', () => {
   const now = at(13);
+  I18N.use('es');
   assert.match(P.statusText(status(3, [12], 13), now), /^Descanso: vuelve a tocar mañana · esta semana: 1 de 3$/);
   assert.match(P.statusText(status(3, [], 13), now), /^Toca hoy/);
   assert.equal(P.statusText(status(1, [12], 13), now), 'Cumpliste la de esta semana');
+  assert.equal(P.statusText(status(3, [12, 13], 13), now), 'Hecho hoy · esta semana: 2 de 3');
   assert.equal(P.dayName(at(16), now), 'el viernes');
+  I18N.use('en');
+  assert.equal(P.statusText(status(3, [12], 13), now), 'Rest: due again tomorrow · this week: 1 of 3');
+  assert.match(P.statusText(status(3, [], 13), now), /^Due today/);
+  assert.equal(P.statusText(status(1, [12], 13), now), "You did this week's session");
+  assert.equal(P.statusText(status(2, [12, 13], 15), now), 'You did all 2 for this week');
+  assert.equal(P.dayName(at(16), now), 'on Friday');
+  assert.equal(P.WEEKDAYS[0], 'Sunday');
+  I18N.use('es');
+  assert.equal(P.WEEKDAYS[3], 'miércoles');
 });
 
 // ------------------------------------------------------------------ páginas
@@ -89,7 +101,13 @@ const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
 test('la vista del paciente muestra primero lo de hoy y pide el dolor al terminar (TD-100)', () => {
   const html = read('paciente.html');
   const js = read('patient.js');
-  assert.match(html, /<h2 id="today-title">Hoy toca<\/h2>/);
+  const title = html.match(/<h2 id="today-title" data-i18n="([^"]+)">Hoy toca<\/h2>/);
+  assert.ok(title, 'título "Hoy toca" (respaldo en español) con su clave');
+  I18N.use('es');
+  assert.equal(I18N.t(title[1]), 'Hoy toca');
+  I18N.use('en');
+  assert.notEqual(I18N.t(title[1]), title[1], 'el título también está en inglés');
+  I18N.use('es');
   assert.match(html, /id="rest-plan"/);
   assert.ok(html.indexOf('care-plan.js') < html.indexOf('patient.js') && html.indexOf('pain-scale.js') < html.indexOf('patient.js'));
   assert.ok(js.includes('AxonCarePlan.agenda(me.plan)'));
@@ -114,7 +132,18 @@ test('la escala EVA es accesible: grupo con leyenda, 11 opciones con nombre, est
   assert.ok(js.includes("radio.type = 'radio'"));
   assert.ok(js.includes("status.setAttribute('role', 'status')"));
   assert.ok(js.includes("p.focus("), 'al reemplazar el formulario el foco no se pierde');
-  assert.ok(js.includes("'Ahora no'"), 'es opcional');
+  assert.ok(js.includes("t('eva.skip')"), 'es opcional');
+  const I = require(path.join(SRC, 'i18n.js'));
+  assert.equal(I.t('eva.skip'), 'Ahora no');
+  for (const l of ['es', 'en']) {
+    I.use(l);
+    for (const k of ['eva.anchor.0', 'eva.anchor.5', 'eva.anchor.10', 'eva.legend', 'eva.hint', 'eva.skip']) assert.ok(I.has(k, l), `${l} ${k}`);
+    assert.ok(I.t('eva.pick', { skip: I.t('eva.skip') }).includes(I.t('eva.skip')), `${l}: la pista nombra el botón tal como se ve`);
+  }
+  I.use('en');
+  assert.equal(I.t('eva.anchor.10'), 'Worst pain imaginable');
+  assert.ok(I.t('eva.hint').startsWith('0 is no pain') && I.t('eva.hint').includes('10'), 'EVA 0–10 también en inglés');
+  I.use('es');
   assert.ok(js.includes('/pain'));
   const css = read('hud.css');
   assert.match(css, /\.eva-option:has\(input:focus-visible\)/);

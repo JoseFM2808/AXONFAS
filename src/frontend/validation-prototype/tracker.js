@@ -233,6 +233,25 @@
     return Object.assign({}, spec, { [key]: target, limit, goalFrom: 'plan', galleryValue: spec[key] });
   }
 
+  // ------------------------------------------------------------------ textos en el idioma de la interfaz (ADR-030)
+  // METRICS y SPECS guardan el español literal: el servidor los lee con expresiones regulares (staging_api.py,
+  // load_tracking) y la medida en vivo viaja con ese texto. Lo que se ve en pantalla pasa por el diccionario.
+  function i18n() {
+    if (typeof self !== 'undefined' && self.AxonI18n) return self.AxonI18n;
+    try { return require('./i18n.js'); } catch { return null; }
+  }
+  function t(key, vars) { const I = i18n(); return I ? I.t(key, vars) : key; }
+  const shown = (text, fallback) => (text && !/^tracker\./.test(text) ? text : fallback);
+  /** Nombre de la medida para mostrar ("Flexión de rodilla" / "Knee flexion"). */
+  const metricLabel = (id) => shown(t(`tracker.metric.${id}`), METRICS[id] ? METRICS[id].label : id);
+  /** Dónde va la cámara en un ejercicio (texto para mostrar). */
+  const cameraText = (exId) => shown(t(`tracker.camera.${exId}`), SPECS[exId] ? SPECS[exId].camera : '');
+  /** Por qué el seguimiento de un ejercicio es aproximado ('' si no lo es). */
+  const noteText = (exId) => (SPECS[exId] && SPECS[exId].note ? shown(t(`tracker.note.${exId}`), SPECS[exId].note) : '');
+  /** Lado de una repetición: 'L' | 'R' | '+' | '-' → texto para mostrar; sin lado, '—'. */
+  const sideName = (side) => (side === 'L' ? t('tracker.side.L') : side === 'R' ? t('tracker.side.R')
+    : side === '+' ? t('tracker.side.plus') : side === '-' ? t('tracker.side.minus') : '—');
+
   /** Dosis a seguir: la del plan del paciente si existe, si no la de la fuente (catalog.js). */
   function targetFor(spec, dose) {
     const perSide = spec.perSide ? 2 : 1;
@@ -535,5 +554,6 @@
     };
   }
 
-  return { SIDES, SIDE_NAMES, METRICS, SPECS, DEFAULTS, measure, targetFor, withGoal, createTracker, angleAt };
+  return { SIDES, SIDE_NAMES, METRICS, SPECS, DEFAULTS, measure, targetFor, withGoal, createTracker, angleAt,
+    metricLabel, cameraText, noteText, sideName };
 });

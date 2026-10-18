@@ -14,6 +14,9 @@
   function previewAs(role, as) { alias[role] = as; }
   const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
   const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
+  // Textos de la interfaz (ADR-030): i18n.js se carga antes que este archivo. Los errores que manda el servidor quedan
+  // como vienen (en español en esta etapa).
+  const t = (key, vars) => (root.AxonI18n ? root.AxonI18n.t(key, vars) : key);
 
   function load(role) {
     try { return JSON.parse(localStorage.getItem(KEYS[role]) || 'null'); } catch { return null; }
@@ -34,14 +37,14 @@
     try {
       res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
     } catch {
-      const err = new Error('No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.');
+      const err = new Error(t('api.offline'));
       err.status = 0;
       throw err;
     }
     let data = null;
     try { data = await res.json(); } catch { /* sin cuerpo */ }
     if (!res.ok) {
-      const err = new Error((data && data.error) || `Error ${res.status}`);
+      const err = new Error((data && data.error) || t('api.error', { status: res.status }));
       err.status = res.status;
       err.code = data && data.code;
       // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.

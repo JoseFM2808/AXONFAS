@@ -5,6 +5,12 @@
   const B = window.AxonBodyMap;
   const $ = (id) => document.getElementById(id);
   const S = window.AxonSuggest;
+  const I18N = window.AxonI18n;
+  const { t } = I18N;
+  /** "a y b" / "a and b" según el idioma. */
+  const andList = (items) => {
+    try { return new Intl.ListFormat(I18N.locale(), { type: 'conjunction' }).format(items); } catch { return items.join(', '); }
+  };
   const state = { theme: 'all', query: '', profile: null };
   const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -14,8 +20,8 @@
     p.className = 'fit-note';
     if (!S || !profile) return p;
     const f = S.fit(e.id, profile);
-    if (!f.ok) p.textContent = `No encaja con tu perfil: ${f.blocks.join(' y ')}. ${forPlan ? 'Coméntaselo a tu fisioterapeuta.' : 'Tu fisioterapeuta decide.'}`;
-    else if (f.cautions.length) p.textContent = `Ojo: ${f.cautions[0]}.`;
+    if (!f.ok) p.textContent = t('gallery.fit.block', { reasons: andList(f.blocks), advice: forPlan ? t('gallery.fit.askPlan') : t('gallery.fit.decides') });
+    else if (f.cautions.length) p.textContent = t('gallery.fit.caution', { text: f.cautions[0] });
     return p;
   }
 
@@ -26,11 +32,11 @@
     card.className = 'ex-card';
     const badges = document.createElement('div');
     badges.className = 'badge-row';
-    badges.innerHTML = `<span class="tag cal"></span><span class="tag ${e.monitoring === 'auto' ? 'ok' : 'warn'}"></span>`;
-    badges.children[0].textContent = theme ? theme.name : e.theme;
+    const tag = (cls, text) => { const s = document.createElement('span'); s.className = `tag ${cls}`; s.textContent = text; return s; };
     const track = window.AxonTracker && AxonTracker.SPECS[e.id];
-    badges.children[1].textContent = e.monitoring === 'auto' ? 'Alertas automáticas'
-      : track && track.quality === 'limited' ? 'Conteo con cámara (aprox.)' : 'Conteo con cámara';
+    badges.append(tag('cal', theme ? theme.name : e.theme), tag(e.monitoring === 'auto' ? 'ok' : 'warn',
+      e.monitoring === 'auto' ? t('gallery.badge.auto')
+        : track && track.quality === 'limited' ? t('gallery.badge.cameraApprox') : t('gallery.badge.camera')));
     const title = document.createElement('h3');
     title.textContent = e.name;
     title.id = `ex-${e.id}-${Math.random().toString(36).slice(2, 7)}`;
@@ -51,7 +57,8 @@
     dose.textContent = doseText || e.dose.text;
     const facts = document.createElement('div');
     facts.className = 'facts';
-    [['Músculos', B.muscleNames(e.muscles).join(', ')], ['Huesos', e.bones.join(', ')], ['Articulaciones', e.joints.join(', ')]]
+    [[t('gallery.facts.muscles'), B.muscleNames(e.muscles).join(', ')], [t('gallery.facts.bones'), e.bones.join(', ')],
+      [t('gallery.facts.joints'), e.joints.join(', ')]]
       .forEach(([k, v]) => {
         const line = document.createElement('span');
         const strong = document.createElement('strong');
@@ -61,27 +68,28 @@
       });
     const details = document.createElement('details');
     const summary = document.createElement('summary');
-    summary.textContent = 'Cómo se hace';
+    summary.textContent = t('gallery.how');
     const position = document.createElement('p');
     position.className = 'muted';
-    position.textContent = `Posición: ${e.position}`;
+    position.textContent = t('gallery.position', { text: e.position });
     const steps = document.createElement('ol');
     e.steps.forEach((s) => { const li = document.createElement('li'); li.textContent = s; steps.appendChild(li); });
     const precTitle = document.createElement('p');
     precTitle.className = 'muted';
-    precTitle.textContent = 'Precauciones';
+    precTitle.textContent = t('gallery.precautions');
     const prec = document.createElement('ul');
     e.precautions.forEach((s) => { const li = document.createElement('li'); li.textContent = s; prec.appendChild(li); });
     details.append(summary, position, steps, precTitle, prec);
     const source = document.createElement('p');
     source.className = 'source';
-    source.append('Fuente: ');
     const a = document.createElement('a');
     a.href = e.source.url;
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = `${e.source.org} · ${e.source.title}`;
-    source.append(a, ` (${e.sourceName})`);
+    // El nombre del ejercicio en la fuente, salvo que ya sea el título (p. ej. el de CDC sin la glosa en español).
+    if (e.sourceName && e.sourceName !== e.source.title) I18N.fill(source, 'gallery.source', { link: a, name: e.sourceName });
+    else I18N.fill(source, 'gallery.sourceOnly', { link: a });
     card.append(badges, title, goal, fitNote(e, profile, forPlan), guide || document.createElement('div'), map, dose, facts, details, source);
     if (extra) card.appendChild(extra);
     B.render(map, { intensities: B.staticLoad(e) });
@@ -91,8 +99,8 @@
   function renderThemes() {
     const box = $('themes');
     if (!box) return;
-    const options = [{ id: 'all', name: 'Todas' }, ...C.THEMES];
-    box.innerHTML = '';
+    const options = [{ id: 'all', name: t('gallery.all') }, ...C.THEMES];
+    box.replaceChildren();
     options.forEach((t) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -110,7 +118,7 @@
     const q = norm(state.query.trim());
     const list = C.EXERCISES.filter((e) => (state.theme === 'all' || e.theme === state.theme)
       && (!q || norm(`${e.name} ${e.goal} ${B.muscleNames(e.muscles).join(' ')} ${e.bones.join(' ')}`).includes(q)));
-    grid.innerHTML = '';
+    grid.replaceChildren();
     list.forEach((e) => {
       // Todos se siguen con la cámara (ADR-014); sentarse y pararse además tiene alertas en el Prototipo (ADR-009).
       const extra = document.createElement('div');
@@ -118,18 +126,18 @@
       const track = document.createElement('a');
       track.className = 'btn primary';
       track.href = `seguimiento.html?ex=${encodeURIComponent(e.id)}`;
-      track.textContent = 'Seguir con la cámara';
+      track.textContent = t('gallery.track');
       extra.appendChild(track);
       if (e.monitoring === 'auto') {
         const alerts = document.createElement('a');
         alerts.className = 'btn';
         alerts.href = 'index.html';
-        alerts.textContent = 'Con alertas (Prototipo)';
+        alerts.textContent = t('gallery.alerts');
         extra.appendChild(alerts);
       }
       grid.appendChild(exerciseCard(e, { extra, profile: state.profile }));
     });
-    $('count').textContent = `${list.length} de ${C.EXERCISES.length} ejercicios`;
+    $('count').textContent = t('gallery.count', { n: list.length, total: C.EXERCISES.length });
   }
 
   /** Consejos de uso (rol usuario) y, con una cuenta de paciente, el encaje de cada ejercicio con su perfil. */
@@ -141,7 +149,7 @@
     }
     if (S && $('tips')) {
       S.renderList($('tips'), S.forUser({ page: 'gallery', profile: state.profile, signedIn }), {
-        title: 'Sugerencias para ti', note: 'Consejos de uso calculados con reglas a partir de tus datos. No reemplazan a tu fisioterapeuta.' });
+        title: t('gallery.tips.title'), note: t('gallery.tips.note') });
     }
     if (state.profile) renderGrid();
   }

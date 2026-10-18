@@ -13,16 +13,21 @@
 }(typeof self !== 'undefined' ? self : this, (root) => {
   'use strict';
 
+  // Textos en el idioma de la interfaz (ADR-030): el idioma se decide al cargar la página, así que se leen una vez.
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');
+  const t = I18N.t;
+
   const SEEN_KEY = 'axonfas.tutorial';
   // Motivo que se guarda con la sesión según lo que pasó con la cámara (pose-camera.js → onFail).
   const REASON = { declined: 'declined', denied: 'denied', notFound: 'unavailable', unsupported: 'unavailable',
     model: 'unavailable', failed: 'unavailable' };
+  // Lo que se muestra por cada motivo; el motivo guardado (`declined`, `denied`, `unavailable`) no se traduce.
   const REASON_TEXT = {
-    declined: 'Elegiste hacerla sin cámara.',
-    denied: 'No diste permiso para usar la cámara.',
-    unavailable: 'No se pudo usar la cámara en este equipo.',
+    declined: t('practice.reason.declined'),
+    denied: t('practice.reason.denied'),
+    unavailable: t('practice.reason.unavailable'),
   };
-  const NO_CAMERA_NOTE = 'Sin cámara no se miden ángulos ni se detectan fallos de postura: solo cuenta lo que marques.';
+  const NO_CAMERA_NOTE = t('practice.noCameraNote');
 
   const reasonFor = (kind) => REASON[kind] || 'unavailable';
 

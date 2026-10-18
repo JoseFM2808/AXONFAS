@@ -12,11 +12,16 @@
  * en las vistas de lado) y "F" el izquierdo. La geometría corre también en Node (tests); el dibujo, en el navegador.
  */
 (function (root, factory) {
-  const api = factory();
+  const I18N = (root && root.AxonI18n) || (typeof module === 'object' && module.exports ? require('./i18n.js') : null);
+  const api = factory(I18N);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AxonGuide = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (I18N) {
   'use strict';
+
+  // Textos visibles en el idioma de la página (ADR-030). Los de cada fase (cues de GUIDES) siguen en español en este
+  // archivo; en inglés salen de i18n/library.js (`data.guides`). Poses, cámaras y forma de GUIDES no cambian.
+  const t = I18N ? I18N.t : (k) => k;
 
   // ------------------------------------------------------------------ vectores
   const rad = (d) => (d * Math.PI) / 180;
@@ -299,9 +304,17 @@
     ], { upper: true, cam: { az: -98, el: 8 } }),
   };
 
-  const VIEW_LABEL = { side: 'De lado', front: 'De frente', back: 'De espalda', lying: 'Acostado de lado',
-    supine: 'Boca arriba', quad: 'En cuatro apoyos' };
+  const VIEW_LABEL = { side: t('fig.view.side'), front: t('fig.view.front'), back: t('fig.view.back'), lying: t('fig.view.lying'),
+    supine: t('fig.view.supine'), quad: t('fig.view.quad') };
   const viewLabel = (guide) => VIEW_LABEL[guide.view];
+
+  // Textos de cada fase en el idioma actual: los de data.guides (si hay) sobre los de GUIDES; lo que falte, en español.
+  const CUES_TR = (I18N && typeof I18N.data === 'function' && I18N.data('guides')) || null;
+  const ID_OF = new Map(Object.entries(GUIDES).map(([id, g]) => [g, id]));
+  const cuesOf = (guide) => {
+    const tr = CUES_TR && CUES_TR[ID_OF.get(guide)];
+    return tr ? Object.assign({}, guide.cues, tr) : guide.cues;
+  };
 
   // ------------------------------------------------------------------ esqueleto 3D
   // Posturas base: [hacia la cabeza, hacia el frente del cuerpo]. El lado derecho sale de su producto.
@@ -800,8 +813,9 @@
   }
 
   function captionFor(guide, cap, hold) {
-    if (cap === 'hold') return hold > 0 ? `Sostén ${hold} s` : (guide.cues.top || guide.cues.go);
-    return guide.cues[cap] || '';
+    const cues = cuesOf(guide);
+    if (cap === 'hold') return hold > 0 ? t('fig.hold', { s: hold }) : (cues.top || cues.go);
+    return cues[cap] || '';
   }
 
   /** Pose y texto en el instante t (ms, con vuelta al principio). */
@@ -1139,7 +1153,8 @@
   }
 
   // ------------------------------------------------------------------ componente .fig (design system)
-  const PHASE = { start: 'Inicio', go: 'Movimiento', go2: 'Movimiento', hold: 'Sostén', top: 'Posición final', back: 'Vuelta' };
+  const PHASE = { start: t('fig.phase.start'), go: t('fig.phase.go'), go2: t('fig.phase.go'), hold: t('fig.phase.hold'),
+    top: t('fig.phase.top'), back: t('fig.phase.back') };
   const phaseOf = (cap, hold) => (cap === 'go2' ? 'go' : cap === 'hold' && !(hold > 0) ? 'top' : cap);
 
   function chipText(phase, hold) {
@@ -1184,7 +1199,7 @@
     const variant = opts.variant || 'card';
     const mode = playMode(variant, opts.play);
     const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text != null) n.textContent = text; return n; };
-    container.innerHTML = '';
+    container.replaceChildren();
     const fig = el('figure', `fig fig--${variant}`);
     fig.dataset.phase = 'start';
     fig.dataset.play = mode;
@@ -1192,7 +1207,7 @@
     const canvas = el('canvas', 'fig-canvas');
     const name = (typeof self !== 'undefined' && self.AxonCatalog && self.AxonCatalog.get(exerciseId)) ? self.AxonCatalog.get(exerciseId).name : exerciseId;
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', `Figura de referencia: ${name}`);
+    canvas.setAttribute('aria-label', t('fig.aria', { name }));
     const chip = el('span', 'fig-chip');
     const view = el('span', 'fig-view', viewLabel(guide));
     const btn = el('button', 'fig-play');
@@ -1235,10 +1250,11 @@
       const end = endPose(guide);
       const first = steps.find((x) => x.arrow) || {};
       drawCell(g, guide, ctx, lay.cells[0], lay.s, guide.seq[0][0], T, { phase: 'start', level: 0.2, muscles, eligible,
-        ghost: end, arrow: first.arrow, label: '1 · Inicio', labelH: lay.labelH, clip: true });
+        ghost: end, arrow: first.arrow, label: t('fig.label.start'), labelH: lay.labelH, clip: true });
       drawCell(g, guide, ctx, lay.cells[1], lay.s, end, T, { phase: hold > 0 ? 'hold' : 'top', level: 1, muscles, eligible,
-        label: '2 · Final', labelH: lay.labelH, clip: true });
-      setText('go', 'Inicio → final', `${guide.cues.start}. ${guide.cues.go}${hold > 0 ? `; sostén ${hold} s` : ''}.`);
+        label: t('fig.label.end'), labelH: lay.labelH, clip: true });
+      const cues = cuesOf(guide);
+      setText('go', t('fig.still.chip'), `${cues.start}. ${cues.go}${hold > 0 ? t('fig.still.hold', { s: hold }) : ''}.`);
     }
     function tick(ts) {
       if (typeof canvas.isConnected === 'boolean' && !canvas.isConnected) { raf = 0; release(); return; }
@@ -1276,8 +1292,8 @@
       }
       fig.dataset.motion = active ? 'on' : 'off';
       btn.setAttribute('aria-pressed', String(active));
-      btn.textContent = active ? '❚❚ Pausa' : '▶ Animar';
-      btn.setAttribute('aria-label', active ? `Pausar la animación: ${name}` : `Animar la figura: ${name}`);
+      btn.textContent = active ? t('fig.btn.pause') : t('fig.btn.play');
+      btn.setAttribute('aria-label', active ? t('fig.aria.pause', { name }) : t('fig.aria.play', { name }));
       if (active) play();
       else { pause(); still(); }
     }
@@ -1318,7 +1334,7 @@
   /** Textos de cada fase para guiar en vivo (seguimiento.js). */
   function cuesFor(exerciseId) {
     const guide = GUIDES[exerciseId];
-    return guide ? Object.assign({ view: viewLabel(guide) }, guide.cues) : null;
+    return guide ? Object.assign({ view: viewLabel(guide) }, cuesOf(guide)) : null;
   }
 
   return { GUIDES, VIEW_LABEL, FOCUS, SEGMENTS, FRAME, SHAPES, L, skeleton, camera, solvePose, prepare, frameAt, endPose,

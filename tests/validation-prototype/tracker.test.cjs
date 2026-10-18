@@ -291,3 +291,39 @@ test('en un sostén, la meta del plan cambia el umbral y el límite se marca', (
   assert.equal(r.events.filter((e) => e.type === 'over_limit').length, 1);
   assert.deepEqual(tr.reps.map((x) => Boolean(x.overLimit)), [false, true]);
 });
+
+// ------------------------------------------------------------------ idioma de la interfaz (ADR-030)
+test('las medidas y las indicaciones de cámara se muestran traducidas sin tocar lo que lee el servidor', () => {
+  const pack = require(path.join(SRC, 'i18n', 'routine.js'));
+  const I = require(path.join(SRC, 'i18n.js'));
+  // El español del diccionario es el mismo literal de tracker.js (que siguen leyendo staging_api.py y el canal en vivo).
+  for (const [id, m] of Object.entries(T.METRICS)) {
+    assert.equal(pack.es[`tracker.metric.${id}`], m.label, `tracker.metric.${id}`);
+    assert.ok(pack.en[`tracker.metric.${id}`], `tracker.metric.${id} en inglés`);
+  }
+  for (const [id, spec] of Object.entries(T.SPECS)) {
+    assert.equal(pack.es[`tracker.camera.${id}`], spec.camera, `tracker.camera.${id}`);
+    assert.ok(pack.en[`tracker.camera.${id}`], `tracker.camera.${id} en inglés`);
+    assert.equal(pack.es[`tracker.note.${id}`], spec.note, `tracker.note.${id}`);
+    if (spec.note) assert.ok(pack.en[`tracker.note.${id}`], `tracker.note.${id} en inglés`);
+  }
+  assert.equal(T.metricLabel('kneeFlex'), 'Flexión de rodilla');
+  assert.equal(T.sideName('L'), 'izquierda');
+  I.use('en');
+  try {
+    assert.equal(T.metricLabel('kneeFlex'), 'Knee flexion');
+    assert.equal(T.cameraText('half-squat'), pack.en['tracker.camera.half-squat']);
+    assert.equal(T.noteText('pendulum'), pack.en['tracker.note.pendulum']);
+    assert.equal(T.noteText('half-squat'), '', 'sin nota cuando el seguimiento es bueno');
+    assert.deepEqual(['L', 'R', '+', '-', null].map(T.sideName), ['left', 'right', 'one side', 'other side', '—']);
+    assert.equal(T.METRICS.kneeFlex.label, 'Flexión de rodilla', 'el dato no cambia con el idioma');
+  } finally { I.use('es'); }
+});
+
+test('el formato que lee load_tracking (staging_api.py) sigue intacto', () => {
+  const src = require('node:fs').readFileSync(path.join(SRC, 'tracker.js'), 'utf8');
+  const units = [...src.matchAll(/(\w+): \{ label: '[^']+', unit: '([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(units.sort(), Object.keys(T.METRICS).sort());
+  const specs = [...src.matchAll(/'([a-z0-9-]+)': \{ metric: '(\w+)',(?: combine: '\w+',)? mode: '(reps|hold|manual)'(?:, dir: (-?\d+))?/g)].map((m) => m[1]);
+  assert.deepEqual(specs.sort(), Object.keys(T.SPECS).sort());
+});

@@ -1,12 +1,14 @@
 /* AXONFAS · panel de empresa del Nivel 3 (TD-102, ADR-026): plan, licencias de profesionales, pacientes por profesional
  * (solo conteos) y dirección FHIR de la historia clínica de la organización. Sin datos clínicos de pacientes (I-18).
+ * Textos en i18n/common.js (ADR-030). El nombre del plan y los errores los escribe el servidor (en español por ahora).
  */
 (() => {
   'use strict';
   const A = window.AxonApi;
+  const { t, tn } = AxonI18n;
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-  const STATUS = { active: 'Activa', revoked: 'Liberada' };
+  const STATUS = { active: t('common.active'), revoked: t('company.status.revoked') };
 
   function kpi(k, v, s) {
     const box = el('div', 'kpi');
@@ -17,16 +19,17 @@
   function render(s) {
     $('org-name').textContent = s.organization.name;
     $('kpis').replaceChildren(
-      kpi('Plan', s.organization.plan_label, `${s.seats.total} licencias`),
-      kpi('Licencias en uso', `${s.seats.used} de ${s.seats.total}`, `${s.seats.free} libres`),
-      kpi('Pacientes', s.patients.total, s.patients.over ? `por encima del cupo de ${s.patients.capacity}` : `cupo del plan: ${s.patients.capacity}`),
-      kpi('Historia clínica', s.ehr.enabled ? 'Activa' : 'Sin conexión', s.ehr.fhir_base_url || 'sin dirección'));
+      kpi(t('common.plan'), s.organization.plan_label, tn('company.kpi.licenses', s.seats.total)),
+      kpi(t('company.kpi.inUse'), t('common.ofTotal', { used: s.seats.used, total: s.seats.total }), tn('company.kpi.free', s.seats.free)),
+      kpi(t('common.patients'), s.patients.total, s.patients.over ? t('company.kpi.over', { n: s.patients.capacity })
+        : t('company.kpi.quota', { n: s.patients.capacity })),
+      kpi(t('company.kpi.ehr'), s.ehr.enabled ? t('common.active') : t('company.kpi.ehrOff'), s.ehr.fhir_base_url || t('company.kpi.noUrl')));
     $('invite').querySelector('button').disabled = s.seats.free === 0;
     const body = $('pros');
     body.replaceChildren();
     if (!s.professionals.length) {
       const tr = el('tr');
-      const td = el('td', 'empty', 'Todavía no invitaste a ningún profesional.');
+      const td = el('td', 'empty', t('company.pros.empty'));
       td.colSpan = 5;
       tr.appendChild(td);
       body.appendChild(tr);
@@ -35,12 +38,13 @@
       const tr = el('tr');
       const state = el('td');
       state.appendChild(el('span', p.status === 'active' ? 'tag ok' : 'tag', STATUS[p.status] || p.status));
-      tr.append(el('td', null, p.email), state, el('td', null, p.linked ? 'Sí' : 'Todavía no'), el('td', 'num', String(p.patients)));
+      tr.append(el('td', null, p.email), state, el('td', null, p.linked ? t('company.linked.yes') : t('company.linked.no')),
+        el('td', 'num', String(p.patients)));
       const act = el('td');
       if (p.status === 'active') {
-        const b = el('button', 'btn', 'Liberar');
+        const b = el('button', 'btn', t('company.release'));
         b.type = 'button';
-        b.setAttribute('aria-label', `Liberar la licencia de ${p.email}`);
+        b.setAttribute('aria-label', t('company.releaseOf', { email: p.email }));
         b.addEventListener('click', () => revoke(p));
         act.appendChild(b);
       } else act.textContent = '—';
@@ -56,11 +60,11 @@
   }
 
   async function revoke(p) {
-    if (!window.confirm(`¿Liberar la licencia de ${p.email}? Sus pacientes siguen con su plan; la organización deja de verlo.`)) return;
-    $('invite-status').textContent = 'Liberando…';
+    if (!window.confirm(t('company.release.confirm', { email: p.email }))) return;
+    $('invite-status').textContent = t('company.releasing');
     try {
       await A.call('org', 'POST', `/api/org/licenses/${p.license_id}/revoke`, {});
-      $('invite-status').textContent = `Licencia liberada: ${p.email}.`;
+      $('invite-status').textContent = t('company.released', { email: p.email });
       await refresh();
     } catch (err) { $('invite-status').textContent = err.message; }
   }
@@ -68,10 +72,10 @@
   $('invite').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const email = $('invite-email').value.trim();
-    $('invite-status').textContent = 'Invitando…';
+    $('invite-status').textContent = t('company.inviting');
     try {
       await A.call('org', 'POST', '/api/org/licenses', { email });
-      $('invite-status').textContent = `Invitación lista para ${email}. Que entre con Google con ese correo.`;
+      $('invite-status').textContent = t('company.invited', { email });
       $('invite-email').value = '';
       await refresh();
     } catch (err) { $('invite-status').textContent = err.message; }
@@ -79,10 +83,10 @@
 
   $('ehr').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    $('ehr-status').textContent = 'Guardando…';
+    $('ehr-status').textContent = t('common.saving');
     try {
       await A.call('org', 'PUT', '/api/org/ehr', { fhir_base_url: $('ehr-url').value.trim() || null, enabled: $('ehr-enabled').checked });
-      $('ehr-status').textContent = 'Guardado.';
+      $('ehr-status').textContent = t('common.saved');
       await refresh();
     } catch (err) { $('ehr-status').textContent = err.message; }
   });
@@ -94,7 +98,7 @@
     if (!A.load('org')) { $('denied').hidden = false; return; }
     try {
       const me = await A.call('org', 'GET', '/api/auth/me');
-      $('who').textContent = `Sesión de ${me.user ? me.user.email : 'administración de la organización'}.`;
+      $('who').textContent = t('common.who', { who: me.user ? me.user.email : t('company.who.default') });
       $('panel').hidden = false;
       await refresh();
     } catch (err) {

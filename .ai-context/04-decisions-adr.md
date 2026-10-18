@@ -1,6 +1,6 @@
 # 04 · Decisiones (ADRs)
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-18
 > Solo decisiones formales, técnicas o de negocio con impacto técnico. Nada de conversaciones exploratorias.
 > Formato: `ADR-NNN` consecutivo · fecha · estado (Propuesta | Aceptada | Reemplazada) · contexto → decisión → consecuencias.
 
@@ -35,6 +35,7 @@
 | 027 | 2026-10-17 | Aceptada | Video de presentación generado con código: Remotion y voz local con Kokoro |
 | 028 | 2026-10-18 | Aceptada | Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador |
 | 029 | 2026-10-18 | Aceptada | Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base |
+| 030 | 2026-10-18 | Aceptada | Idioma de la interfaz según el navegador (español e inglés), con selector manual y sin geolocalización por IP |
 
 ---
 
@@ -624,6 +625,37 @@
   - Una sesión sin cámara cuenta para el cumplimiento, pero no para la calidad ni para el recorrido medio, que salen de la
     cámara. Si debe contar igual que una con cámara se valida con fisioterapeutas (TD-113).
   - No cambia el alcance de ADR-009 ni agrega alertas: sin cámara no hay detección postural.
+
+## ADR-030 · Idioma de la interfaz según el navegador (español e inglés), sin geolocalización por IP — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - Toda la web estaba en español y los jueces del hackathon son internacionales. El owner pidió traducir "por región".
+  - Saber la región por la IP exige mandar la IP a un servicio de geolocalización de terceros. Eso choca con ADR-003 (lo
+    mínimo sale del equipo) y con TD-14 (privacidad). Además, la IP dice dónde está la persona, no qué idioma lee.
+  - Los textos de seguridad (descargo, banderas rojas, urgencias, alertas) no pueden cambiar de sentido al traducirse.
+- **Decisión:**
+  - La región sale del propio navegador. Primero, la elección manual guardada en `axonfas.lang`. Si no hay, el primer
+    idioma de `navigator.languages` que tengamos: `es-*` da español y `en-*` inglés. Un navegador con otros idiomas ve
+    inglés. Solo si el navegador no declara idiomas desempata la zona horaria de `Intl`: una zona de habla hispana da
+    español. Sin ninguna señal, español. No se usa la IP ni ningún servicio externo.
+  - Un selector visible en la cabecera (ES / EN), con nombre accesible y `aria-pressed`. La elección se guarda en este
+    equipo y recarga la página, para que todo, incluidos los textos que arman los scripts, salga en el idioma nuevo.
+  - `i18n.js` es el núcleo: `t(clave)`, plurales, `fill()` (texto con nodos dentro, sin `innerHTML`) y `data-i18n` en
+    el HTML. También pone `<html lang>`, la voz (`es-PE` o `en-US`) y el formato de fechas. Los diccionarios van en
+    `i18n/`, un paquete por área con los bloques `es` y `en`. El catálogo de 24 ejercicios se traduce como datos
+    (`i18n/catalog.en.js`). Las fuentes citadas no cambian.
+  - Para sumar un idioma (por ejemplo, portugués) basta con agregarlo a `LANGS` y poner su bloque en cada paquete. Lo
+    que falte cae al español.
+  - Los textos de seguridad dicen lo mismo en los dos idiomas. Las urgencias citan el SAMU (106) y "el número de
+    emergencias de tu país". Los tests lo revisan.
+- **Consecuencias:**
+  - Lo que escribe el servidor sigue en español en esta etapa: la nota SOAP, la Observation FHIR, los mensajes de error
+    de la API y los textos guardados en la base (TD-116).
+  - Cambiar de idioma en medio de una sesión con cámara la reinicia, porque la página se recarga.
+  - Un texto nuevo de la interfaz necesita su clave en los dos idiomas. Los tests revisan que es y en tengan las mismas
+    claves y que cada `data-i18n` y cada `t()` existan.
+  - La traducción al inglés la hizo el equipo, no un fisioterapeuta nativo. Se valida antes de Producción (TD-116).
 
 ---
 

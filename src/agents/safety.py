@@ -41,18 +41,36 @@ RED_FLAGS = [
     r"dolor (en el|de) pecho|me duele el pecho",
     r"no puedo respirar|falta de aire|me ahogo",
     r"\bcrujio\b|algo se rompio|escuche un (crack|chasquido)",
+    # Inglés (ADR-030): la interfaz también está en inglés y el texto libre tiene que detener igual (I-7, I-22).
+    r"\b(severe|sharp|intense|unbearable|stabbing|terrible|horrible|excruciating|acute) pain|pain is (severe|unbearable|terrible|horrible)",
+    r"\bit hurts (so much|a lot|really bad|too much|badly|terribly)|\bhurts (really |so )?bad",
+    r"\bdizz(y|iness)\b|\blight ?headed|\bvertigo\b|(room|everything) is spinning",
+    r"\b(lost|losing|lose) (my |all )?(the )?strength|\bloss of strength|\bweakness\b|\b(i feel|i am|i[’']m|feeling) (very |really |so )?weak\b",
+    r"\bnumb(ness)?\b|\btingl(e|ing)\b|pins and needles|\b(can[’']?t|cannot) feel (my|the) |\bwent numb",
+    r"\b(knee|leg) (gave way|gave out|buckled)",
+    r"\b(can[’']?t|cannot) (move|hold|lift) (my|the) ",
+    r"\bfaint|\bpass(ed|ing)? out\b|\bblack(ed|ing)? out\b",
+    r"\bchest pain|pain in (my|the) chest|my chest hurts",
+    r"\b(can[’']?t|cannot) breathe|\bshort(ness)? of breath|\bout of breath",
+    r"something (snapped|popped|broke|tore)|i heard a (crack|pop|snap)",
 ]
 
 
 # Palabras de molestia (sin tildes). Con una de ellas en lo que dijo el paciente, el agente solo puede bajar la exigencia
 # (ADR-021). No son alarmas: no detienen la sesión; solo cierran la puerta a subir la carga.
 DISCOMFORT = [r"molest", r"duel", r"dolor", r"pinchaz", r"punzad", r"tiron", r"ardor", r"calambre", r"cansa(d|ncio)", r"fatig",
-              r"agotad", r"me cuesta", r"no aguanto", r"rigid", r"incomod"]
+              r"agotad", r"me cuesta", r"no aguanto", r"rigid", r"incomod",
+              # Inglés (ADR-030)
+              r"\bsore", r"\bach(e|ing)", r"\bhurt", r"\bpain", r"\bpinch", r"\bburn", r"\bcramp", r"\btired",
+              r"\bexhaust", r"\bstiff", r"\buncomfortable|\bdiscomfort"]
 # Categoría del registro de molestia según la palabra (mismas claves que DISCOMFORT).
 DISCOMFORT_CATEGORY = {r"molest": "pain", r"duel": "pain", r"dolor": "pain", r"pinchaz": "pain", r"punzad": "pain",
                        r"tiron": "pain", r"ardor": "pain", r"calambre": "cramp", r"cansa(d|ncio)": "fatigue",
                        r"fatig": "fatigue", r"agotad": "fatigue", r"me cuesta": "fatigue", r"no aguanto": "fatigue",
-                       r"rigid": "stiffness", r"incomod": "other"}
+                       r"rigid": "stiffness", r"incomod": "other",
+                       r"\bsore": "pain", r"\bach(e|ing)": "pain", r"\bhurt": "pain", r"\bpain": "pain", r"\bpinch": "pain",
+                       r"\bburn": "pain", r"\bcramp": "cramp", r"\btired": "fatigue", r"\bexhaust": "fatigue",
+                       r"\bstiff": "stiffness", r"\buncomfortable|\bdiscomfort": "other"}
 # Valores de partida, no clínicos (TD-87): cuánto baja la reducción determinista.
 ROM_STEP_DEG = 10
 REPS_FACTOR = 0.7

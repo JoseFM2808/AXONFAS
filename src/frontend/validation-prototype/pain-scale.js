@@ -10,7 +10,10 @@
 }(typeof self !== 'undefined' ? self : this, (root) => {
   'use strict';
 
-  const ANCHORS = { 0: 'Sin dolor', 5: 'Moderado', 10: 'El peor dolor imaginable' };
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');   // textos (ADR-030)
+  const t = I18N.t;
+
+  const ANCHORS = { 0: t('eva.anchor.0'), 5: t('eva.anchor.5'), 10: t('eva.anchor.10') };
   let counter = 0;
 
   /**
@@ -26,9 +29,9 @@
 
     const form = node('form', 'eva-form');
     const group = node('fieldset', 'eva-group');
-    const legend = node('legend', null, `¿Cuánto te duele ahora${opts.exerciseName ? `, después de "${opts.exerciseName}"` : ''}?`);
+    const legend = node('legend', null, opts.exerciseName ? t('eva.legendAfter', { name: opts.exerciseName }) : t('eva.legend'));
     legend.tabIndex = -1;
-    const hint = node('p', 'muted', '0 es nada de dolor y 10 el peor dolor que puedas imaginar. Tu fisioterapeuta lo verá.');
+    const hint = node('p', 'muted', t('eva.hint'));
     hint.id = `eva-hint-${n}`;
     group.setAttribute('aria-describedby', hint.id);
     const scale = node('div', 'eva-scale');
@@ -47,9 +50,9 @@
     ends.append(node('span', null, `0 · ${ANCHORS[0]}`), node('span', null, `10 · ${ANCHORS[10]}`));
     group.append(legend, hint, scale, ends);
     const actions = node('div', 'eva-actions');
-    const send = node('button', 'btn primary', 'Guardar mi dolor');
+    const send = node('button', 'btn primary', t('eva.send'));
     send.type = 'submit';
-    const skip = node('button', 'btn', 'Ahora no');
+    const skip = node('button', 'btn', t('eva.skip'));
     skip.type = 'button';
     actions.append(send, skip);
     const status = node('p', 'status-line');
@@ -63,18 +66,18 @@
     const replaceWith = (p) => { p.tabIndex = -1; form.replaceChildren(p); p.focus({ preventScroll: true }); };
     const finish = (res) => { if (opts.onDone) opts.onDone(res); };
     skip.addEventListener('click', () => {
-      replaceWith(node('p', 'muted', 'Sin dolor registrado para esta sesión. Si algo te molesta, usa "Tengo una molestia".'));
+      replaceWith(node('p', 'muted', t('eva.skipped', { button: t('symptom.toggle') })));
       finish(null);
     });
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const picked = form.querySelector('input[type="radio"]:checked');
-      if (!picked) { status.textContent = 'Elige un número del 0 al 10, o toca "Ahora no".'; return; }
+      if (!picked) { status.textContent = t('eva.pick', { skip: t('eva.skip') }); return; }
       send.disabled = true;
-      status.textContent = 'Guardando…';
+      status.textContent = t('eva.saving');
       try {
         const res = await root.AxonApi.call('patient', 'PUT', `/api/sessions/${opts.sessionId}/pain`, { score: Number(picked.value) });
-        const done = node('p', res.high ? 'notice' : 'muted', `Dolor al terminar: ${res.pain_score}/10. ${res.message}`);
+        const done = node('p', res.high ? 'notice' : 'muted', t('eva.done', { score: res.pain_score, message: res.message }));
         done.setAttribute('role', 'status');
         replaceWith(done);
         finish(res);

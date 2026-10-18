@@ -10,13 +10,17 @@
 }(typeof self !== 'undefined' ? self : this, (root) => {
   'use strict';
 
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');   // textos (ADR-030)
+  const t = I18N.t;
+
   // Los ids son los de SYMPTOM_OPTIONS en staging_api.py (un test lo comprueba).
   const OPTIONS = [
-    { id: 'pain_mild', label: 'Dolor leve o pinchazo' },
-    { id: 'fatigue', label: 'Cansancio' },
-    { id: 'cramp', label: 'Calambre' },
-    { id: 'stiffness', label: 'Rigidez' },
-    { id: 'red_flag', label: 'Dolor fuerte, mareo o pérdida de fuerza', hint: 'Detiene la sesión' },
+    // El id viaja a la API; label y hint son lo que se ve, en el idioma de la interfaz.
+    { id: 'pain_mild', label: t('symptom.opt.pain_mild') },
+    { id: 'fatigue', label: t('symptom.opt.fatigue') },
+    { id: 'cramp', label: t('symptom.opt.cramp') },
+    { id: 'stiffness', label: t('symptom.opt.stiffness') },
+    { id: 'red_flag', label: t('symptom.opt.red_flag'), hint: t('symptom.opt.red_flag.hint') },
   ];
   let counter = 0;
 
@@ -32,7 +36,7 @@
     const node = (tag, cls, text) => { const x = doc.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
     container.replaceChildren();
 
-    const toggle = node('button', 'btn', 'Tengo una molestia');
+    const toggle = node('button', 'btn', t('symptom.toggle'));
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', `symptom-form-${n}`);
@@ -41,7 +45,7 @@
     form.id = `symptom-form-${n}`;
     form.hidden = true;
     const group = node('fieldset', 'profile-group');
-    const legend = node('legend', null, '¿Qué sientes?');
+    const legend = node('legend', null, t('symptom.legend'));
     legend.tabIndex = -1;
     group.appendChild(legend);
     OPTIONS.forEach((o) => {
@@ -50,16 +54,16 @@
       radio.type = 'radio';
       radio.name = `symptom-option-${n}`;
       radio.value = o.id;
-      label.append(radio, node('span', null, o.hint ? `${o.label} (${o.hint})` : o.label));
+      label.append(radio, node('span', null, o.hint ? t('symptom.option', { label: o.label, hint: o.hint }) : o.label));
       group.appendChild(label);
     });
     const field = node('div', 'field');
-    const textLabel = node('label', null, 'Cuéntalo en pocas palabras (opcional; sin tu nombre ni datos personales)');
+    const textLabel = node('label', null, t('symptom.text'));
     textLabel.htmlFor = `symptom-text-${n}`;
     const text = doc.createElement('input');
     Object.assign(text, { type: 'text', id: `symptom-text-${n}`, maxLength: 200, autocomplete: 'off' });
     field.append(textLabel, text);
-    const send = node('button', 'btn primary', 'Avisar a mi fisioterapeuta');
+    const send = node('button', 'btn primary', t('symptom.send'));
     send.type = 'submit';
     form.append(group, field, send);
 
@@ -90,12 +94,12 @@
       if (text.value.trim()) body.text = text.value.trim();
       const current = opts.current ? opts.current() : null;
       if (current) body.current = current;
-      if (!body.option && !body.text) { status.textContent = 'Cuéntanos qué sientes: elige una opción o escribe una frase.'; return; }
+      if (!body.option && !body.text) { status.textContent = t('symptom.empty'); return; }
       send.disabled = true;
-      status.textContent = 'Enviando…';
+      status.textContent = t('symptom.sending');
       try {
         const res = await root.AxonApi.call('patient', 'POST', '/api/me/discomfort', body);
-        status.textContent = res.message;
+        status.textContent = res.message;               // lo escribe el servidor (en español en esta etapa)
         form.reset();
         close(true);
         if (opts.onResult) opts.onResult(res);

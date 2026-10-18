@@ -13,6 +13,9 @@
 }(typeof self !== 'undefined' ? self : this, (root) => {
   'use strict';
 
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');   // textos (ADR-030)
+  const t = I18N.t;
+
   const DEFAULT_SECONDS = 60;     // el mismo valor que REST_DEFAULT_SECONDS de catalog.js y de la API
   const EXTEND_SECONDS = 30;
 
@@ -33,9 +36,9 @@
 
   function text(rest) {
     const r = rest || { min: DEFAULT_SECONDS, max: DEFAULT_SECONDS, default: true };
-    if (r.default) return `Descanso sugerido: ${r.min} s (valor de partida, no clínico)`;
-    if (r.min === r.max) return `Descanso recomendado por tu fisioterapeuta: ${r.min} s`;
-    return `Descanso recomendado: ${r.min}–${r.max} s`;
+    if (r.default) return t('rest.default', { s: r.min });
+    if (r.min === r.max) return t('rest.therapist', { s: r.min });
+    return t('rest.range', { min: r.min, max: r.max });
   }
 
   /** opts: { rest: { min, max, default }, speak(text), onEnd() }. Devuelve { stop() }. */
@@ -50,15 +53,15 @@
     const box = node('div', 'panel-card stack');
     const big = node('div', 'guided-big', String(rest.min));
     big.setAttribute('aria-hidden', 'true');                // no se lee cada segundo; el estado anuncia solo inicio y fin
-    const status = node('p', 'status-line', `${text(rest)}. Puedes saltarlo.`);
+    const status = node('p', 'status-line', t('rest.canSkip', { text: text(rest) }));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     const actions = node('div', 'guided-actions');
-    const skip = node('button', 'btn', 'Saltar descanso');
+    const skip = node('button', 'btn', t('rest.skip'));
     skip.type = 'button';
-    const more = node('button', 'btn', `+${EXTEND_SECONDS} s`);
+    const more = node('button', 'btn', t('rest.extend', { s: EXTEND_SECONDS }));
     more.type = 'button';
-    more.setAttribute('aria-label', `+${EXTEND_SECONDS} s: alargar el descanso`);   // el nombre incluye el texto visible (WCAG 2.5.3)
+    more.setAttribute('aria-label', t('rest.extendLabel', { s: EXTEND_SECONDS }));   // empieza con el texto visible (WCAG 2.5.3)
     actions.append(skip, more);
     box.append(big, status, actions);
     container.appendChild(box);
@@ -79,9 +82,9 @@
     const update = () => {
       const { left, done } = timer.tick(clock());
       big.textContent = String(left);
-      if (done) finish('Descanso terminado. Sigue cuando quieras.');
+      if (done) finish(t('rest.over'));
     };
-    skip.addEventListener('click', () => { timer.skip(); finish('Descanso saltado. Sigue cuando quieras.'); });
+    skip.addEventListener('click', () => { timer.skip(); finish(t('rest.skipped')); });
     more.addEventListener('click', () => { timer.extend(EXTEND_SECONDS); update(); });
     interval = setInterval(update, 250);
     if (opts.speak) opts.speak(text(rest));

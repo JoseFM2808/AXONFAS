@@ -75,3 +75,27 @@ test('el panel y la nota SOAP dicen lo mismo de una sesión sin cámara', () => 
   assert.ok(read('doctor.html').includes('id="soap-nocam" role="note"'));
   assert.ok(read('doctor.html').includes('id="soap-fhir-doc"'), 'descarga del documento FHIR (TD-103)');
 });
+
+test('los textos sin cámara salen del diccionario, en los dos idiomas (ADR-030)', () => {
+  const I = require(path.join(SRC, 'i18n.js'));
+  for (const r of ['declined', 'denied', 'unavailable']) {
+    assert.equal(P.REASON_TEXT[r], I.t(`practice.reason.${r}`), r);
+    assert.ok(I.has(`practice.reason.${r}`, 'en'), `${r} en inglés`);
+  }
+  assert.equal(P.NO_CAMERA_NOTE, I.t('practice.noCameraNote'));
+  I.use('en');
+  assert.match(I.t('practice.noCameraNote'), /angles are not measured and posture faults are not detected/,
+    'el inglés dice lo mismo: sin cámara no hay medición');
+  I.use('es');
+  const js = read('seguimiento.js');
+  assert.ok(js.includes("t('tracking.tutorial.title')") && I.t('tracking.tutorial.title') === 'Mira y sigue');
+  I.use('en');
+  assert.equal(I.t('tracking.tutorial.title'), 'Watch and follow');
+  I.use('es');
+});
+
+test('la voz del seguimiento habla en el idioma de la interfaz', () => {
+  const js = read('seguimiento.js');
+  assert.ok(js.includes('u.lang = I18N.speechLang()') && js.includes('I18N.voiceFor(window.speechSynthesis.getVoices())'));
+  assert.ok(!js.includes("'es-PE'") && !/startsWith\('es'\)/.test(js), 'sin voz en español fija');
+});

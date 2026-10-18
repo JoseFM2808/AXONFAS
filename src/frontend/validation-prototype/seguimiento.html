@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Seguimiento con la cámara</title>
+<title data-i18n="tracking.title">AXONFAS · Seguimiento con la cámara</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -53,47 +53,47 @@
 </style>
 </head>
 <body>
-<a class="skip-link" href="#stage">Saltar al video y los controles</a>
+<a class="skip-link" href="#stage" data-i18n="skip.stage">Saltar al video y los controles</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Seguimiento con la cámara</span></h1>
-      <p>Prototipo: la pose se estima en este navegador y el conteo sale de reglas fijas. No usa IA ni GPU.</p>
+      <h1>AXONFAS <span data-i18n="tracking.h1">· Seguimiento con la cámara</span></h1>
+      <p data-i18n="tracking.tagline">Prototipo: la pose se estima en este navegador y el conteo sale de reglas fijas. No usa IA ni GPU.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html" aria-current="page">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="login.html">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" aria-current="page" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" data-i18n="nav.login">Entrar</a>
   </nav>
 </header>
 
 <div class="wrap">
   <div class="row-between track-head">
     <div>
-      <a class="link" id="back" href="galeria.html">← Volver a la galería</a>
-      <h2 class="page-title" id="ex-title">Seguimiento con la cámara</h2>
+      <a class="link" id="back" href="galeria.html" data-i18n="tracking.back.gallery">← Volver a la galería</a>
+      <h2 class="page-title" id="ex-title" data-i18n="tracking.page.title">Seguimiento con la cámara</h2>
     </div>
     <div class="field">
-      <label for="ex-select">Ejercicio</label>
+      <label for="ex-select" data-i18n="tracking.select.label">Ejercicio</label>
       <select id="ex-select"></select>
     </div>
   </div>
   <p class="page-lede" id="ex-goal"></p>
   <div class="track-notes">
-    <p class="notice" id="ex-scope">Ves tu esqueleto, el ángulo que importa en este ejercicio y los músculos que trabaja. Cuenta
-      repeticiones o el tiempo sostenido con valores de partida, no clínicos. <strong>No avisa de compensaciones:</strong> eso
-      solo lo hace <a class="link" href="index.html">Sentarse y pararse</a>, en el Prototipo. El video no sale de este equipo.</p>
+    <p class="notice" id="ex-scope" data-i18n="tracking.scope">Ves tu esqueleto, el ángulo que importa en este ejercicio y los músculos que trabaja. Cuenta
+      repeticiones o el tiempo sostenido con valores de partida, no clínicos. <strong data-i18n-slot="warn" data-i18n="tracking.scope.warn">No avisa de compensaciones:</strong> eso
+      solo lo hace <a class="link" href="index.html" data-i18n-slot="link" data-i18n="tracking.scope.link">Sentarse y pararse</a>, en el Prototipo. El video no sale de este equipo.</p>
     <p class="notice" id="ex-limited" hidden></p>
     <section class="panel-card" id="patient-banner" hidden><p id="patient-text" class="muted"></p>
       <div id="eva-track" class="eva-card" hidden></div>
       <div id="symptom-track"></div></section>
   </div>
 
-  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
+  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara" data-i18n-aria-label="tracking.camsetup.label"></section>
 
   <main class="stage-wrapper" id="stage" tabindex="-1">
     <div class="viewport" id="viewport">
@@ -104,19 +104,19 @@
       <div class="hud-corner bl"></div><div class="hud-corner br"></div>
 
       <div class="phase-indicator">
-        <div class="phase-label" id="phase">Esperando la cámara</div>
-        <div class="phase-sub" id="phase-sub">Toca "Usar la cámara" para empezar.</div>
+        <div class="phase-label" id="phase" data-i18n="tracking.phase.waiting">Esperando la cámara</div>
+        <div class="phase-sub" id="phase-sub" data-i18n="tracking.phase.waitingSub">Toca "Usar la cámara" para empezar.</div>
       </div>
 
       <div class="placeholder" id="placeholder">
-        <strong id="ph-title">Sigue tu ejercicio con la cámara</strong>
+        <strong id="ph-title" data-i18n="tracking.ph.title">Sigue tu ejercicio con la cámara</strong>
         <span id="ph-camera"></span>
       </div>
 
       <div class="guide-pip" id="pip-guide" aria-hidden="true"></div>
 
       <div class="hold-badge" id="hold-badge" role="status" hidden>
-        <div class="lbl" id="hold-label">Sostén</div>
+        <div class="lbl" id="hold-label" data-i18n="tracking.hold.label">Sostén</div>
         <div class="num" id="hold-num">5</div>
         <div class="bar"><span id="hold-bar" style="width:0%"></span></div>
       </div>
@@ -127,7 +127,7 @@
       </div>
 
       <div class="hud" id="hud" hidden>
-        <div class="hud-phase" id="hud-phase">Serie 1 de 1</div>
+        <div class="hud-phase" id="hud-phase" data-i18n="tracking.hud.setInitial">Serie 1 de 1</div>
         <div class="hud-count"><span id="hud-done">0</span><span class="hud-total">/ <span id="hud-total">10</span></span></div>
         <div class="hud-sub" id="hud-sub"></div>
         <div class="hud-bar" id="hud-bar" aria-hidden="true"></div>
@@ -141,7 +141,7 @@
     <section class="practice" id="practice" aria-labelledby="practice-title" hidden>
       <div class="practice-fig" id="practice-guide"></div>
       <div class="practice-panel">
-        <h2 class="practice-title" id="practice-title" tabindex="-1">Mira y sigue</h2>
+        <h2 class="practice-title" id="practice-title" tabindex="-1" data-i18n="tracking.tutorial.title">Mira y sigue</h2>
         <p class="practice-text" id="practice-text"></p>
         <p class="practice-note" id="practice-note" hidden></p>
         <div class="practice-count" id="practice-count" role="status" hidden></div>
@@ -151,28 +151,28 @@
 
     <div class="kpis track-readouts" aria-live="off">
       <div class="kpi" id="ro-value">
-        <span class="k" id="ro-label">Medida</span><span class="v">—</span><span class="s"></span>
+        <span class="k" id="ro-label" data-i18n="tracking.ro.metric">Medida</span><span class="v">—</span><span class="s"></span>
         <div class="meter track-meter"><span id="ro-meter" style="width:0%"></span></div>
       </div>
-      <div class="kpi" id="ro-rest"><span class="k">Posición inicial</span><span class="v">—</span><span class="s">referencia de esta sesión</span></div>
-      <div class="kpi" id="ro-goal"><span class="k">Recorrido pedido</span><span class="v">—</span><span class="s"></span></div>
-      <div class="kpi" id="ro-hold"><span class="k">Sostener</span><span class="v">—</span><span class="s"></span></div>
+      <div class="kpi" id="ro-rest"><span class="k" data-i18n="tracking.ro.rest">Posición inicial</span><span class="v">—</span><span class="s" data-i18n="tracking.ro.restSub">referencia de esta sesión</span></div>
+      <div class="kpi" id="ro-goal"><span class="k" data-i18n="tracking.ro.goal">Recorrido pedido</span><span class="v">—</span><span class="s"></span></div>
+      <div class="kpi" id="ro-hold"><span class="k" data-i18n="tracking.ro.hold">Sostener</span><span class="v">—</span><span class="s"></span></div>
     </div>
 
     <div class="pilot-dock">
       <div class="dock-group">
-        <button class="btn primary" id="btn-camera" type="button">📹 Usar la cámara</button>
-        <button class="btn" id="btn-tutorial" type="button">🎬 Ver y practicar</button>
-        <button class="btn" id="btn-nocam" type="button">Hacer sin cámara</button>
-        <button class="btn primary" id="btn-hold" type="button" hidden disabled>⏱ Sostener</button>
-        <button class="btn" id="btn-recal" type="button" disabled>↺ Recalibrar</button>
-        <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
-        <label class="check"><input type="checkbox" id="voice" checked> Voz</label>
-        <span class="status-line" id="source-status" role="status">Sin cámara.</span>
+        <button class="btn primary" id="btn-camera" type="button" data-i18n="tracking.btn.camera">📹 Usar la cámara</button>
+        <button class="btn" id="btn-tutorial" type="button" data-i18n="tracking.btn.tutorial">🎬 Ver y practicar</button>
+        <button class="btn" id="btn-nocam" type="button" data-i18n="tracking.btn.nocam">Hacer sin cámara</button>
+        <button class="btn primary" id="btn-hold" type="button" hidden disabled data-i18n="tracking.btn.hold">⏱ Sostener</button>
+        <button class="btn" id="btn-recal" type="button" disabled data-i18n="tracking.btn.recal">↺ Recalibrar</button>
+        <button class="btn" id="btn-fullscreen" type="button" data-i18n="tracking.btn.fullscreen">⛶ Pantalla completa</button>
+        <label class="check"><input type="checkbox" id="voice" checked> <span data-i18n="tracking.btn.voice">Voz</span></label>
+        <span class="status-line" id="source-status" role="status" data-i18n="tracking.status.off">Sin cámara.</span>
       </div>
       <div class="dock-group">
-        <button class="btn danger" id="btn-pain" type="button" disabled>🛑 Dolor: detener</button>
-        <button class="btn" id="btn-stop" type="button" disabled>Terminar</button>
+        <button class="btn danger" id="btn-pain" type="button" disabled data-i18n="tracking.btn.pain">🛑 Dolor: detener</button>
+        <button class="btn" id="btn-stop" type="button" disabled data-i18n="tracking.btn.stop">Terminar</button>
       </div>
     </div>
     <div id="rest-track"></div>
@@ -180,44 +180,53 @@
 
   <div class="track-grid">
     <section class="panel-card">
-      <h2>Músculos que trabajas</h2>
+      <h2 data-i18n="tracking.map.title">Músculos que trabajas</h2>
       <div id="live-map"></div>
-      <p class="bodymap-note">Se encienden a medida que llegas al recorrido pedido. Es una estimación educativa a partir del
+      <p class="bodymap-note" data-i18n="tracking.map.note">Se encienden a medida que llegas al recorrido pedido. Es una estimación educativa a partir del
         movimiento, no una medición de la fuerza ni un diagnóstico.</p>
     </section>
     <section class="panel-card">
-      <h2>Cómo se hace</h2>
+      <h2 data-i18n="tracking.how.title">Cómo se hace</h2>
       <div id="how-guide"></div>
       <p class="muted" id="how-position" style="margin-top:10px;"></p>
       <ol id="how-steps"></ol>
-      <h3>Dónde va la cámara</h3>
+      <h3 data-i18n="tracking.how.camera">Dónde va la cámara</h3>
       <p class="muted" id="how-camera"></p>
-      <h3>Dosis</h3>
+      <h3 data-i18n="tracking.how.dose">Dosis</h3>
       <p class="muted" id="how-dose"></p>
-      <h3>Precauciones</h3>
+      <h3 data-i18n="tracking.how.prec">Precauciones</h3>
       <ul id="how-prec"></ul>
       <p class="source" id="how-source" style="margin-top:12px;"></p>
     </section>
   </div>
 
   <section class="panel-card">
-    <h2>Repeticiones de esta sesión</h2>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones de esta sesión">
+    <h2 data-i18n="tracking.reps.title">Repeticiones de esta sesión</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones de esta sesión" data-i18n-aria-label="tracking.reps.title">
       <table>
-        <thead><tr><th>#</th><th>Lado</th><th>Recorrido máximo</th><th>Sostuvo</th><th>Duración</th></tr></thead>
-        <tbody id="reps-body"><tr><td colspan="5" class="empty">Todavía no hay repeticiones.</td></tr></tbody>
+        <thead><tr><th>#</th><th data-i18n="tracking.reps.side">Lado</th><th data-i18n="tracking.reps.peak">Recorrido máximo</th><th data-i18n="tracking.reps.held">Sostuvo</th><th data-i18n="tracking.reps.duration">Duración</th></tr></thead>
+        <tbody id="reps-body"><tr><td colspan="5" class="empty" data-i18n="tracking.reps.empty">Todavía no hay repeticiones.</td></tr></tbody>
       </table>
     </div>
     <div id="tips" style="margin-top:16px;"></div>
   </section>
 
-  <footer>
+  <footer data-i18n="tracking.footer">
     AXONFAS · prototipo de validación. La pose se estima en este navegador con MediaPipe; el conteo y los umbrales son
     valores de partida para validar con fisioterapeutas (TD-48). Solo Sentarse y pararse tiene alertas de compensación
     (ADR-009). No es un dispositivo médico.
   </footer>
 </div>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>

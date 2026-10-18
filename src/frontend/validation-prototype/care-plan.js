@@ -11,14 +11,17 @@
  *   en que vuelve a tocar.
  */
 (function (root, factory) {
-  const api = factory();
+  const api = factory((typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js'));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AxonCarePlan = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (I18N) {
   'use strict';
 
+  const t = I18N.t;                                 // textos en el idioma de la interfaz (ADR-030)
+  const tn = I18N.tn;
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  /** Nombre del día de la semana (0 = domingo, como Date.getDay()). */
+  const weekday = (n) => t(`careplan.weekday.${n}`);
 
   /** Medianoche local del día de `d`. */
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -70,21 +73,23 @@
   /** "hoy", "mañana" o el día de la semana. */
   function dayName(date, now = new Date()) {
     const n = daysBetween(now, date);
-    if (n <= 0) return 'hoy';
-    if (n === 1) return 'mañana';
-    return `el ${WEEKDAYS[date.getDay()]}`;
+    if (n <= 0) return t('careplan.today');
+    if (n === 1) return t('careplan.tomorrow');
+    return t('careplan.onDay', { day: weekday(date.getDay()) });
   }
 
   /** Texto corto del estado, para la tarjeta del paciente. */
   function statusText(x, now = new Date()) {
-    const week = `esta semana: ${x.weekDone} de ${x.perWeek}`;
+    const week = t('careplan.week', { done: x.weekDone, per: x.perWeek });
     switch (x.status) {
-      case 'done_today': return `Hecho hoy · ${week}`;
-      case 'today': return `Toca hoy · ${week}`;
-      case 'week_done': return x.perWeek === 1 ? 'Cumpliste la de esta semana' : `Cumpliste las ${x.perWeek} de esta semana`;
-      default: return `Descanso: vuelve a tocar ${dayName(x.next, now)} · ${week}`;
+      case 'done_today': return t('careplan.status.done_today', { week });
+      case 'today': return t('careplan.status.today', { week });
+      case 'week_done': return tn('careplan.status.week_done', x.perWeek);
+      default: return t('careplan.status.rest', { day: dayName(x.next, now), week });
     }
   }
 
-  return { agenda, statusOf, statusText, dayName, gapDays, weekStart, WEEKDAYS };
+  return { agenda, statusOf, statusText, dayName, gapDays, weekStart,
+    /** Días de la semana en el idioma actual (0 = domingo). */
+    get WEEKDAYS() { return [0, 1, 2, 3, 4, 5, 6].map(weekday); } };
 });

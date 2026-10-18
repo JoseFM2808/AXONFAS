@@ -22,6 +22,8 @@
   const SG = window.AxonSuggest;                            // consejos de uso al terminar (ADR-017)
   const P = window.AxonPractice;                            // tutorial y rutina sin cámara (TD-109, TD-110)
   const S = T.SIDES;
+  const I18N = window.AxonI18n;                            // textos y voz en el idioma de la interfaz (ADR-030)
+  const { t, tn } = I18N;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
 
@@ -61,19 +63,18 @@
   const cssCache = {};
   const cssVar = (name) => (cssCache[name] ??= getComputedStyle(document.documentElement).getPropertyValue(name).trim());
   const fmt = (v, unit) => (v == null || !Number.isFinite(v) ? '—' : `${unit === 'cm' ? v.toFixed(1) : Math.round(v)}${unit === '%' ? ' %' : unit === 'cm' ? ' cm' : '°'}`);
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const sideText = (side) => (side === 'L' ? 'izquierda' : side === 'R' ? 'derecha' : side === '+' ? 'un lado' : side === '-' ? 'otro lado' : '—');
+  const sideText = (side) => T.sideName(side);
 
   // ------------------------------------------------------------------ ejercicio
   function fillSelect() {
-    ui.select.innerHTML = '';
+    ui.select.replaceChildren();
     C.THEMES.forEach((theme) => {
       const group = document.createElement('optgroup');
       group.label = theme.name;
       C.EXERCISES.filter((e) => e.theme === theme.id).forEach((e) => {
         const o = document.createElement('option');
         o.value = e.id;
-        o.textContent = `${e.name}${T.SPECS[e.id].quality === 'limited' ? ' · seguimiento aproximado' : ''}`;
+        o.textContent = T.SPECS[e.id].quality === 'limited' ? t('tracking.select.limited', { name: e.name }) : e.name;
         group.appendChild(o);
       });
       ui.select.appendChild(group);
@@ -83,11 +84,14 @@
   function doseText() {
     const d = st.dose;
     const tg = T.targetFor(st.spec, d);
-    const what = st.spec.mode === 'reps' ? `${plural(d.sets, 'serie', 'series')} de ${d.reps}${st.spec.perSide ? ' por lado' : ''}`
-      : `${plural(d.reps, 'vez', 'veces')}${st.spec.perSide ? ' por lado' : ''}`;
+    const what = st.spec.mode === 'reps'
+      ? (st.spec.perSide ? tn('tracking.dose.setsSide', d.sets, { reps: d.reps }) : tn('tracking.dose.sets', d.sets, { reps: d.reps }))
+      : (st.spec.perSide ? tn('tracking.dose.timesSide', d.reps) : tn('tracking.dose.times', d.reps));
     const r = st.item && st.item.rest ? st.item.rest : { min: C.REST_DEFAULT_SECONDS, max: C.REST_DEFAULT_SECONDS, default: true };
-    const rest = `${r.min === r.max ? `${r.min} s` : `${r.min}–${r.max} s`}${r.default ? ' (sugerido)' : ''}`;
-    return `${what}${d.hold ? ` · sostener ${d.hold} s` : ''} · descanso ${rest} (${tg.total} en total)`;
+    const range = r.min === r.max ? `${r.min} s` : `${r.min}–${r.max} s`;
+    const rest = r.default ? t('tracking.dose.suggested', { rest: range }) : range;
+    return [what, d.hold ? t('tracking.dose.hold', { s: d.hold }) : null, t('tracking.dose.rest', { rest, total: tg.total })]
+      .filter(Boolean).join(' · ');
   }
 
   /** Descanso recomendado al terminar una serie (ADR-022): es una guía, el conteo sigue activo y no bloquea nada. */
@@ -114,33 +118,33 @@
     st.tracker = null;
     st.ended = false;
     ui.select.value = st.ex.id;
-    document.title = `AXONFAS · Seguimiento · ${st.ex.name}`;
+    document.title = t('tracking.doc.title', { name: st.ex.name });
     $('ex-title').textContent = st.ex.name;
     $('ex-goal').textContent = st.ex.goal;
     const lim = $('ex-limited');
     lim.hidden = st.spec.quality !== 'limited';
-    lim.textContent = st.spec.quality === 'limited' ? `Seguimiento aproximado: ${st.spec.note}` : '';
-    $('ph-title').textContent = st.spec.mode === 'manual' ? 'La cámara te acompaña; tú marcas cada sostén' : 'Sigue tu ejercicio con la cámara';
-    $('ph-camera').textContent = `Cámara: ${st.spec.camera}`;
-    $('how-position').textContent = `Posición: ${st.ex.position}`;
-    $('how-camera').textContent = st.spec.camera;
-    $('how-dose').textContent = `${doseText()}. ${st.item ? 'La fijó tu fisioterapeuta.' : `Fuente: ${st.ex.dose.text}`}`;
+    lim.textContent = st.spec.quality === 'limited' ? t('tracking.limited', { note: T.noteText(st.ex.id) }) : '';
+    $('ph-title').textContent = st.spec.mode === 'manual' ? t('tracking.ph.manual') : t('tracking.ph.title');
+    $('ph-camera').textContent = t('tracking.ph.camera', { camera: T.cameraText(st.ex.id) });
+    $('how-position').textContent = t('tracking.how.position', { position: st.ex.position });
+    $('how-camera').textContent = T.cameraText(st.ex.id);
+    $('how-dose').textContent = st.item ? t('tracking.how.dosePlan', { dose: doseText() })
+      : t('tracking.how.doseSource', { dose: doseText(), source: st.ex.dose.text });
     const list = (el, items) => { el.replaceChildren(...items.map((t) => { const li = document.createElement('li'); li.textContent = t; return li; })); };
     list($('how-steps'), st.ex.steps);
     list($('how-prec'), st.ex.precautions);
     const src = $('how-source');
-    src.replaceChildren('Fuente: ');
     const a = document.createElement('a');
     a.href = st.ex.source.url;
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = `${st.ex.source.org} · ${st.ex.source.title}`;
-    src.append(a, ` (${st.ex.sourceName})`);
+    I18N.fill(src, 'tracking.how.source', { link: a, name: st.ex.sourceName });
     st.map = B.render($('live-map'), { intensities: B.estimateLoad(st.ex, null, 0) });
     mountGuides();
     // 1 · Dónde va la cámara (ADR-015): alternativas con la calidad de la medida de este ejercicio
     st.camMeasures = CS.measuresFor(st.ex.id, 'track', T);
-    st.camOpts = CS.renderOptions($('cam-setup'), st.camMeasures.measures, { hint: st.spec.camera });
+    st.camOpts = CS.renderOptions($('cam-setup'), st.camMeasures.measures, { hint: T.cameraText(st.ex.id) });
     st.view = null;
     ui.btnHold.hidden = st.spec.mode !== 'manual';
     ui.placeholder.hidden = false;
@@ -149,8 +153,8 @@
     hideAlert();
     renderReadouts(null);
     renderReps();
-    if ($('tips')) $('tips').innerHTML = '';
-    setPhase('Esperando la cámara', 'Toca "Usar la cámara" para empezar.');
+    if ($('tips')) $('tips').replaceChildren();
+    setPhase(t('tracking.phase.waiting'), t('tracking.phase.waitingSub'));
     setButtons(false);
   }
 
@@ -175,7 +179,7 @@
     const run = await PC.open({
       video: ui.video, canvas: ui.canvas, viewport: ui.viewport,
       status: (text) => { ui.status.textContent = text; },
-      unsupported: 'Este navegador no permite la cámara aquí: ábrelo desde http://localhost o con el QR (HTTPS).',
+      unsupported: t('tracking.cam.unsupported'),
       onFail: (kind) => offerNoCamera(kind),            // sin cámara la rutina sigue (TD-110)
     });
     if (!run) return;
@@ -207,8 +211,8 @@
     ui.placeholder.hidden = true;
     ui.hud.hidden = true;
     $('cam-check').hidden = false;
-    setPhase('Prepara la cámara', `${CS.VIEWS[chosen].how}. ${st.spec.camera}`);
-    announce('Coloca la cámara: que se vea todo lo necesario', { ms: 3000 });
+    setPhase(t('tracking.setup.phase'), `${CS.VIEWS[chosen].how}. ${T.cameraText(st.ex.id)}`);
+    announce(t('tracking.setup.announce'), { ms: 3000 });
     setButtons(true);
   }
 
@@ -221,7 +225,12 @@
       st.lastCheck = t;
       const el = $('cam-check');
       CS.renderCheck(el, r, st.setup.chosen);
-      el.insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-cam-skip>Empezar ya</button>');
+      const skip = document.createElement('button');
+      skip.className = 'btn';
+      skip.type = 'button';
+      skip.dataset.camSkip = '';
+      skip.textContent = t('tracking.setup.skip');
+      el.append(skip);
     }
     if (r.ready) finishSetup(r);
   }
@@ -232,8 +241,8 @@
     st.setup = null;
     $('cam-check').hidden = true;
     const q = st.view ? CS.qualityOf(st.camMeasures.measures, st.view)[0] : null;
-    ui.status.textContent = st.view ? `Cámara ${CS.VIEWS[st.view].short}: ${q.label.toLowerCase()} ${q.text}. El video no sale de este equipo.`
-      : 'Cámara activa. El video no sale de este equipo.';
+    ui.status.textContent = st.view ? t('tracking.setup.done', { view: CS.VIEWS[st.view].short, quality: `${q.label.toLowerCase()} ${q.text}` })
+      : t('tracking.setup.doneNoView');
     startSession();
   }
 
@@ -258,10 +267,9 @@
     renderReps();
     renderHud(null);
     setButtons(true);
-    const first = st.spec.mode === 'reps' ? 'Ponte en la posición inicial y quédate quieto'
-      : st.spec.mode === 'hold' ? 'Ponte en posición: el tiempo cuenta mientras la sostienes'
-        : 'Ponte en posición y toca Sostener en cada repetición';
-    announce(`${st.view ? 'Posición lista. ' : ''}${first}`, { ms: 3500 });
+    const first = st.spec.mode === 'reps' ? t('tracking.start.reps')
+      : st.spec.mode === 'hold' ? t('tracking.start.hold') : t('tracking.start.manual');
+    announce(st.view ? t('tracking.start.ready', { next: first }) : first, { ms: 3500 });
   }
 
   function onNoPose(t) {
@@ -291,7 +299,7 @@
     if (out.lowConfidence) st.lowFrames += 1;
     if (out.lowConfidence) {
       st.lowStreak += 1;
-      if (st.lowStreak === LOW_FRAMES_BEFORE_HINT) showInfo(`No te veo bien. ${st.spec.camera}`);
+      if (st.lowStreak === LOW_FRAMES_BEFORE_HINT) showInfo(t('tracking.info.lowConf', { camera: T.cameraText(st.ex.id) }));
     } else {
       if (st.lowStreak >= LOW_FRAMES_BEFORE_HINT) hideAlert();
       st.lowStreak = 0;
@@ -313,30 +321,30 @@
   function onEvent(e) {
     const tg = st.tracker.target;
     switch (e.type) {
-      case 'ready': announce('Listo. Empieza', { ms: 1800 }); break;
-      case 'hold_start': stopRest(); if (e.seconds) speak('Sostén'); break;
+      case 'ready': announce(t('tracking.ev.ready'), { ms: 1800 }); break;
+      case 'hold_start': stopRest(); if (e.seconds) speak(t('tracking.voice.hold')); break;
       case 'hold_done':
         st.holdFlashUntil = performance.now() + 1500;
-        speak(st.spec.mode === 'reps' ? 'Bien. Baja despacio' : 'Bien. Suelta');
+        speak(st.spec.mode === 'reps' ? t('tracking.voice.holdDoneReps') : t('tracking.voice.holdDone'));
         break;
       case 'hold_short': {
         const now = performance.now();
-        showInfo(`Sostuviste ${e.seconds} s de ${e.needed || tg.hold} s: esa no contó. Mantén la posición hasta que la cuenta llegue a 0.`, 4000);
-        if (now - st.lastShortSpoken > 5000) { st.lastShortSpoken = now; speak('No contó. Sostén hasta llegar a cero'); }
+        showInfo(t('tracking.info.holdShort', { s: e.seconds, need: e.needed || tg.hold }), 4000);
+        if (now - st.lastShortSpoken > 5000) { st.lastShortSpoken = now; speak(t('tracking.voice.holdShort')); }
         break;
       }
-      case 'hold_lost': showInfo('Dejé de verte: ese sostén no contó.', 2500); break;
+      case 'hold_lost': showInfo(t('tracking.info.holdLost'), 2500); break;
       case 'over_limit': {                                // dosis, no alerta (I-12): la repetición cuenta igual
         const now = performance.now();
         const unit = T.METRICS[st.spec.metric].unit;
-        showInfo(`Hasta ahí basta: tu fisioterapeuta fijó ${fmt(e.limit, unit)} como límite. No hace falta ir más allá.`, 3500);
-        if (now - st.lastLimitSpoken > 6000) { st.lastLimitSpoken = now; speak('Hasta ahí basta'); }
+        showInfo(t('tracking.info.overLimit', { limit: fmt(e.limit, unit) }), 3500);
+        if (now - st.lastLimitSpoken > 6000) { st.lastLimitSpoken = now; speak(t('tracking.voice.overLimit')); }
         break;
       }
       case 'partial': {
         const now = performance.now();
-        showInfo('Un poco más: llega hasta llenar la barra.', 2200);
-        if (now - st.lastPartialSpoken > 6000) { st.lastPartialSpoken = now; speak('Un poco más'); }
+        showInfo(t('tracking.info.partial'), 2200);
+        if (now - st.lastPartialSpoken > 6000) { st.lastPartialSpoken = now; speak(t('tracking.voice.partial')); }
         break;
       }
       case 'rep': {
@@ -346,7 +354,7 @@
         renderReps();
         break;
       }
-      case 'set_done': if (!previewEnds()) { announce(`Serie ${e.set} lista. Descansa y sigue`, { ms: 3200 }); startRest(); } break;
+      case 'set_done': if (!previewEnds()) { announce(t('tracking.ev.setDone', { set: e.set }), { ms: 3200 }); startRest(); } break;
       default: break;
     }
   }
@@ -358,7 +366,7 @@
       stopCamera();
       setButtons(false);
       ui.placeholder.hidden = false;
-      setPhase('Esperando la cámara', 'Toca "Usar la cámara" para empezar.');
+      setPhase(t('tracking.phase.waiting'), t('tracking.phase.waitingSub'));
       return;
     }
     if (!st.tracker || st.ended) return;
@@ -370,16 +378,16 @@
     const reps = st.tracker.reps.length;
     if (reason === 'pain_stop') {
       hideAnnounce();
-      showStop('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
-      speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.', true);
+      showStop(t('tracking.end.pain'));
+      speak(t('tracking.end.pain'), true);
     } else if (reason === 'completed') {
-      announce('¡Listo! Ejercicio completado', { ms: 5000, tone: 'done' });
+      announce(t('tracking.end.completed'), { ms: 5000, tone: 'done' });
     } else {
-      announce('Sesión terminada', { ms: 2500 });
+      announce(t('tracking.end.ended'), { ms: 2500 });
     }
-    setPhase(reason === 'completed' ? 'Completado' : reason === 'pain_stop' ? 'Detenido por dolor' : 'Terminado',
-      `${plural(reps, 'repetición', 'repeticiones')} de ${st.tracker.target.total}.`);
-    ui.status.textContent = 'Cámara apagada.';
+    setPhase(reason === 'completed' ? t('tracking.end.phaseCompleted') : reason === 'pain_stop' ? t('tracking.end.phasePain') : t('tracking.end.phaseEnded'),
+      tn('tracking.end.repsOf', reps, { total: st.tracker.target.total }));
+    ui.status.textContent = t('tracking.status.camOff');
     setButtons(false);
     renderReps();
     renderTips(reps);
@@ -394,8 +402,7 @@
       lowConfidenceRatio: st.frames ? st.lowFrames / st.frames : 0, view: st.view,
       recommended: st.camMeasures ? CS.recommend(st.camMeasures.measures) : null };
     SG.renderList($('tips'), SG.forUser({ page: 'session', profile: st.patient ? st.patient.profile : null, session }), {
-      title: 'Sugerencias para la próxima', note: 'Consejos de uso calculados con reglas a partir de esta sesión.',
-      empty: 'Todo salió bien: no hay nada que mejorar en el uso de la cámara.' });
+      title: t('tracking.tips.title'), note: t('tracking.tips.note'), empty: t('tracking.tips.empty') });
   }
 
   function setButtons(active) {
@@ -403,7 +410,7 @@
     ui.btnStop.disabled = !active;
     ui.btnRecal.disabled = !active || st.spec.mode !== 'reps';
     ui.btnHold.disabled = !active;
-    ui.btnCamera.textContent = active ? '📹 Reiniciar' : '📹 Usar la cámara';
+    ui.btnCamera.textContent = active ? t('tracking.btn.restart') : t('tracking.btn.camera');
     ui.btnTutorial.disabled = active;
     ui.btnNoCam.disabled = active;
   }
@@ -420,16 +427,17 @@
     const c = st.cues || {};
     const hold = st.tracker.target.hold;
     const left = out.holdMs != null && hold ? Math.max(0, Math.ceil(hold - out.holdMs / 1000)) : null;
-    if (out.phase === 'setup') setPhase('Posición inicial', `${c.start || 'Ponte en la posición inicial'}. Quédate quieto 1 segundo.`);
+    const holdLeft = left != null ? t('tracking.phase.holdLeft', { s: left }) : null;
+    if (out.phase === 'setup') setPhase(t('tracking.phase.start'), t('tracking.phase.startSub', { start: c.start || t('tracking.phase.startDefault') }));
     else if (st.spec.mode === 'reps') {
-      if (out.state !== 'up') setPhase(c.go || st.ex.name, 'Hasta llenar la barra.');
-      else if (left != null) setPhase(`Sostén: ${left} s`, 'No bajes hasta que la cuenta llegue a 0.');
-      else if (out.holdDone || !hold) setPhase(c.back || 'Vuelve a la posición inicial', 'Vuelve hasta vaciar la barra: ahí cuenta.');
-      else setPhase(c.go || st.ex.name, 'Vuelve a llenar la barra para seguir sosteniendo.');
+      if (out.state !== 'up') setPhase(c.go || st.ex.name, t('tracking.phase.fill'));
+      else if (holdLeft) setPhase(holdLeft, t('tracking.phase.holdSub'));
+      else if (out.holdDone || !hold) setPhase(c.back || t('tracking.phase.backDefault'), t('tracking.phase.backSub'));
+      else setPhase(c.go || st.ex.name, t('tracking.phase.refill'));
     } else if (st.spec.mode === 'hold') {
-      setPhase(left != null ? `Sostén: ${left} s` : (c.go || 'Sostén la posición'), `Cuenta mientras la mantienes: ${hold} s cada vez.`);
+      setPhase(holdLeft || c.go || t('tracking.phase.holdDefault'), t('tracking.phase.holdEach', { s: hold }));
     } else {
-      setPhase(left != null ? `Sostén: ${left} s` : 'Toca "Sostener"', left != null ? (c.go || '') : 'La cámara confirma que sigues en posición hasta el final.');
+      setPhase(holdLeft || t('tracking.phase.tapHold'), holdLeft ? (c.go || '') : t('tracking.phase.manualSub'));
     }
   }
 
@@ -442,12 +450,12 @@
     if (ui.holdBadge.hidden) return;
     ui.holdBadge.classList.toggle('done', Boolean(done && !counting));
     if (done && !counting) {
-      ui.holdLabel.textContent = st.spec.mode === 'reps' ? '¡Bien! Ahora baja' : '¡Bien! Suelta';
+      ui.holdLabel.textContent = st.spec.mode === 'reps' ? t('tracking.hold.doneReps') : t('tracking.hold.done');
       ui.holdNum.textContent = '0';
       ui.holdBar.style.width = '100%';
     } else {
       const elapsed = out.holdMs / 1000;
-      ui.holdLabel.textContent = 'Sostén';
+      ui.holdLabel.textContent = t('tracking.hold.label');
       ui.holdNum.textContent = String(Math.max(0, Math.ceil(hold - elapsed)));
       ui.holdBar.style.width = `${Math.min(100, (elapsed / hold) * 100).toFixed(0)}%`;
     }
@@ -458,15 +466,15 @@
     const count = out ? out.count : 0;
     const set = Math.min(tg.sets, Math.floor(count / tg.perSet) + 1);
     const inSet = count >= tg.total ? tg.perSet : count % tg.perSet;
-    ui.hudPhase.textContent = tg.sets > 1 ? `Serie ${set} de ${tg.sets}` : (st.spec.mode === 'reps' ? 'Repeticiones' : 'Sostenes');
+    ui.hudPhase.textContent = tg.sets > 1 ? t('tracking.hud.set', { set, sets: tg.sets }) : (st.spec.mode === 'reps' ? t('tracking.hud.reps') : t('tracking.hud.holds'));
     ui.hudDone.textContent = inSet;
     ui.hudTotal.textContent = tg.perSet;
     let sub = '';
-    if (out && out.phase === 'setup') sub = 'quieto: tomando referencia';
-    else if (out && out.holdMs != null && tg.hold) sub = `sostén ${Math.max(0, tg.hold - out.holdMs / 1000).toFixed(0)} s`;
-    else if (st.spec.perSide) sub = 'cuentan ambos lados';
+    if (out && out.phase === 'setup') sub = t('tracking.hud.setup');
+    else if (out && out.holdMs != null && tg.hold) sub = t('tracking.hud.holdLeft', { s: Math.max(0, tg.hold - out.holdMs / 1000).toFixed(0) });
+    else if (st.spec.perSide) sub = t('tracking.hud.bothSides');
     ui.hudSub.textContent = sub;
-    if (ui.hudBar.childElementCount !== tg.perSet) ui.hudBar.innerHTML = '<span></span>'.repeat(tg.perSet);
+    if (ui.hudBar.childElementCount !== tg.perSet) ui.hudBar.replaceChildren(...Array.from({ length: tg.perSet }, () => document.createElement('span')));
     Array.from(ui.hudBar.children).forEach((el, i) => el.classList.toggle('done', i < inSet));
   }
 
@@ -479,32 +487,33 @@
   function renderReadouts(out) {
     const metric = T.METRICS[st.spec.metric];
     const unit = metric.unit;
-    $('ro-label').textContent = metric.label;
-    const side = out && out.side ? ` · ${sideText(out.side)}` : '';
-    setKpi('ro-value', fmt(out && !out.lowConfidence ? out.value : null, unit), out && out.lowConfidence ? 'no te veo bien' : `en vivo${side}`);
+    $('ro-label').textContent = T.metricLabel(st.spec.metric);
+    const live = out && out.side ? t('tracking.ro.liveSide', { side: sideText(out.side) }) : t('tracking.ro.live');
+    setKpi('ro-value', fmt(out && !out.lowConfidence ? out.value : null, unit), out && out.lowConfidence ? t('tracking.ro.low') : live);
     $('ro-meter').style.width = `${Math.round((out ? out.progress : 0) * 100)}%`;
     $('ro-value').classList.toggle('on', Boolean(out && out.progress >= 1));
     if (st.spec.mode === 'reps') {
-      setKpi('ro-rest', fmt(out ? out.rest : null, unit), out && out.phase === 'setup' ? 'quédate quieto…' : 'referencia de esta sesión');
-      const sense = st.spec.dir === 0 ? 'hacia cualquier lado' : st.spec.dir > 0 ? 'más que la posición inicial' : 'menos que la posición inicial';
+      setKpi('ro-rest', fmt(out ? out.rest : null, unit), out && out.phase === 'setup' ? t('tracking.ro.settle') : t('tracking.ro.restSub'));
+      const sense = st.spec.dir === 0 ? t('tracking.ro.anyDir') : st.spec.dir > 0 ? t('tracking.ro.more') : t('tracking.ro.less');
       setKpi('ro-goal', fmt(st.spec.delta, unit), goalNote(sense, unit));
     } else if (st.spec.mode === 'hold') {
-      setKpi('ro-rest', '—', 'no hace falta referencia');
-      setKpi('ro-goal', `${st.spec.dir >= 0 ? '≥' : '≤'} ${fmt(st.spec.threshold, unit)}`, goalNote('mientras sostienes', unit));
+      setKpi('ro-rest', '—', t('tracking.ro.noRest'));
+      setKpi('ro-goal', `${st.spec.dir >= 0 ? '≥' : '≤'} ${fmt(st.spec.threshold, unit)}`, goalNote(t('tracking.ro.whileHold'), unit));
     } else {
-      setKpi('ro-rest', '—', 'no hace falta referencia');
-      setKpi('ro-goal', 'Tú lo marcas', 'la cámara no ve este músculo');
+      setKpi('ro-rest', '—', t('tracking.ro.noRest'));
+      setKpi('ro-goal', t('tracking.ro.youMark'), t('tracking.ro.notSeen'));
     }
     const hold = st.dose.hold;
     const left = out && out.holdMs != null && hold ? Math.max(0, hold - out.holdMs / 1000) : null;
-    setKpi('ro-hold', hold ? (left != null ? `${left.toFixed(1)} s` : `${hold} s`) : 'No', hold ? (left != null ? 'quedan' : 'cada repetición') : 'este ejercicio no se sostiene');
+    setKpi('ro-hold', hold ? (left != null ? `${left.toFixed(1)} s` : `${hold} s`) : t('tracking.ro.noHold'),
+      hold ? (left != null ? t('tracking.ro.left') : t('tracking.ro.eachRep')) : t('tracking.ro.noHoldSub'));
     $('ro-hold').classList.toggle('on', left != null);
   }
 
   /** Debajo de la meta: si la fijó el fisioterapeuta, lo dice junto con el límite (ADR-025). */
   function goalNote(sense, unit) {
     if (st.spec.goalFrom !== 'plan') return sense;
-    return `de tu fisioterapeuta · límite ${fmt(st.spec.limit, unit)}`;
+    return t('tracking.ro.planGoal', { limit: fmt(st.spec.limit, unit) });
   }
 
   function renderReps() {
@@ -512,7 +521,13 @@
     const unit = T.METRICS[st.spec.metric].unit;
     const hold = st.dose.hold;
     if (!reps.length) {
-      ui.repsBody.innerHTML = '<tr><td colspan="5" class="empty">Todavía no hay repeticiones.</td></tr>';
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.className = 'empty';
+      td.textContent = t('tracking.reps.empty');
+      tr.appendChild(td);
+      ui.repsBody.replaceChildren(tr);
       return;
     }
     ui.repsBody.replaceChildren(...reps.slice().reverse().map((r) => {
@@ -612,9 +627,9 @@
     try {
       if (urgent) window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      const voice = window.speechSynthesis.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith('es'));
-      if (voice) u.voice = voice;
-      u.lang = voice ? voice.lang : 'es-PE';
+      u.lang = I18N.speechLang();                                 // voz del idioma de la interfaz (ADR-030)
+      const voice = I18N.voiceFor(window.speechSynthesis.getVoices());
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
       u.rate = 1.05;
       window.speechSynthesis.speak(u);
     } catch (err) { console.warn('Sin voz', err); }
@@ -624,7 +639,7 @@
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await $('stage').requestFullscreen();
-    } catch { ui.status.textContent = 'Este navegador no permitió la pantalla completa.'; }
+    } catch { ui.status.textContent = t('tracking.status.noFullscreen'); }
   }
 
   // ------------------------------------------------------------------ modo paciente (ADR-012)
@@ -641,6 +656,7 @@
       exercise_id: st.ex.id, source: 'camera', phase: out.phase === 'setup' ? 'setup' : 'tracking',
       reps_done: out.count, reps_total: st.tracker.target.total, points, mirror: true, view: st.view || undefined,
       progress: out.lowConfidence ? 0 : out.progress,
+      // La etiqueta viaja con el texto base de tracker.js (dato para el servidor, no se traduce aquí).
       metric: out.value == null || out.lowConfidence ? undefined : { label: metric.label, value: out.value, unit: metric.unit },
     }).catch(() => {}).finally(() => { st.inFlight = false; });
   }
@@ -654,8 +670,8 @@
     const sets = st.practice && st.practice.counter ? st.practice.counter.state().sets : st.tracker ? st.tracker.target.sets : 1;
     if (st.item || !W || W.hasAccount() || sets <= 1) return false;
     finish('user_quit');
-    announce('Fin de la vista previa: una serie', { ms: 3500 });
-    W.require('hacer la rutina completa y guardar tu progreso');
+    announce(t('tracking.preview.end'), { ms: 3500 });
+    W.require(t('tracking.wall.fullRoutine'));                 // el motivo ya va traducido: auth-wall.js lo inserta tal cual
     return true;
   }
 
@@ -697,30 +713,30 @@
   /** Tutorial (shadowing): la animación en grande para seguirla antes de la evaluación con cámara. Nada se cuenta. */
   function showTutorial() {
     showPractice('tutorial', {
-      title: 'Mira y sigue',
-      text: `Haz el movimiento junto con la animación, a tu ritmo, hasta que te salga cómodo. ${doseText()}.`,
-      note: 'Todavía no se usa la cámara ni se cuenta nada.',
+      title: t('tracking.tutorial.title'),
+      text: t('tracking.tutorial.text', { dose: doseText() }),
+      note: t('tracking.tutorial.note'),
       actions: [
-        practiceBtn('📹 Pasar a la cámara', 'primary', () => { P.markSeen(st.ex.id); startCamera(); }),
-        practiceBtn('Hacer sin cámara', '', () => { P.markSeen(st.ex.id); startNoCamera('declined'); }),
+        practiceBtn(t('tracking.tutorial.toCamera'), 'primary', () => { P.markSeen(st.ex.id); startCamera(); }),
+        practiceBtn(t('tracking.btn.nocam'), '', () => { P.markSeen(st.ex.id); startNoCamera('declined'); }),
       ],
     });
-    setPhase('Mira y sigue', 'Practica con la animación antes de usar la cámara.');
+    setPhase(t('tracking.tutorial.title'), t('tracking.tutorial.phaseSub'));
   }
 
   /** La cámara no está disponible o no se permitió: la rutina sigue igual, sin cámara (TD-110). */
   function offerNoCamera(kind) {
     const reason = P.reasonFor(kind);
     showPractice('offer', {
-      title: 'Puedes hacer tu rutina sin cámara',
-      text: `${P.REASON_TEXT[reason]} Sigue la animación para marcar el ritmo y toca «Hecha» al terminar cada repetición.`,
+      title: t('tracking.offer.title'),
+      text: t('tracking.offer.text', { reason: P.REASON_TEXT[reason] }),
       note: P.NO_CAMERA_NOTE,
       actions: [
-        practiceBtn('Empezar sin cámara', 'primary', () => startNoCamera(kind)),
-        practiceBtn('📹 Intentar con la cámara otra vez', '', () => startCamera()),
+        practiceBtn(t('tracking.offer.start'), 'primary', () => startNoCamera(kind)),
+        practiceBtn(t('tracking.offer.retry'), '', () => startCamera()),
       ],
     });
-    setPhase('Sin cámara', P.REASON_TEXT[reason]);
+    setPhase(t('tracking.nocam.phase'), P.REASON_TEXT[reason]);
   }
 
   function startNoCamera(kind) {
@@ -733,28 +749,30 @@
     const counter = P.createCounter({ sets: st.dose.sets, reps: st.dose.reps, perSide: st.spec.perSide });
     const reason = P.reasonFor(kind);
     showPractice('nocam', {
-      title: 'Rutina sin cámara',
-      text: `Sigue la animación y toca «Hecha» al terminar cada repetición${st.spec.perSide ? ' (cada lado cuenta por separado)' : ''}`
-        + `${st.dose.hold ? `; sostén ${st.dose.hold} s en cada una` : ''}.`,
+      title: t('tracking.nocam.title'),
+      text: t('tracking.nocam.text', {
+        side: st.spec.perSide ? ` ${t('tracking.nocam.perSide')}` : '',
+        hold: st.dose.hold ? `; ${t('tracking.nocam.hold', { s: st.dose.hold })}` : '',
+      }),
       note: P.NO_CAMERA_NOTE,
       actions: [
-        practiceBtn('✓ Hecha', 'primary practice-done', onManualRep, 'Hecha: sumar una repetición'),
-        practiceBtn('↶ Deshacer', '', () => { counter.undo(); renderNoCamera(); }, 'Deshacer la última repetición'),
+        practiceBtn(t('tracking.nocam.done'), 'primary practice-done', onManualRep, t('tracking.nocam.doneLabel')),
+        practiceBtn(t('tracking.nocam.undo'), '', () => { counter.undo(); renderNoCamera(); }, t('tracking.nocam.undoLabel')),
       ],
     });
     Object.assign(st.practice, { counter, reason });
-    ui.status.textContent = 'Sin cámara: solo cuenta lo que marques.';
+    ui.status.textContent = t('tracking.nocam.status');
     setButtons(true);
     ui.btnRecal.disabled = true;
     ui.btnHold.disabled = true;
     renderNoCamera();
-    announce('Sigue la animación y marca cada repetición', { ms: 3000 });
-    setPhase('Sin cámara', `${doseText()}.`);
+    announce(t('tracking.nocam.announce'), { ms: 3000 });
+    setPhase(t('tracking.nocam.phase'), `${doseText()}.`);
   }
 
   function renderNoCamera() {
     const c = st.practice.counter.state();
-    $('practice-count').textContent = `Serie ${c.set} de ${c.sets} · ${c.inSet} de ${c.perSet} · ${c.done} de ${c.total} en total`;
+    $('practice-count').textContent = t('tracking.nocam.count', c);
   }
 
   function onManualRep() {
@@ -764,7 +782,7 @@
     renderNoCamera();
     if (r.finished) { finish('completed'); return; }
     if (r.setDone && previewEnds()) return;
-    if (r.setDone) { announce(`Serie ${c.set - 1} lista. Descansa y sigue`, { ms: 3200 }); startRest(); }
+    if (r.setDone) { announce(t('tracking.ev.setDone', { set: c.set - 1 }), { ms: 3200 }); startRest(); }
     else { stopRest(); speak(String(c.inSet)); }
   }
 
@@ -774,12 +792,12 @@
     stopRest();
     const c = st.practice.counter.state();
     if (reason === 'pain_stop') {
-      showStop('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
-      speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.', true);
-    } else announce(reason === 'completed' ? '¡Listo! Ejercicio completado' : 'Sesión terminada', { ms: 4000, tone: reason === 'completed' ? 'done' : '' });
-    $('practice-actions').replaceChildren(practiceBtn('Volver a empezar', '', () => setExercise(st.ex.id)));
-    setPhase(reason === 'completed' ? 'Completado sin cámara' : reason === 'pain_stop' ? 'Detenido por dolor' : 'Terminado',
-      `${plural(c.done, 'repetición', 'repeticiones')} de ${c.total}, marcadas a mano.`);
+      showStop(t('tracking.end.pain'));
+      speak(t('tracking.end.pain'), true);
+    } else announce(reason === 'completed' ? t('tracking.end.completed') : t('tracking.end.ended'), { ms: 4000, tone: reason === 'completed' ? 'done' : '' });
+    $('practice-actions').replaceChildren(practiceBtn(t('tracking.nocam.again'), '', () => setExercise(st.ex.id)));
+    setPhase(reason === 'completed' ? t('tracking.nocam.phaseCompleted') : reason === 'pain_stop' ? t('tracking.end.phasePain') : t('tracking.end.phaseEnded'),
+      tn('tracking.nocam.repsOf', c.done, { total: c.total }));
     setButtons(false);
     saveNoCamera(reason, c.done);
   }
@@ -794,11 +812,10 @@
         started_at: st.startedAt || new Date().toISOString(), ended_at: new Date().toISOString(), end_reason: reason,
         reps_done: reps, symptom_report_ids: st.symptomIds,
       });
-      $('patient-text').textContent = `Sesión guardada sin cámara (${plural(reps, 'repetición', 'repeticiones')}). Tu fisioterapeuta `
-        + 'verá que no hubo medición de movimientos.';
+      $('patient-text').textContent = tn('tracking.save.nocam', reps);
       if (window.AxonPainScale && res && res.session_id) AxonPainScale.render($('eva-track'), { sessionId: res.session_id, exerciseName: st.ex.name });
     } catch (err) {
-      $('patient-text').textContent = `No se pudo guardar la sesión: ${err.message}`;
+      $('patient-text').textContent = t('tracking.save.error', { error: err.message });
     }
   }
 
@@ -816,11 +833,11 @@
           holdOk: r.holdOk ?? undefined, seconds: r.seconds, overLimit: r.overLimit || undefined,
         })),
       });
-      $('patient-text').textContent = `Sesión guardada y enviada a tu fisioterapeuta (${plural(reps, 'repetición', 'repeticiones')}). Puedes volver a tu plan.`;
+      $('patient-text').textContent = tn('tracking.save.done', reps);
       // Dolor al terminar (EVA 0-10, ADR-025): opcional, le llega al fisioterapeuta.
       if (window.AxonPainScale && res && res.session_id) AxonPainScale.render($('eva-track'), { sessionId: res.session_id, exerciseName: st.ex.name });
     } catch (err) {
-      $('patient-text').textContent = `No se pudo guardar la sesión: ${err.message}`;
+      $('patient-text').textContent = t('tracking.save.error', { error: err.message });
     }
   }
 
@@ -835,24 +852,23 @@
     if (params.get('plan') !== '1' || !A || !A.load('patient')) return;
     const banner = $('patient-banner');
     banner.hidden = false;
-    $('patient-text').textContent = 'Cargando tu plan…';
+    $('patient-text').textContent = t('tracking.patient.loading');
     try {
       const me = await A.call('patient', 'GET', '/api/me');
       const item = me.plan.find((p) => p.exercise_id === exerciseId);
       if (!item) {
-        $('patient-text').textContent = 'Este ejercicio no está en tu plan: puedes probarlo, pero la sesión no se guarda.';
+        $('patient-text').textContent = t('tracking.patient.notInPlan');
         return;
       }
       st.item = item;
       st.patient = me.patient;
       ui.select.disabled = true;
-      ui.select.title = 'Lo asignó tu fisioterapeuta';
+      ui.select.title = t('tracking.patient.assigned');
       $('back').href = 'paciente.html';
-      $('back').textContent = '← Volver a mi plan';
+      $('back').textContent = t('tracking.back.plan');
       setExercise(exerciseId);
       const p = document.createElement('p');
-      p.textContent = `Hola, ${me.patient.alias}. Plan de ${me.therapist.name}: ${doseText()}. Tu fisioterapeuta ve en vivo tu `
-        + 'esqueleto y tus repeticiones, nunca el video. Al terminar, la sesión se guarda sola.';
+      p.textContent = t('tracking.patient.hello', { alias: me.patient.alias, therapist: me.therapist.name, dose: doseText() });
       $('patient-text').replaceChildren(p);
       // La molestia es un reporte del paciente, no una alerta del sistema: el seguimiento nunca alerta (I-12).
       if (window.AxonSymptom) {
@@ -864,7 +880,7 @@
       });
     } catch (err) {
       $('patient-text').textContent = err.status === 401
-        ? 'Tu cuenta de este equipo ya no es válida. Vuelve a afiliarte desde la página de paciente.' : err.message;
+        ? t('tracking.patient.expired') : err.message;               // err.message lo escribe el servidor (español)
     }
   }
 
@@ -878,7 +894,7 @@
   ui.btnRecal.addEventListener('click', () => {
     if (!st.tracker) return;
     st.tracker.recalibrate();
-    announce('Quédate quieto en la posición inicial', { ms: 2500 });
+    announce(t('tracking.recal.announce'), { ms: 2500 });
   });
   ui.btnHold.addEventListener('click', () => {
     if (!st.tracker || st.ended) return;

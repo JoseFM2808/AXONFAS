@@ -1,6 +1,6 @@
 # 05 · Deuda técnica y pendientes
 
-> Proyecto: **AXONFAS** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Actualizado: 2026-10-18
 > Prioridad: **P1** entregable del hackathon (fecha límite fija) · **P2** bloqueante para pasar a Producción · **P3** mejora futura.
 > Cada pendiente tiene un ID único `TD-NN`. Lo resuelto pasa a "Hechos" con fecha; los IDs no se reutilizan.
 
@@ -54,7 +54,7 @@ el 2026-10-17 (no se versiona). Propone llevar el prototipo a una terapia digita
 triaje, tele-rehabilitación guiada y empresa B2B), afinar el valgo, conservar el cómputo en el borde (el video no sale de
 casa) y avanzar hacia la historia clínica electrónica con HL7 y FHIR. Lo que el estudio pide y AXONFAS ya tiene: el sobre
 por paciente (ADR-005), el esqueleto sobre el video, la voz con Web Speech, el aviso de que no es un dispositivo médico,
-el export FHIR R4 (TD-10) y la nota SOAP con firma (TD-09). TD-95, TD-96, TD-97, TD-99, TD-100, TD-101, TD-102, TD-103 y TD-106 a TD-111 ya están hechos (ver "Hechos").
+el export FHIR R4 (TD-10) y la nota SOAP con firma (TD-09). TD-95, TD-96, TD-97, TD-99, TD-100, TD-101, TD-102, TD-103 y TD-106 a TD-111 y TD-115 ya están hechos (ver "Hechos").
 
 | ID | P | Épica · pendiente | Relación |
 |---|---|---|---|
@@ -63,6 +63,7 @@ el export FHIR R4 (TD-10) y la nota SOAP con firma (TD-09). TD-95, TD-96, TD-97,
 | TD-105 | P2 | **Nivel 3 · validar y completar el modelo B2B:** precios, facturación, cupos por plan, si un profesional puede estar en dos organizaciones, asignar o pasar pacientes entre profesionales de una organización, y una vista de la organización para el Administrador sin entrar con su correo | ADR-026, ADR-002, TD-102 |
 | TD-113 | P2 | **Validar con fisioterapeutas y el owner** los valores de partida de ADR-028 y ADR-029: la vista previa de una serie sin cuenta, el tope de 500 demos por hora, cuándo se muestra el tutorial (primera vez por ejercicio y equipo) y si una sesión sin cámara debe contar igual para el cumplimiento | ADR-028, ADR-029, TD-06 |
 | TD-114 | P2 | **Invitado y demo pública:** retención y borrado de `guest`, de sus tokens y de `demo_run`; excluir el consultorio de muestra de los conteos del Administrador; limitar `POST /api/auth/guest` por IP (como TD-73) | ADR-028, TD-73, TD-14 |
+| TD-116 | P2 | **Idioma, lo que falta (ADR-030):** lo que escribe el servidor sigue en español: la nota SOAP, la Observation FHIR, los mensajes de error de la API (`data.error`), el motivo cuando no hay IA y los textos guardados en la base (nombre del plan de la organización, nombre y nota del fisioterapeuta, y los seudónimos del consultorio de muestra del invitado). El resumen con IA (`advisor.py`) revisa los nombres de ejercicio contra el catálogo en español: con la interfaz en inglés puede rechazar un resumen válido (falla del lado seguro, no muestra resumen). Generarlos en el idioma de quien lee, o mandar códigos que traduzca el cliente. Antes de Producción, que un fisioterapeuta con inglés nativo revise la traducción clínica (catálogo, triaje y banderas rojas) | ADR-030, ADR-023, TD-09, TD-10 |
 
 ## Bloqueantes para pasar a Producción
 
@@ -109,6 +110,7 @@ el export FHIR R4 (TD-10) y la nota SOAP con firma (TD-09). TD-95, TD-96, TD-97,
 
 | ID | Fecha | Pendiente | Resultado |
 |---|---|---|---|
+| TD-115 | 2026-10-18 | Traducción de la interfaz por región (pedido del owner) | Español e inglés según el navegador, sin geolocalización por IP (ADR-030): `i18n.js` y 6 diccionarios en `i18n/` con 1.326 claves por idioma; las 8 páginas, sus scripts, la voz, el triaje, el muro, la rutina sin cámara, la EVA y los 24 ejercicios. `safety.py` reconoce también las alarmas y molestias escritas en inglés (I-7, I-22). Tests: `i18n.test.cjs` (12) y `test_safety_en.py` (4), además de los textos en inglés en los tests de cada módulo. Verificado en el navegador en los dos idiomas a 375 px y en escritorio: login, galería, seguimiento con triaje (bandera roja con SAMU 106 y el número del país), rutina sin cámara, muro del invitado, panel del fisioterapeuta como invitado, demo sintético, paciente, Administración y Empresa; axe-core 0 violaciones. Pendiente: TD-116 |
 | TD-112 | 2026-10-18 | Video de presentación (ADR-027) | El owner lo revisó; su única observación, las pausas largas entre frases, quedó corregida: cada fase dura lo que su voz, con 0,45 s entre frases y 1,2 s entre fases (59 s, antes 73,8). El owner subió ese render a lablab como video demo. Queda una nota: si AXONFAS se vende a una empresa grande, revisar la licencia comercial de Remotion |
 | TD-106 | 2026-10-18 | Demo · acceso de invitado | "Ingresar como invitado" en `login.html` → token `guest` (`POST /api/auth/guest`, sin datos personales). Barra del invitado en las páginas; `doctor.html` lee un consultorio de muestra sintético compartido (solo lectura). Verificado en el navegador: galería sin triaje, panel de muestra con 3 sesiones (una sin cámara) (ADR-028) |
 | TD-107 | 2026-10-18 | Demo · muro de autenticación diferido | Lo permanente o clínico responde 401 `auth_required`; `auth-wall.js` abre "Crea tu cuenta para seguir" con "Seguir explorando". Sin cuenta, el seguimiento libre es una vista previa de una serie. Verificado en el navegador: "Afiliar paciente" como invitado y el fin de la primera serie abren el muro; axe-core 0 violaciones con el diálogo abierto (ADR-028, I-21) |

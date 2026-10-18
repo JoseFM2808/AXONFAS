@@ -14,13 +14,15 @@
   'use strict';
 
   const ACCOUNT_ROLES = ['therapist', 'patient', 'admin', 'org', 'user'];
+  // Textos en i18n/common.js (ADR-030): se leen al usarlos, en el idioma de la página.
+  // Ojo: este módulo define su propia función require() (el muro), que tapa la de Node: se usa module.require.
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || module.require('./i18n.js');
+  const t = I18N.t;
   const TEXT = {
-    bar: 'Estás como invitado: puedes mirar todo con datos de muestra. Para hacer tu rutina completa, guardar tu progreso o '
-      + 'ver tu historial, crea tu cuenta.',
-    title: 'Crea tu cuenta para seguir',
-    body: 'Como invitado puedes explorar. Para {motivo} hace falta una cuenta: así tu fisioterapeuta te acompaña y tus datos '
-      + 'quedan protegidos.',
-    fallback: 'esto',
+    get bar() { return t('guest.bar'); },
+    get title() { return t('wall.title'); },
+    get body() { return t('wall.body'); },
+    get fallback() { return t('wall.fallback'); },
   };
 
   const has = (role) => {
@@ -30,7 +32,9 @@
   const hasAccount = () => ACCOUNT_ROLES.some(has);
   const isGuest = () => has('guest') && !hasAccount();
   const loginUrl = () => `login.html?next=${encodeURIComponent((root.location && root.location.pathname.split('/').pop()) || 'index.html')}`;
-  const bodyText = (reason) => TEXT.body.replace('{motivo}', reason || TEXT.fallback);
+  // El motivo puede ser texto ya traducido o una clave del diccionario (p. ej. 'tracking.wall.reason').
+  const reasonText = (reason) => (reason && (I18N.has(reason) || I18N.has(reason, I18N.BASE)) ? t(reason) : reason);
+  const bodyText = (reason) => t('wall.body', { reason: reasonText(reason) || TEXT.fallback });
 
   let dialog = null;
   function build(doc) {
@@ -48,11 +52,11 @@
     row.className = 'wall-actions';
     const go = doc.createElement('a');
     go.className = 'btn primary';
-    go.textContent = 'Crear cuenta o entrar';
+    go.textContent = t('wall.go');
     const stay = doc.createElement('button');
     stay.type = 'button';
     stay.className = 'btn';
-    stay.textContent = 'Seguir explorando';
+    stay.textContent = t('wall.stay');
     stay.addEventListener('click', () => d.close());
     row.append(go, stay);
     d.append(h, p, row);
@@ -94,11 +98,11 @@
     const go = doc.createElement('a');
     go.className = 'btn primary';
     go.href = loginUrl();
-    go.textContent = 'Crear cuenta o entrar';
+    go.textContent = t('wall.go');
     const out = doc.createElement('button');
     out.type = 'button';
     out.className = 'btn';
-    out.textContent = 'Salir del modo invitado';
+    out.textContent = t('guest.exit');
     out.addEventListener('click', async () => {
       if (root.AxonApi) await root.AxonApi.logout('guest');
       root.location.href = 'login.html';

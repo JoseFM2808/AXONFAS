@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Administración</title>
+<title data-i18n="admin.title">AXONFAS · Administración</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -11,124 +11,124 @@
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon" aria-hidden="true">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Administración</span></h1>
-      <p>Vista de control del equipo: configuración, IA de AMD y cuentas. Sin datos clínicos de pacientes.</p>
+      <h1>AXONFAS <span data-i18n="admin.h1">· Administración</span></h1>
+      <p data-i18n="admin.tagline">Vista de control del equipo: configuración, IA de AMD y cuentas. Sin datos clínicos de pacientes.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="admin.html" aria-current="page">Admin</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="admin.html" aria-current="page" data-i18n="nav.admin">Admin</a>
   </nav>
 </header>
 
 <div class="wrap">
 <main id="main" tabindex="-1">
   <section id="denied" class="panel-card" hidden>
-    <h2>Solo para el equipo</h2>
-    <p class="muted">Esta vista es del Administrador maestro. Entra con una cuenta de Google cuyo correo esté en
-      <code>AXONFAS_ADMIN_EMAILS</code> del servidor.</p>
-    <a class="btn primary" href="login.html" style="margin-top:12px;">Ir a iniciar sesión</a>
+    <h2 data-i18n="admin.denied.h2">Solo para el equipo</h2>
+    <p class="muted" data-i18n="admin.denied.text">Esta vista es del Administrador maestro. Entra con una cuenta de Google cuyo correo esté en
+      <code data-i18n-slot="var">AXONFAS_ADMIN_EMAILS</code> del servidor.</p>
+    <a class="btn primary" href="login.html" style="margin-top:12px;" data-i18n="common.toLogin">Ir a iniciar sesión</a>
   </section>
 
   <section id="panel" hidden class="stack">
     <div class="row-between">
       <div>
-        <h2 class="page-title">Control del sistema</h2>
+        <h2 class="page-title" data-i18n="admin.panel.h2">Control del sistema</h2>
         <p class="muted" id="who"></p>
       </div>
       <div class="chips">
-        <button class="btn" id="btn-refresh" type="button">Actualizar</button>
-        <button class="btn" id="btn-logout" type="button">Cerrar sesión</button>
+        <button class="btn" id="btn-refresh" type="button" data-i18n="common.refresh">Actualizar</button>
+        <button class="btn" id="btn-logout" type="button" data-i18n="common.logout">Cerrar sesión</button>
       </div>
     </div>
 
-    <div class="kpis" id="kpis" aria-label="Resumen"></div>
+    <div class="kpis" id="kpis" aria-label="Resumen" data-i18n-aria-label="common.summary"></div>
 
     <div class="detail-grid admin-grid">
       <section class="panel-card stack" aria-labelledby="cfg-title">
-        <h2 id="cfg-title">Configuración</h2>
+        <h2 id="cfg-title" data-i18n="admin.cfg.h2">Configuración</h2>
         <ul class="check-list" id="config"></ul>
       </section>
 
       <section class="panel-card stack" aria-labelledby="ai-title">
-        <h2 id="ai-title">IA: AMD Token Factory</h2>
+        <h2 id="ai-title" data-i18n="admin.ai.h2">IA: AMD Token Factory</h2>
         <p id="ai-status" role="status"></p>
         <div class="facts" id="ai-usage"></div>
         <details>
-          <summary>Modelos del catálogo</summary>
+          <summary data-i18n="admin.ai.models">Modelos del catálogo</summary>
           <ul class="facts" id="ai-models" style="margin-top:8px;"></ul>
         </details>
         <form id="ai-test" class="stack" style="gap:8px;">
           <div class="field">
-            <label for="ai-prompt">Probar el modelo con una pregunta</label>
-            <input id="ai-prompt" type="text" maxlength="300" placeholder="¿Qué es la fisioterapia en casa?">
+            <label for="ai-prompt" data-i18n="admin.ai.promptLabel">Probar el modelo con una pregunta</label>
+            <input id="ai-prompt" type="text" maxlength="300" placeholder="¿Qué es la fisioterapia en casa?" data-i18n-placeholder="admin.ai.placeholder">
           </div>
-          <button class="btn primary" type="submit">Preguntar al modelo de AMD</button>
+          <button class="btn primary" type="submit" data-i18n="admin.ai.submit">Preguntar al modelo de AMD</button>
           <p class="status-line" id="ai-answer" role="status"></p>
         </form>
       </section>
     </div>
 
     <section class="panel-card stack" aria-labelledby="orgs-title">
-      <h2 id="orgs-title">Organizaciones (Nivel 3)</h2>
-      <p class="muted">Clínicas u hospitales con su plan de licencias. La cuenta de Google con el correo de administración
-        entra a <a href="empresa.html">Empresa</a>, donde invita a sus profesionales. Planes y cupos son valores de partida.</p>
+      <h2 id="orgs-title" data-i18n="admin.orgs.h2">Organizaciones (Nivel 3)</h2>
+      <p class="muted" data-i18n="admin.orgs.lead">Clínicas u hospitales con su plan de licencias. La cuenta de Google con el correo de administración
+        entra a <a href="empresa.html" data-i18n-slot="link" data-i18n="nav.company">Empresa</a>, donde invita a sus profesionales. Planes y cupos son valores de partida.</p>
       <form id="org-new" class="field-row" style="align-items:end;">
         <div class="field">
-          <label for="org-name">Nombre</label>
+          <label for="org-name" data-i18n="common.name">Nombre</label>
           <input id="org-name" type="text" maxlength="80" required autocomplete="off">
         </div>
         <div class="field">
-          <label for="org-plan">Plan</label>
+          <label for="org-plan" data-i18n="common.plan">Plan</label>
           <select id="org-plan">
-            <option value="clinic">Clínica pequeña (5 licencias)</option>
-            <option value="network">Red hospitalaria (50 licencias)</option>
+            <option value="clinic" data-i18n="admin.orgs.plan.clinic">Clínica pequeña (5 licencias)</option>
+            <option value="network" data-i18n="admin.orgs.plan.network">Red hospitalaria (50 licencias)</option>
           </select>
         </div>
         <div class="field">
-          <label for="org-admin">Correo de administración</label>
+          <label for="org-admin" data-i18n="admin.orgs.admin">Correo de administración</label>
           <input id="org-admin" type="email" maxlength="254" required autocomplete="off">
         </div>
-        <button class="btn primary" type="submit">Crear organización</button>
+        <button class="btn primary" type="submit" data-i18n="admin.orgs.create">Crear organización</button>
       </form>
       <p class="status-line" id="orgs-status" role="status"></p>
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de organizaciones">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de organizaciones" data-i18n-aria-label="admin.orgs.table">
         <table>
-          <thead><tr><th>Organización</th><th>Plan</th><th>Administración</th><th>Licencias</th><th>Pacientes</th></tr></thead>
+          <thead><tr><th data-i18n="common.org">Organización</th><th data-i18n="common.plan">Plan</th><th data-i18n="admin.orgs.th.admin">Administración</th><th data-i18n="admin.orgs.th.seats">Licencias</th><th data-i18n="common.patients">Pacientes</th></tr></thead>
           <tbody id="orgs"></tbody>
         </table>
       </div>
     </section>
 
     <section class="panel-card stack" aria-labelledby="demo-title">
-      <h2 id="demo-title">Demo pública (anónima)</h2>
-      <p class="muted">Resultados que deja la demo abierta del Prototipo: solo números, sin video, puntos ni datos personales.
+      <h2 id="demo-title" data-i18n="admin.demo.h2">Demo pública (anónima)</h2>
+      <p class="muted" data-i18n="admin.demo.lead">Resultados que deja la demo abierta del Prototipo: solo números, sin video, puntos ni datos personales.
         Nadie más los ve, ni quien hizo la demo (ADR-028).</p>
-      <div class="kpis" id="demo-kpis" aria-label="Resumen de la demo pública"></div>
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Últimas demos">
+      <div class="kpis" id="demo-kpis" aria-label="Resumen de la demo pública" data-i18n-aria-label="admin.demo.kpis"></div>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Últimas demos" data-i18n-aria-label="admin.demo.table">
         <table>
-          <thead><tr><th>Fecha</th><th>Fuente</th><th>Fin</th><th>Repeticiones</th><th>Alertas tronco / valgo</th><th>Mal vistas</th><th>Duración</th></tr></thead>
+          <thead><tr><th data-i18n="admin.demo.th.date">Fecha</th><th data-i18n="admin.demo.th.source">Fuente</th><th data-i18n="admin.demo.th.end">Fin</th><th data-i18n="admin.demo.th.reps">Repeticiones</th><th data-i18n="admin.demo.th.alerts">Alertas tronco / valgo</th><th data-i18n="admin.demo.th.low">Mal vistas</th><th data-i18n="admin.demo.th.duration">Duración</th></tr></thead>
           <tbody id="demo-runs"></tbody>
         </table>
       </div>
     </section>
 
     <section class="panel-card" aria-labelledby="users-title">
-      <h2 id="users-title">Cuentas de Google</h2>
-      <p class="muted" style="margin-bottom:10px;">El rol de Administrador sale solo de <code>AXONFAS_ADMIN_EMAILS</code>. Aquí
+      <h2 id="users-title" data-i18n="admin.users.h2">Cuentas de Google</h2>
+      <p class="muted" style="margin-bottom:10px;" data-i18n="admin.users.lead">El rol de Administrador sale solo de <code data-i18n-slot="var">AXONFAS_ADMIN_EMAILS</code>. Aquí
         puedes dejar una cuenta como pendiente o fisioterapeuta, o desactivarla. Un paciente se afilia con el código de su
         fisioterapeuta.</p>
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de cuentas">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de cuentas" data-i18n-aria-label="admin.users.table">
         <table>
-          <thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Último ingreso</th><th>Estado</th></tr></thead>
+          <thead><tr><th data-i18n="common.email">Correo</th><th data-i18n="common.name">Nombre</th><th data-i18n="admin.users.th.role">Rol</th><th data-i18n="admin.users.th.last">Último ingreso</th><th data-i18n="common.status">Estado</th></tr></thead>
           <tbody id="users"></tbody>
         </table>
       </div>
@@ -137,11 +137,20 @@
   </section>
 </main>
 
-  <footer>
+  <footer data-i18n="admin.footer">
     AXONFAS · Staging (ADR-010). La vista de administración no muestra datos clínicos: solo conteos, configuración y cuentas.
   </footer>
 </div>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
 <script src="admin.js"></script>

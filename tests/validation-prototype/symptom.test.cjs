@@ -14,6 +14,14 @@ const S = require(path.join(SRC, 'synthetic.js'));
 test('el formulario ofrece las 5 opciones que la API conoce', () => {
   assert.deepEqual(Sym.OPTIONS.map((o) => o.id), ['pain_mild', 'fatigue', 'cramp', 'stiffness', 'red_flag']);
   assert.ok(Sym.OPTIONS.find((o) => o.id === 'red_flag').hint.includes('Detiene la sesión'));
+  // En inglés, la alarma dice lo mismo y con la misma fuerza (ADR-030); los ids que viajan a la API no cambian.
+  const I = require(path.join(SRC, 'i18n.js'));
+  I.use('en');
+  assert.equal(I.t('symptom.opt.red_flag'), 'Severe pain, dizziness or loss of strength');
+  assert.equal(I.t('symptom.opt.red_flag.hint'), 'Stops the session');
+  for (const o of Sym.OPTIONS) assert.ok(I.has(`symptom.opt.${o.id}`, 'en'), o.id);
+  I.use('es');
+  assert.ok(read('symptom-form.js').includes("{ id: 'red_flag', label: t('symptom.opt.red_flag'), hint: t('symptom.opt.red_flag.hint') }"));
 });
 
 test('las páginas del paciente cargan el formulario antes de su script', () => {

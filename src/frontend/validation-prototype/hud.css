@@ -378,6 +378,15 @@ footer {
 .top-nav a[aria-current="page"] { color: #030712; background: var(--tape); box-shadow: var(--accent-glow); }
 a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
+/* Selector de idioma de la cabecera (i18n.js, ADR-030): un botón por idioma; el activo lleva aria-pressed="true" */
+.lang-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--surface-border); border-radius: 999px; }
+.lang-btn {
+  font: 700 0.75rem var(--font-mono); letter-spacing: 0.06em; color: var(--ink-secondary);
+  background: transparent; border: 0; border-radius: 999px; min-width: 40px; min-height: 32px; padding: 4px 10px; cursor: pointer;
+}
+.lang-btn:hover { color: var(--tape); }
+.lang-btn[aria-pressed="true"] { color: #030712; background: var(--tape); }
+
 /* ==========================================================================
    FORMULARIOS Y AVISOS
    ========================================================================== */
@@ -518,6 +527,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   .header-badge { padding: 4px 10px; font-size: 0.65rem; }
   .top-nav { width: 100%; }
   .top-nav a { padding: 8px 10px; font-size: 0.75rem; }
+  .lang-switch { position: absolute; top: 10px; right: 12px; }   /* arriba a la derecha, junto a la marca */
+  .header-brand { padding-right: 96px; }
   .wrap { padding: 10px 12px 40px; }
   .panel-card { padding: 16px; }
   th, td { padding: 8px 10px; }

@@ -1,6 +1,6 @@
 # 03 · Base de datos
 
-> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-18
 > Estado de implementación: modelo diseñado, sin migraciones todavía. En Staging solo hay pacientes ficticios ([ADR-010](04-decisions-adr.md)).
 
 ## Diagrama entidad-relación
@@ -231,6 +231,7 @@ No es una base de datos: son claves de `localStorage` del navegador de quien usa
 | `axonfas.therapist`, `axonfas.patient`, `axonfas.admin`, `axonfas.user` | Token de cada rol (`api-client.js`) | ADR-012, ADR-019, TD-41 |
 | `axonfas.org` | Token de la administración de una organización (`empresa.html`, Nivel 3) | ADR-026 |
 | `axonfas.guest` | Token del invitado; se borra al entrar con una cuenta de verdad | ADR-028 |
+| `axonfas.lang` | Idioma elegido a mano con el selector de la cabecera (`es` o `en`). Gana a la detección por el navegador; si no está, el idioma se decide en cada visita sin guardar nada | ADR-030 |
 | `axonfas.tutorial` | Ejercicios cuyo tutorial "Mira y sigue" ya se vio en este equipo (hasta 50 ids) | ADR-029 |
 | `axonfas.demoShare` | `off` si la persona desmarcó "Compartir resultados anónimos de la demo" | ADR-028 |
 | `axonfas.triage` | Resultado del triaje del Nivel 1: `{v, status: 'clear' \| 'blocked', until, tone: 'standard' \| 'gentle'}`. Nunca las respuestas: ni qué bandera se marcó ni las amarillas. Vence a los 7 días (`clear`) o a las 24 h (`blocked`); con otra `v` se vuelve a preguntar | ADR-023 |

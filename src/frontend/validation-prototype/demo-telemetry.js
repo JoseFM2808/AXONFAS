@@ -14,8 +14,9 @@
   'use strict';
 
   const PREF_KEY = 'axonfas.demoShare';
-  const NOTE = 'Al terminar, la demo guarda de forma anónima solo números (repeticiones, alertas y duración) para que el '
-    + 'equipo mejore AXONFAS. Nunca el video ni datos tuyos. Solo lo ve el equipo.';
+  // Aviso en el idioma actual (i18n/session.js, demo.note): en los dos dice que es anónimo y que nunca va el video.
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');
+  const t = I18N.t;
 
   /** Lo único que sale: números de la sesión (detalle del evento axon:session-end de app.js). */
   function summary(detail, startedAt) {
@@ -53,11 +54,11 @@
       try { root.localStorage.setItem(PREF_KEY, input.checked ? 'on' : 'off'); } catch { /* sin almacenamiento */ }
     });
     const text = doc.createElement('span');
-    text.textContent = 'Compartir resultados anónimos de la demo';
+    text.textContent = t('demo.share');
     label.append(input, text);
     const note = doc.createElement('p');
     note.className = 'muted';
-    note.textContent = NOTE;
+    note.textContent = t('demo.note');
     box.append(label, note);
     anchor.closest('.pilot-dock') ? anchor.closest('.pilot-dock').after(box) : anchor.after(box);
   }
@@ -79,5 +80,5 @@
     }
   }
 
-  return { PREF_KEY, NOTE, summary };
+  return { PREF_KEY, get NOTE() { return t('demo.note'); }, summary };
 }));

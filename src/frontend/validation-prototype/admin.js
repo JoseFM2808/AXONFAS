@@ -1,13 +1,17 @@
 /* AXONFAS · vista del Administrador maestro (ADR-019): configuración, IA de AMD Token Factory (estado, catálogo, uso y
  * prueba) y cuentas de Google (rol y desactivación). Sin datos clínicos de pacientes: solo conteos.
+ * Textos en i18n/common.js (ADR-030). Lo que escribe el servidor (errores, motivo sin IA, nombre del plan, respuesta del
+ * modelo) llega tal cual, en español en esta etapa.
  */
 (() => {
   'use strict';
   const A = window.AxonApi;
+  const { t, tn } = AxonI18n;
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-  const ROLE = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', pending: 'Pendiente', org_admin: 'Empresa' };
-  const fmt = (iso) => (iso ? new Date(iso).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const ROLE = { admin: t('admin.role.admin'), therapist: t('admin.role.therapist'), patient: t('admin.role.patient'),
+    pending: t('admin.role.pending'), org_admin: t('admin.role.org_admin') };
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString(AxonI18n.locale(), { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
   function kpi(k, v, s) {
     const box = el('div', 'kpi');
@@ -17,7 +21,7 @@
 
   function check(ok, text, hint) {
     const li = el('li', ok ? 'ok' : 'bad');
-    li.append(el('strong', null, ok ? 'Listo: ' : 'Falta: '), document.createTextNode(text));
+    li.append(el('strong', null, ok ? t('admin.check.ok') : t('admin.check.missing')), document.createTextNode(` ${text}`));
     if (!ok && hint) li.append(el('span', 'muted', ` ${hint}`));
     return li;
   }
@@ -26,45 +30,47 @@
     const o = await A.call('admin', 'GET', '/api/admin/overview');
     const u = o.users || {};
     $('kpis').replaceChildren(
-      kpi('Cuentas de Google', o.users_total, `${u.admin || 0} admin · ${u.therapist || 0} fisio · ${u.patient || 0} pac. · ${u.pending || 0} pend.`),
-      kpi('Fisioterapeutas', o.therapists, 'incluye los de demostración'),
-      kpi('Pacientes', o.patients, `${o.patients_joined} afiliados`),
-      kpi('Sesiones', o.sessions_total, `${o.sessions_7d} en 7 días`),
-      kpi('Detenciones por dolor', o.pain_stops_30d, 'en 30 días'),
-      kpi('Llamadas a la IA', o.ai_usage.calls, `${o.ai_usage.errors} con error`));
+      kpi(t('admin.users.h2'), o.users_total, t('admin.kpi.users.sub',
+        { admin: u.admin || 0, therapist: u.therapist || 0, patient: u.patient || 0, pending: u.pending || 0 })),
+      kpi(t('admin.kpi.therapists'), o.therapists, t('admin.kpi.therapists.sub')),
+      kpi(t('common.patients'), o.patients, tn('admin.kpi.joined', o.patients_joined)),
+      kpi(t('admin.kpi.sessions'), o.sessions_total, t('common.in7d', { n: o.sessions_7d })),
+      kpi(t('admin.kpi.painStops'), o.pain_stops_30d, t('admin.kpi.painStops.sub')),
+      kpi(t('admin.kpi.aiCalls'), o.ai_usage.calls, t('admin.kpi.aiErrors', { n: o.ai_usage.errors })));
     const c = o.config;
     $('config').replaceChildren(
-      check(c.google_login, 'inicio de sesión con Google', 'Define GOOGLE_CLIENT_ID en el servidor.'),
-      check(c.admins_configured > 0, `${c.admins_configured} correo(s) de Administrador`, 'Define AXONFAS_ADMIN_EMAILS.'),
-      check(Boolean(c.ai_provider), c.ai_provider ? `IA: ${c.ai_provider}` : 'proveedor de IA de AMD', 'Define AMD_TOKENFACTORY_BASE_URL y AMD_TOKENFACTORY_API_KEY.'),
-      check(true, c.demo_accounts ? 'cuentas de demostración encendidas (apágalas en público con AXONFAS_DEMO_ACCOUNTS=0)' : 'cuentas de demostración apagadas'),
-      check(true, c.cors_origins.length ? `web en otro dominio permitida: ${c.cors_origins.join(', ')}` : 'web y API en el mismo servidor'));
+      check(c.google_login, t('admin.cfg.google'), t('admin.cfg.google.hint')),
+      check(c.admins_configured > 0, tn('admin.cfg.admins', c.admins_configured), t('admin.cfg.admins.hint')),
+      check(Boolean(c.ai_provider), c.ai_provider ? t('admin.cfg.aiOn', { provider: c.ai_provider }) : t('admin.cfg.aiOff'), t('admin.cfg.ai.hint')),
+      check(true, c.demo_accounts ? t('admin.cfg.demoOn') : t('admin.cfg.demoOff')),
+      check(true, c.cors_origins.length ? t('admin.cfg.cors', { origins: c.cors_origins.join(', ') }) : t('admin.cfg.sameServer')));
   }
 
   async function loadAi() {
-    $('ai-status').textContent = 'Consultando el catálogo de AMD…';
+    $('ai-status').textContent = t('admin.ai.loading');
     const ai = await A.call('admin', 'GET', '/api/admin/ai');
     const s = ai.status;
-    $('ai-status').textContent = s.available ? `Conectado a ${s.provider}. Modelo en uso: ${s.model}.`
-      : `Sin IA: ${s.reason}.`;
+    $('ai-status').textContent = s.available ? t('admin.ai.connected', { provider: s.provider, model: s.model })
+      : t('admin.ai.none', { reason: s.reason });
     const us = ai.usage;
     const avg = us.calls - us.errors > 0 ? Math.round(us.ms_total / (us.calls - us.errors)) : null;
     $('ai-usage').replaceChildren(
-      el('span', null, `Llamadas desde que arrancó el servidor: ${us.calls} (${us.errors} con error)`),
-      el('span', null, `Tokens: ${us.prompt_tokens} de entrada · ${us.completion_tokens} de salida`),
-      el('span', null, `Tiempo medio por respuesta: ${avg == null ? '—' : `${avg} ms`}`),
-      el('span', null, `Por uso: ${Object.entries(us.by_purpose).map(([k, v]) => `${k} ${v}`).join(' · ') || '—'}`));
-    if (us.last_error) $('ai-usage').appendChild(el('span', 'fit-note', `Último error: ${us.last_error}`));
-    $('ai-models').replaceChildren(...(s.models.length ? s.models.map((m) => el('li', null, m === s.model ? `${m} (en uso)` : m)) : [el('li', 'muted', 'Sin catálogo.')]));
+      el('span', null, t('admin.ai.calls', { calls: us.calls, errors: us.errors })),
+      el('span', null, t('admin.ai.tokens', { input: us.prompt_tokens, output: us.completion_tokens })),
+      el('span', null, t('admin.ai.avg', { avg: avg == null ? '—' : `${avg} ms` })),
+      el('span', null, t('admin.ai.byPurpose', { list: Object.entries(us.by_purpose).map(([k, v]) => `${k} ${v}`).join(' · ') || '—' })));
+    if (us.last_error) $('ai-usage').appendChild(el('span', 'fit-note', t('admin.ai.lastError', { error: us.last_error })));
+    $('ai-models').replaceChildren(...(s.models.length ? s.models.map((m) => el('li', null, m === s.model ? t('admin.ai.inUse', { model: m }) : m))
+      : [el('li', 'muted', t('admin.ai.noCatalog'))]));
   }
 
   async function loadUsers() {
     const { users } = await A.call('admin', 'GET', '/api/admin/users');
     const body = $('users');
-    body.innerHTML = '';
+    body.replaceChildren();
     if (!users.length) {
       const tr = el('tr');
-      const td = el('td', 'empty', 'Todavía nadie entró con Google.');
+      const td = el('td', 'empty', t('admin.users.empty'));
       td.colSpan = 5;
       tr.appendChild(td);
       body.appendChild(tr);
@@ -77,9 +83,9 @@
       if (u.role === 'admin' || u.role === 'patient' || u.role === 'org_admin') roleTd.textContent = ROLE[u.role];
       else {
         const sel = document.createElement('select');
-        sel.setAttribute('aria-label', `Rol de ${u.email}`);
-        [['pending', 'Pendiente'], ['therapist', 'Fisioterapeuta']].forEach(([v, t]) => {
-          const o = el('option', null, t);
+        sel.setAttribute('aria-label', t('admin.users.roleOf', { email: u.email }));
+        ['pending', 'therapist'].forEach((v) => {
+          const o = el('option', null, ROLE[v]);
           o.value = v;
           o.selected = u.role === v;
           sel.appendChild(o);
@@ -89,13 +95,13 @@
       }
       tr.append(roleTd, el('td', 'num', fmt(u.last_login_at)));
       const stateTd = el('td');
-      if (u.role === 'admin') stateTd.textContent = 'Activa';
+      if (u.role === 'admin') stateTd.textContent = t('common.active');
       else {
-        const b = el('button', 'btn', u.disabled ? 'Reactivar' : 'Desactivar');
+        const b = el('button', 'btn', u.disabled ? t('admin.users.reactivate') : t('admin.users.deactivate'));
         b.type = 'button';
-        b.setAttribute('aria-label', `${u.disabled ? 'Reactivar' : 'Desactivar'} la cuenta de ${u.email}`);
+        b.setAttribute('aria-label', u.disabled ? t('admin.users.reactivateOf', { email: u.email }) : t('admin.users.deactivateOf', { email: u.email }));
         b.addEventListener('click', () => update(u, { disabled: !u.disabled }));
-        stateTd.append(el('span', u.disabled ? 'tag bad' : 'tag ok', u.disabled ? 'Desactivada' : 'Activa'), document.createTextNode(' '), b);
+        stateTd.append(el('span', u.disabled ? 'tag bad' : 'tag ok', u.disabled ? t('admin.users.disabled') : t('common.active')), document.createTextNode(' '), b);
       }
       tr.appendChild(stateTd);
       body.appendChild(tr);
@@ -109,7 +115,7 @@
     body.replaceChildren();
     if (!organizations.length) {
       const tr = el('tr');
-      const td = el('td', 'empty', 'Todavía no hay organizaciones.');
+      const td = el('td', 'empty', t('admin.orgs.empty'));
       td.colSpan = 5;
       tr.appendChild(td);
       body.appendChild(tr);
@@ -118,18 +124,18 @@
     organizations.forEach((o) => {
       const tr = el('tr');
       tr.append(el('td', null, o.organization.name), el('td', null, o.organization.plan_label), el('td', null, o.admin_email),
-        el('td', 'num', `${o.seats.used} de ${o.seats.total}`), el('td', 'num', String(o.patients.total)));
+        el('td', 'num', t('common.ofTotal', { used: o.seats.used, total: o.seats.total })), el('td', 'num', String(o.patients.total)));
       body.appendChild(tr);
     });
   }
 
   $('org-new').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    $('orgs-status').textContent = 'Creando…';
+    $('orgs-status').textContent = t('admin.orgs.creating');
     try {
       const r = await A.call('admin', 'POST', '/api/admin/orgs', {
         name: $('org-name').value.trim(), plan: $('org-plan').value, admin_email: $('org-admin').value.trim() });
-      $('orgs-status').textContent = `Creada: ${r.organization.name}. Su administración entra con Google con ${r.admin_email}.`;
+      $('orgs-status').textContent = t('admin.orgs.created', { name: r.organization.name, email: r.admin_email });
       $('org-name').value = '';
       $('org-admin').value = '';
       await Promise.all([loadOrgs(), loadUsers()]);
@@ -137,46 +143,48 @@
   });
 
   /** Demo pública (TD-108): solo números anónimos, que solo ve el Administrador. */
-  const SRC = { demo: 'Demo sintético', camera: 'Cámara' };
-  const END = { completed: 'Completada', pain_stop: 'Dolor', user_quit: 'A mano', envelope_breach: 'Fuera del sobre' };
+  const SRC = { demo: t('admin.demo.src.demo'), camera: t('admin.demo.src.camera') };
+  const END = { completed: t('admin.demo.end.completed'), pain_stop: t('admin.demo.end.pain_stop'),
+    user_quit: t('admin.demo.end.user_quit'), envelope_breach: t('admin.demo.end.envelope_breach') };
   async function loadDemoRuns() {
     const d = await A.call('admin', 'GET', '/api/admin/demo-runs');
     $('demo-kpis').replaceChildren(
-      kpi('Demos', d.total, `${d.last_7d} en 7 días`),
-      kpi('Con cámara', d.by_source.camera || 0, `${d.by_source.demo || 0} con el demo sintético`),
-      kpi('Repeticiones medias', d.avg_reps ?? '—', 'por demo'),
-      kpi('Con alertas', `${d.with_trunk_events} / ${d.with_valgus_events}`, 'tronco / valgo'),
-      kpi('Invitados', d.guests, 'entradas sin registro'));
+      kpi(t('admin.demo.kpi.total'), d.total, t('common.in7d', { n: d.last_7d })),
+      kpi(t('admin.demo.kpi.camera'), d.by_source.camera || 0, t('admin.demo.kpi.synthetic', { n: d.by_source.demo || 0 })),
+      kpi(t('admin.demo.kpi.avgReps'), d.avg_reps ?? '—', t('admin.demo.kpi.perDemo')),
+      kpi(t('admin.demo.kpi.alerts'), `${d.with_trunk_events} / ${d.with_valgus_events}`, t('admin.demo.kpi.alertsSub')),
+      kpi(t('admin.demo.kpi.guests'), d.guests, t('admin.demo.kpi.guestsSub')));
     const body = $('demo-runs');
     body.replaceChildren();
     if (!d.recent.length) {
       const tr = el('tr');
-      const td = el('td', 'empty', 'Todavía nadie terminó la demo.');
+      const td = el('td', 'empty', t('admin.demo.empty'));
       td.colSpan = 7;
       tr.appendChild(td);
       body.appendChild(tr);
     }
     d.recent.forEach((r) => {
       const tr = el('tr');
-      [fmt(r.created_at), SRC[r.source] || r.source, END[r.end_reason] || r.end_reason, `${r.reps_done} (${r.calibration_reps} de calibración)`,
+      [fmt(r.created_at), SRC[r.source] || r.source, END[r.end_reason] || r.end_reason,
+        t('admin.demo.reps', { reps: r.reps_done, cal: r.calibration_reps }),
         `${r.trunk_events} / ${r.valgus_events}`, String(r.low_confidence_reps), r.duration_s ? `${r.duration_s} s` : '—']
-        .forEach((t, i) => tr.appendChild(el('td', i >= 3 ? 'num' : null, t)));
+        .forEach((text, i) => tr.appendChild(el('td', i >= 3 ? 'num' : null, text)));
       body.appendChild(tr);
     });
   }
 
   async function update(user, change) {
-    $('users-status').textContent = 'Guardando…';
+    $('users-status').textContent = t('common.saving');
     try {
       await A.call('admin', 'PUT', `/api/admin/users/${user.id}`, change);
-      $('users-status').textContent = `Guardado: ${user.email}.`;
+      $('users-status').textContent = t('admin.users.saved', { email: user.email });
       await Promise.all([loadUsers(), loadOverview()]);
     } catch (err) { $('users-status').textContent = err.message; }
   }
 
   $('ai-test').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    $('ai-answer').textContent = 'Preguntando al modelo…';
+    $('ai-answer').textContent = t('admin.ai.asking');
     try {
       const r = await A.call('admin', 'POST', '/api/admin/ai/test', { prompt: $('ai-prompt').value.trim() || undefined });
       $('ai-answer').textContent = `${r.model} (${r.ms} ms): ${r.text}`;
@@ -197,7 +205,7 @@
     if (!A.load('admin')) { $('denied').hidden = false; return; }
     try {
       const me = await A.call('admin', 'GET', '/api/auth/me');
-      $('who').textContent = `Sesión de ${me.user ? me.user.email : 'administración'}.`;
+      $('who').textContent = t('common.who', { who: me.user ? me.user.email : t('admin.who.default') });
       $('panel').hidden = false;
       await refresh();
     } catch (err) {

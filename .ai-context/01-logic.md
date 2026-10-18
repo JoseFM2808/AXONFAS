@@ -1,6 +1,6 @@
 # 01 · Lógica del sistema
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-18
 > Estado de implementación: hay código en Staging. Existen el prototipo de validación del navegador (secciones al
 > final), la API de Staging con cuentas, nota SOAP y export FHIR, y los agentes con sus reglas deterministas, probados
 > sin GPU. El paciente ya puede avisar de una molestia sin GPU (ADR-021) y ver el descanso recomendado (ADR-022).
@@ -127,6 +127,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-19 | La administración de una organización (Nivel 3) solo ve su plan, sus licencias y cuántos pacientes atiende cada profesional: nunca sesiones, notas, molestias ni alias de pacientes. La dirección FHIR de su historia clínica es https y nunca lleva credenciales | ADR-026 |
 | I-20 | Una sesión sin cámara la marca el servidor (`no_camera`, por `source = 'guided'`) y no lleva métricas cinemáticas ni eventos. El panel, la nota SOAP y FHIR lo dicen siempre con el mismo texto | ADR-029 |
 | I-21 | El invitado solo mira: lo permanente o clínico responde `auth_required` y pide una cuenta. La demo pública guarda solo números anónimos que nadie más que el Administrador lee | ADR-028 |
+| I-22 | Los textos de seguridad (descargo, banderas rojas, urgencias, alertas y dolor) dicen lo mismo en todos los idiomas, y las urgencias citan el SAMU (106) y el número de emergencias del país. El idioma se decide en el navegador: nunca se manda la IP ni otro dato a un tercero para saber la región | ADR-030, ADR-003 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -254,6 +255,22 @@ maestro la crea con un correo de administración; esa cuenta de Google entra a `
 
 El panel de empresa solo muestra conteos (I-19). La administración de una organización tiene prioridad sobre otro rol
 de la misma cuenta de Google, salvo el Administrador maestro: quien dirige la clínica y además atiende usa otra cuenta.
+
+## Idioma de la interfaz (ADR-030)
+
+| Paso | Regla (`i18n.js`) |
+|---|---|
+| Elección manual | Si `axonfas.lang` (03) tiene un idioma activo, gana siempre. Se pone con el selector ES / EN de la cabecera, que recarga la página |
+| Navegador | El primer idioma de `navigator.languages` que tengamos: `es-*` → español, `en-*` → inglés. Si declara idiomas pero ninguno es nuestro (p. ej. `fr-FR`, `pt-BR`), inglés |
+| Zona horaria | Solo si el navegador no declara idiomas: una zona de habla hispana (`America/Lima`, `Europe/Madrid`…) → español; otra → inglés |
+| Sin señales | Español, el idioma base. También en Node (tests) |
+| Qué cambia | El texto (`data-i18n` y `t()`), `<html lang>`, la voz (`es-PE` o `en-US`), las fechas y los números (`es-PE` o `en-US`) y el catálogo (`i18n/catalog.en.js`). Lo que falta en un idioma cae al español |
+| Qué no cambia | Ids, códigos y valores que se guardan; las fuentes citadas; lo que escribe el servidor (nota SOAP, FHIR, errores de la API), que sigue en español (TD-116) |
+
+Las frases de alarma y de molestia del texto libre (`safety.py`) están en los dos idiomas: "I feel dizzy" o "sharp pain" detienen la sesión igual que "me mareo" o "dolor agudo" (I-7, I-22).
+
+Nunca se consulta la IP. Para saber la región eso exigiría mandarla a un tercero (ADR-003, TD-14), y la IP dice dónde está
+la persona, no qué idioma lee.
 
 ## Galería de ejercicios (ADR-011)
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Fisioterapeuta</title>
+<title data-i18n="doctor.title">AXONFAS · Fisioterapeuta</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -37,21 +37,21 @@
 </style>
 </head>
 <body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Fisioterapeuta</span></h1>
-      <p>Prototipo sin conexión a la nube: cuentas de demostración y datos de prueba en esta red local.</p>
+      <h1>AXONFAS <span data-i18n="doctor.h1">· Fisioterapeuta</span></h1>
+      <p data-i18n="doctor.tagline">Prototipo sin conexión a la nube: cuentas de demostración y datos de prueba en esta red local.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html">Galería</a>
-    <a href="doctor.html" aria-current="page">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="login.html">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" aria-current="page" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" data-i18n="nav.login">Entrar</a>
   </nav>
 </header>
 
@@ -59,18 +59,18 @@
 <main id="main" tabindex="-1">
   <!-- CUENTA DE DEMOSTRACIÓN -->
   <section id="login" class="panel-card" hidden style="max-width:34rem;">
-    <h2>Entrar</h2>
-    <p style="margin-bottom:14px;"><a class="btn primary" href="login.html">Entrar con Google</a></p>
+    <h2 data-i18n="doctor.login.title">Entrar</h2>
+    <p style="margin-bottom:14px;"><a class="btn primary" href="login.html" data-i18n="doctor.login.google">Entrar con Google</a></p>
     <div id="demo-login">
-    <h3 class="muted" style="margin-bottom:8px;">O con una cuenta de demostración</h3>
-    <p class="notice" style="margin-bottom:14px;">Staging: sin contraseña y solo datos de prueba (seudónimos, nada de nombres
+    <h3 class="muted" style="margin-bottom:8px;" data-i18n="doctor.login.demoTitle">O con una cuenta de demostración</h3>
+    <p class="notice" style="margin-bottom:14px;" data-i18n="doctor.login.notice">Staging: sin contraseña y solo datos de prueba (seudónimos, nada de nombres
       reales). La cuenta queda guardada en este navegador.</p>
     <form id="login-form">
       <div class="field">
-        <label for="login-name">Tu nombre como fisioterapeuta</label>
-        <input id="login-name" type="text" maxlength="80" required placeholder="Lic. Demo" autocomplete="off">
+        <label for="login-name" data-i18n="doctor.login.name">Tu nombre como fisioterapeuta</label>
+        <input id="login-name" type="text" maxlength="80" required placeholder="Lic. Demo" data-i18n-placeholder="doctor.login.namePlaceholder" autocomplete="off">
       </div>
-      <button class="btn primary" type="submit">Crear cuenta de demostración</button>
+      <button class="btn primary" type="submit" data-i18n="doctor.login.create">Crear cuenta de demostración</button>
       <p class="status-line" id="login-error" role="status" style="margin-top:10px;"></p>
     </form>
     </div>
@@ -80,13 +80,13 @@
   <section id="dashboard" hidden class="stack">
     <div class="row-between">
       <div>
-        <h2 class="page-title">Mis pacientes</h2>
-        <p class="muted">Sesión de <strong id="doctor-name"></strong>. Cumplimiento de los últimos 7 días y calidad de la
+        <h2 class="page-title" data-i18n="doctor.dash.title">Mis pacientes</h2>
+        <p class="muted" data-i18n="doctor.dash.intro">Sesión de <strong id="doctor-name" data-i18n-slot="name"></strong>. Cumplimiento de los últimos 7 días y calidad de la
           última sesión monitoreada.</p>
       </div>
       <div class="chips">
-        <button class="btn primary" id="btn-invite" type="button">Afiliar paciente</button>
-        <button class="btn" id="btn-logout" type="button">Olvidar cuenta en este equipo</button>
+        <button class="btn primary" id="btn-invite" type="button" data-i18n="doctor.dash.invite">Afiliar paciente</button>
+        <button class="btn" id="btn-logout" type="button" data-i18n="doctor.dash.logout">Olvidar cuenta en este equipo</button>
       </div>
     </div>
     <div class="card-grid" id="patients"></div>
@@ -98,26 +98,26 @@
         <span class="muted" id="p-status"></span>
       </div>
       <div class="chips">
-        <button class="btn" id="p-reinvite" type="button">Generar código nuevo</button>
+        <button class="btn" id="p-reinvite" type="button" data-i18n="doctor.detail.reinvite">Generar código nuevo</button>
         <span class="status-line" id="p-reinvite-status" role="status" aria-live="polite"></span>
       </div>
       <div id="p-invite" class="panel-card" hidden></div>
       <div class="kpis" id="p-kpis"></div>
 
-      <section class="panel-card stack" id="p-advice-card" aria-label="Sugerencias para el fisioterapeuta">
+      <section class="panel-card stack" id="p-advice-card" aria-label="Sugerencias para el fisioterapeuta" data-i18n-aria-label="doctor.advice.label">
         <div id="p-suggest"></div>
         <div class="ai-summary" id="p-ai">
-          <p class="muted" id="p-ai-text">Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba
+          <p class="muted" id="p-ai-text" data-i18n="doctor.ai.idle">Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba
             salen de reglas y de los datos del paciente.</p>
-          <button class="btn" id="p-ai-btn" type="button" hidden>Resumir con IA</button>
+          <button class="btn" id="p-ai-btn" type="button" hidden data-i18n="doctor.ai.button">Resumir con IA</button>
         </div>
       </section>
 
       <section class="panel-card" aria-labelledby="p-profile-title">
-        <h2 id="p-profile-title">Perfil del paciente</h2>
+        <h2 id="p-profile-title" data-i18n="doctor.profile.title">Perfil del paciente</h2>
         <div class="profile-summary" id="p-profile"></div>
         <details style="margin-top:12px;">
-          <summary>Editar el perfil (por ejemplo, tras tu evaluación)</summary>
+          <summary data-i18n="doctor.profile.edit">Editar el perfil (por ejemplo, tras tu evaluación)</summary>
           <div id="p-profile-form" style="margin-top:12px;"></div>
         </details>
       </section>
@@ -125,15 +125,15 @@
       <div class="detail-grid">
         <div class="stack">
           <section class="panel-card">
-            <h2>En vivo <span class="muted" id="live-status"><span class="live-dot" id="live-dot"></span> Sin datos</span></h2>
+            <h2 data-i18n="doctor.live.title">En vivo <span class="muted" id="live-status" data-i18n-slot="status"><span class="live-dot" id="live-dot"></span> Sin datos</span></h2>
             <div class="live-grid">
               <div>
                 <div id="live-map"></div>
-                <p class="bodymap-note">Carga muscular <strong>estimada</strong> a partir de los ángulos: es educativa, no una
+                <p class="bodymap-note" data-i18n="doctor.live.note">Carga muscular <strong data-i18n-slot="estimated" data-i18n="doctor.live.estimated">estimada</strong> a partir de los ángulos: es educativa, no una
                   medición. En rojo, dónde mirar ante una compensación. Toca un músculo para señalárselo al paciente.</p>
               </div>
               <div>
-                <canvas class="skeleton" id="live-skeleton" width="480" height="640" role="img" aria-label="Esqueleto del paciente en vivo con los huesos rotulados"></canvas>
+                <canvas class="skeleton" id="live-skeleton" width="480" height="640" role="img" aria-label="Esqueleto del paciente en vivo con los huesos rotulados" data-i18n-aria-label="doctor.live.skeleton"></canvas>
                 <div class="angles" id="live-angles"></div>
               </div>
             </div>
@@ -142,20 +142,20 @@
           </section>
 
           <section class="panel-card">
-            <h2>Enseñar al paciente</h2>
+            <h2 data-i18n="doctor.teach.title">Enseñar al paciente</h2>
             <div class="field">
-              <label for="teach-select">Ejercicio de su plan</label>
+              <label for="teach-select" data-i18n="doctor.teach.select">Ejercicio de su plan</label>
               <select id="teach-select"></select>
             </div>
             <div id="teach-guide" style="margin-bottom:12px;"></div>
             <div id="teach-map"></div>
             <div class="facts" id="teach-facts" style="margin:10px 0;"></div>
             <div class="field">
-              <label for="teach-note">Mensaje opcional</label>
-              <input id="teach-note" type="text" maxlength="200" placeholder="Este es el músculo que vas a fortalecer">
+              <label for="teach-note" data-i18n="doctor.teach.note">Mensaje opcional</label>
+              <input id="teach-note" type="text" maxlength="200" placeholder="Este es el músculo que vas a fortalecer" data-i18n-placeholder="doctor.teach.notePlaceholder">
             </div>
             <div class="chips">
-              <button class="btn primary" id="teach-send" type="button">Enviar el ejercicio al paciente</button>
+              <button class="btn primary" id="teach-send" type="button" data-i18n="doctor.teach.send">Enviar el ejercicio al paciente</button>
               <span class="status-line" id="teach-status" role="status"></span>
             </div>
           </section>
@@ -163,41 +163,41 @@
 
         <div class="stack">
           <section class="panel-card">
-            <h2>Plan de ejercicios <button class="btn" id="btn-plan" type="button">Editar plan</button></h2>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Plan de ejercicios"><table>
-              <thead><tr><th>Ejercicio</th><th>Dosis</th><th>Semana</th><th>Con cámara</th><th>Sobre</th><th>Descanso</th></tr></thead>
+            <h2 data-i18n="doctor.plan.title">Plan de ejercicios <button class="btn" id="btn-plan" type="button" data-i18n-slot="edit" data-i18n="doctor.plan.edit">Editar plan</button></h2>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Plan de ejercicios" data-i18n-aria-label="doctor.plan.name"><table>
+              <thead><tr><th data-i18n="doctor.th.exercise">Ejercicio</th><th data-i18n="doctor.th.dose">Dosis</th><th data-i18n="doctor.th.week">Semana</th><th data-i18n="doctor.th.camera">Con cámara</th><th data-i18n="doctor.th.envelope">Sobre</th><th data-i18n="doctor.th.rest">Descanso</th></tr></thead>
               <tbody id="p-plan"></tbody>
             </table></div>
           </section>
           <section class="panel-card">
-            <h2>Historial de sesiones</h2>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Historial de sesiones"><table>
-              <thead><tr><th>Fecha</th><th>Ejercicio</th><th>Fuente</th><th>Reps</th><th>Fin</th><th>Alertas</th><th>Dolor (EVA)</th><th>Nota SOAP</th></tr></thead>
+            <h2 data-i18n="doctor.sessions.title">Historial de sesiones</h2>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Historial de sesiones" data-i18n-aria-label="doctor.sessions.title"><table>
+              <thead><tr><th data-i18n="doctor.th.date">Fecha</th><th data-i18n="doctor.th.exercise">Ejercicio</th><th data-i18n="doctor.th.source">Fuente</th><th data-i18n="doctor.th.reps">Reps</th><th data-i18n="doctor.th.end">Fin</th><th data-i18n="doctor.th.alerts">Alertas</th><th data-i18n="doctor.th.pain">Dolor (EVA)</th><th data-i18n="doctor.th.soap">Nota SOAP</th></tr></thead>
               <tbody id="p-sessions"></tbody>
             </table></div>
           </section>
           <section class="panel-card" id="soap-card" aria-labelledby="soap-title" hidden>
-            <h2 id="soap-title" tabindex="-1">Nota SOAP · <span id="soap-when"></span></h2>
+            <h2 id="soap-title" tabindex="-1" data-i18n="doctor.soap.title">Nota SOAP · <span id="soap-when" data-i18n-slot="when"></span></h2>
             <p id="soap-state"></p>
             <p class="muted" id="soap-source"></p>
             <p class="notice soap-nocam" id="soap-nocam" role="note" hidden></p>
             <dl class="soap-body" id="soap-body"></dl>
             <div class="chips">
-              <button class="btn primary" id="soap-approve" type="button">Firmar y aprobar la nota</button>
-              <button class="btn" id="soap-fhir" type="button" hidden>Descargar Observation FHIR (JSON)</button>
-              <button class="btn" id="soap-fhir-doc" type="button" hidden>Descargar nota como documento FHIR (JSON)</button>
-              <button class="btn" id="soap-close" type="button">Cerrar la nota</button>
+              <button class="btn primary" id="soap-approve" type="button" data-i18n="doctor.soap.approve">Firmar y aprobar la nota</button>
+              <button class="btn" id="soap-fhir" type="button" hidden data-i18n="doctor.soap.fhir">Descargar Observation FHIR (JSON)</button>
+              <button class="btn" id="soap-fhir-doc" type="button" hidden data-i18n="doctor.soap.fhirDoc">Descargar nota como documento FHIR (JSON)</button>
+              <button class="btn" id="soap-close" type="button" data-i18n="doctor.soap.close">Cerrar la nota</button>
             </div>
             <p class="muted" id="soap-fhir-note"></p>
             <p class="status-line" id="soap-status" role="status" aria-live="polite"></p>
           </section>
           <section class="panel-card" aria-labelledby="p-symptoms-title">
-            <h2 id="p-symptoms-title">Molestias reportadas</h2>
+            <h2 id="p-symptoms-title" data-i18n="doctor.symptoms.title">Molestias reportadas</h2>
             <p class="status-line" id="p-symptom-alert" role="status" aria-live="polite"></p>
             <div class="feed" id="p-symptoms" style="max-height:none;"></div>
           </section>
           <section class="panel-card">
-            <h2>Compensaciones recientes</h2>
+            <h2 data-i18n="doctor.events.title">Compensaciones recientes</h2>
             <div class="feed" id="p-events" style="max-height:none;"></div>
           </section>
         </div>
@@ -206,7 +206,7 @@
   </section>
 </main>
 
-  <footer>
+  <footer data-i18n="doctor.footer">
     Indicadores descriptivos para seguimiento, no resultados clínicos. Cumplimiento = sesiones completadas en 7 días
     sobre las indicadas por semana. Calidad = repeticiones de ejercicio sin compensación en la última sesión monitoreada.
     Prototipo de Staging: no es un dispositivo médico. Mapa muscular: react-body-highlighter (MIT).
@@ -216,19 +216,19 @@
 <!-- AFILIAR PACIENTE -->
 <dialog class="share-dialog" id="invite-dialog" aria-labelledby="invite-title">
   <div class="share-head">
-    <h2 id="invite-title">Afiliar paciente</h2>
-    <button class="btn" id="invite-close" type="button">Cerrar</button>
+    <h2 id="invite-title" data-i18n="doctor.dash.invite">Afiliar paciente</h2>
+    <button class="btn" id="invite-close" type="button" data-i18n="doctor.close">Cerrar</button>
   </div>
   <form id="invite-form">
     <div class="field">
-      <label for="invite-alias">Seudónimo del paciente (no uses su nombre real)</label>
-      <input id="invite-alias" type="text" maxlength="60" required placeholder="Paciente 07" autocomplete="off">
+      <label for="invite-alias" data-i18n="doctor.invite.alias">Seudónimo del paciente (no uses su nombre real)</label>
+      <input id="invite-alias" type="text" maxlength="60" required placeholder="Paciente 07" data-i18n-placeholder="doctor.invite.aliasPlaceholder" autocomplete="off">
     </div>
     <div class="field">
-      <label for="invite-year">Año de nacimiento (opcional)</label>
+      <label for="invite-year" data-i18n="doctor.invite.year">Año de nacimiento (opcional)</label>
       <input id="invite-year" type="number" min="1900" max="2026" placeholder="1952">
     </div>
-    <button class="btn primary" type="submit">Crear código de afiliación</button>
+    <button class="btn primary" type="submit" data-i18n="doctor.invite.create">Crear código de afiliación</button>
     <p class="status-line" id="invite-error" role="status" style="margin-top:10px;"></p>
   </form>
 </dialog>
@@ -236,18 +236,27 @@
 <!-- EDITAR PLAN -->
 <dialog class="share-dialog" id="plan-dialog" aria-labelledby="plan-title">
   <div class="share-head">
-    <h2 id="plan-title">Plan de ejercicios</h2>
-    <button class="btn" id="plan-close" type="button">Cerrar</button>
+    <h2 id="plan-title" data-i18n="doctor.plan.name">Plan de ejercicios</h2>
+    <button class="btn" id="plan-close" type="button" data-i18n="doctor.close">Cerrar</button>
   </div>
-  <p class="muted" style="margin-bottom:10px;">Marca los ejercicios y ajusta la dosis. En los de monitoreo automático, el
+  <p class="muted" style="margin-bottom:10px;" data-i18n="doctor.plan.intro">Marca los ejercicios y ajusta la dosis. En los de monitoreo automático, el
     sobre de seguridad (márgenes sobre la línea base) lo fijas tú y el paciente no lo puede cambiar.</p>
   <div id="plan-list"></div>
   <div class="row-between" style="margin-top:12px;">
     <span class="status-line" id="plan-error" role="status"></span>
-    <button class="btn primary" id="plan-save" type="button">Guardar plan</button>
+    <button class="btn primary" id="plan-save" type="button" data-i18n="doctor.plan.save">Guardar plan</button>
   </div>
 </dialog>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>

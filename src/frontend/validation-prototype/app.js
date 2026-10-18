@@ -26,21 +26,31 @@
     announce: $('announce'), btnFullscreen: $('btn-fullscreen'),
   };
   const ctx = ui.canvas.getContext('2d');
+  // Idioma (ADR-030): se decide al cargar la página, así que los textos fijos se leen una vez aquí.
+  const I18N = window.AxonI18n;
+  const { t, tn } = I18N;
 
   const PHRASES = {
-    trunk_flexion: 'Tronco más erguido',
-    knee_valgus_left: 'Rodilla izquierda hacia afuera',
-    knee_valgus_right: 'Rodilla derecha hacia afuera',
+    trunk_flexion: t('app.phrase.trunk_flexion'),
+    knee_valgus_left: t('app.phrase.knee_valgus_left'),
+    knee_valgus_right: t('app.phrase.knee_valgus_right'),
   };
   // La voz dice qué pasa y qué hacer (TD-97): el paciente se corrige sin mirar la pantalla. La pantalla queda corta.
+  // Cada idioma dice lo mismo: qué pasa, de qué lado y qué hacer (i18n/session.js, app.voice.*).
   const VOICE = {
-    trunk_flexion: 'Te estás inclinando mucho hacia adelante: sube el pecho',
-    knee_valgus_left: 'Tu rodilla izquierda se está yendo hacia adentro: llévala hacia afuera',
-    knee_valgus_right: 'Tu rodilla derecha se está yendo hacia adentro: llévala hacia afuera',
+    trunk_flexion: t('app.voice.trunk_flexion'),
+    knee_valgus_left: t('app.voice.knee_valgus_left'),
+    knee_valgus_right: t('app.voice.knee_valgus_right'),
   };
-  const NAMES = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
-  const SIDES = { left: 'izquierda', right: 'derecha' };
-  const END_TEXT = { completed: 'Sesión completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano' };
+  // Nombre de cada compensación en tablas y resumen, con el lado ya dentro (en inglés va delante: "Left knee valgus").
+  const EVENT_NAMES = {
+    trunk_flexion: t('app.event.trunk_flexion'),
+    knee_valgus: t('app.event.knee_valgus'),
+    knee_valgus_left: t('app.event.knee_valgus_left'),
+    knee_valgus_right: t('app.event.knee_valgus_right'),
+  };
+  const NAMES = { trunk_flexion: EVENT_NAMES.trunk_flexion, knee_valgus: EVENT_NAMES.knee_valgus };
+  const END_TEXT = { completed: t('app.end.completed'), pain_stop: t('app.end.pain_stop'), user_quit: t('app.end.user_quit') };
 
   let session = null;
   let source = null;              // 'camera' | 'demo'
@@ -117,7 +127,7 @@
     ui.hud.hidden = false;
     renderHud(session.snapshot());
     const cal = session.config.calibrationReps;
-    announce(`Empieza la calibración: ${cal} repeticiones con tu técnica normal`, { ms: 4000 });
+    announce(tn('app.announce.calStart', cal), { ms: 4000 });
     emit('session-start', { source, startedAt: new Date().toISOString(), config: session.config });
   }
 
@@ -135,8 +145,7 @@
     const run = await PC.open({
       video: ui.video, canvas: ui.canvas, viewport: ui.viewport,
       status: (text) => { ui.sourceStatus.textContent = text; },
-      unsupported: 'Este navegador no permite la cámara aquí. Ábrelo con Chrome o Edge, con doble clic en index.html o '
-        + 'desde http://localhost (ver README).',
+      unsupported: t('app.unsupported'),
     });
     if (!run) return;
     cam = run;
@@ -154,9 +163,9 @@
     session = null;
     ui.hud.hidden = true;
     $('cam-check').hidden = false;
-    ui.phase.textContent = 'Prepara la cámara';
-    ui.phaseSub.textContent = `${CS.VIEWS[chosen].how}, a 2–3 m y a la altura de la cadera.`;
-    announce('Coloca la cámara: que se vea el cuerpo entero y los pies', { ms: 3000 });
+    ui.phase.textContent = t('app.setup.phase');
+    ui.phaseSub.textContent = t('app.setup.where', { how: CS.VIEWS[chosen].how });
+    announce(t('app.setup.announce'), { ms: 3000 });
     ui.btnPain.disabled = false;
     ui.btnStop.disabled = false;
   }
@@ -170,7 +179,12 @@
       lastCheck = t;
       const el = $('cam-check');
       CS.renderCheck(el, r, setup.chosen);
-      el.insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-cam-skip>Empezar ya</button>');
+      const skip = document.createElement('button');
+      skip.className = 'btn';
+      skip.type = 'button';
+      skip.dataset.camSkip = '';
+      skip.textContent = t('app.setup.skip');
+      el.append(skip);
     }
     if (r.ready) finishSetup(r);
   }
@@ -181,8 +195,8 @@
     disabled = view ? CS.disabledFor(view) : {};
     setup = null;
     $('cam-check').hidden = true;
-    ui.sourceStatus.textContent = view ? `Cámara activa, ${CS.summary(view, CS.ENGINE.measures)}. El video no sale de este equipo.`
-      : 'Cámara activa. El video no sale de este equipo.';
+    ui.sourceStatus.textContent = view ? t('app.status.cameraView', { summary: CS.summary(view, CS.ENGINE.measures) })
+      : t('pose.active');
     newSession();
   }
 
@@ -201,8 +215,7 @@
     source = 'demo';
     ui.viewport.classList.remove('mirror');
     ui.placeholder.hidden = true;
-    ui.sourceStatus.textContent = 'Demo sintético: 3 de calibración, una compensación de tronco (rep 5), un valgo izquierdo (rep 7) '
-      + 'y una repetición mal vista (rep 8).';
+    ui.sourceStatus.textContent = t('app.status.demo');
     view = null;
     disabled = {};
     newSession();
@@ -239,7 +252,7 @@
   function handleNoPose() {
     lowStreak += 1;
     ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
-    if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo('No veo a nadie: aléjate hasta que se vea el cuerpo entero');
+    if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo(t('app.hint.nobody'));
   }
 
   function handleFrame(frame, image, t0, draw) {
@@ -248,7 +261,7 @@
     if (out.newEvents.length) emit('event', { events: out.newEvents });
     if (out.lowConfidence) {
       lowStreak += 1;
-      if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo('No te veo bien: que se vean caderas, rodillas y tobillos');
+      if (lowStreak === LOW_CONFIDENCE_FRAMES_BEFORE_HINT) showInfo(t('app.hint.lowConf'));
     } else {
       if (lowStreak >= LOW_CONFIDENCE_FRAMES_BEFORE_HINT && ui.alert.classList.contains('info')) hideAlert();
       lowStreak = 0;
@@ -264,9 +277,7 @@
       announceProgress(out);
     }
     if (out.aborted) {                                       // se volvió a sentar sin pararse de verdad (TD-55)
-      announce(out.aborted.reason === 'one_leg'
-        ? 'No contó: ponte de pie con los dos pies apoyados, no levantes una pierna'
-        : 'No contó: ponte de pie por completo, con rodillas y caderas estiradas', { ms: 3200 });
+      announce(out.aborted.reason === 'one_leg' ? t('app.announce.oneLeg') : t('app.announce.notStanding'), { ms: 3200 });
     }
     if (out.phase === 'ended' && !endedShown) onEnded();
   }
@@ -286,37 +297,38 @@
   function announceProgress(out) {
     const { rep, discarded } = out.completed;
     if (discarded) {
-      announce('Esa no contó: no te vi bien. Repítela');
+      announce(t('app.announce.discarded'));
       return;
     }
     if (out.phase === 'ended') return;                       // el cierre lo anuncia onEnded
     const cfg = session.config;
     const done = out.repsDone;
     if (rep.calibration && out.phase === 'exercising') {
-      announce('Calibración lista. Desde ahora te aviso si compensas', { ms: 3600 });
+      announce(t('app.announce.calDone'), { ms: 3600 });
     } else if (rep.calibration) {
-      announce(`Calibración: ${done} de ${cfg.calibrationReps}`);
+      announce(t('app.announce.calCount', { done, total: cfg.calibrationReps }));
     } else if (done === cfg.maxReps - 1) {
-      announce(`${done} de ${cfg.maxReps}. Va la última`);
+      announce(t('app.announce.last', { done, total: cfg.maxReps }));
     } else {
-      announce(`${done} de ${cfg.maxReps}`);
+      announce(t('app.announce.count', { done, total: cfg.maxReps }));
     }
   }
 
   /** Contador fijo en una esquina del video: fase, repeticiones hechas y barra (calibración, hechas, con alerta). */
   function renderHud(snap) {
     const cfg = session.config;
-    ui.hudPhase.textContent = snap.phase === 'ended' ? (END_TEXT[snap.endReason] || 'Terminada')
-      : snap.phase === 'calibrating' ? 'Calibración · técnica normal' : 'Con alertas';
+    ui.hudPhase.textContent = snap.phase === 'ended' ? (END_TEXT[snap.endReason] || t('app.hud.ended'))
+      : snap.phase === 'calibrating' ? t('app.hud.calibrating') : t('app.hud.alerts');
     ui.hudDone.textContent = snap.repsDone;
     ui.hudTotal.textContent = cfg.maxReps;
     const flagged = new Set(session.reps.filter((r) => r.events.length).map((r) => r.index));
-    ui.hudBar.innerHTML = Array.from({ length: cfg.maxReps }, (_, i) => {
+    ui.hudBar.replaceChildren(...Array.from({ length: cfg.maxReps }, (_, i) => {
       const n = i + 1;
-      const cls = [n <= cfg.calibrationReps ? 'cal' : '', n <= snap.repsDone ? 'done' : '', flagged.has(n) ? 'flag' : '']
+      const seg = document.createElement('span');
+      seg.className = [n <= cfg.calibrationReps ? 'cal' : '', n <= snap.repsDone ? 'done' : '', flagged.has(n) ? 'flag' : '']
         .filter(Boolean).join(' ');
-      return `<span class="${cls}"></span>`;
-    }).join('');
+      return seg;
+    }));
   }
 
   // ---------------------------------------------------------------- TD-30 · guía del ejercicio
@@ -333,7 +345,7 @@
       if (document.fullscreenElement) await document.exitFullscreen();
       else await ($('stage') || ui.viewport).requestFullscreen();
     } catch (err) {
-      ui.sourceStatus.textContent = 'Este navegador no permitió la pantalla completa.';
+      ui.sourceStatus.textContent = t('app.status.fullscreen');
     }
   }
 
@@ -367,12 +379,14 @@
     const low = out.lowConfidence;
     const f = (v) => (Number.isFinite(v) ? `${v.toFixed(0)}°` : '—');
     if (a) {
-      setReadout('ro-knee', f(a.knee), th ? `pedida ≥ ${th.romTarget.toFixed(0)}°` : 'calibrando', false, low);
-      const off = (k) => (disabled[k] ? 'no se evalúa desde esta cámara' : null);
-      setReadout('ro-trunk', f(a.trunk), off('trunk') || (th ? `umbral ${th.trunk.toFixed(0)}°` : 'calibrando'), !disabled.trunk && th && a.trunk > th.trunk, low);
-      setReadout('ro-valgus-l', f(a.valgusL), off('valgus') || (th ? `umbral ${th.valgusL.toFixed(0)}°` : 'calibrando'), !disabled.valgus && th && a.valgusL > th.valgusL, low);
-      setReadout('ro-valgus-r', f(a.valgusR), off('valgus') || (th ? `umbral ${th.valgusR.toFixed(0)}°` : 'calibrando'), !disabled.valgus && th && a.valgusR > th.valgusR, low);
-      setReadout('ro-conf', a.confidence.toFixed(2), low ? 'baja: no se evalúa' : 'suficiente', false, low);
+      const cal = t('app.read.calibrating');
+      const limit = (v) => t('app.read.threshold', { deg: v.toFixed(0) });
+      setReadout('ro-knee', f(a.knee), th ? t('app.read.target', { deg: th.romTarget.toFixed(0) }) : cal, false, low);
+      const off = (k) => (disabled[k] ? t('app.read.off') : null);
+      setReadout('ro-trunk', f(a.trunk), off('trunk') || (th ? limit(th.trunk) : cal), !disabled.trunk && th && a.trunk > th.trunk, low);
+      setReadout('ro-valgus-l', f(a.valgusL), off('valgus') || (th ? limit(th.valgusL) : cal), !disabled.valgus && th && a.valgusL > th.valgusL, low);
+      setReadout('ro-valgus-r', f(a.valgusR), off('valgus') || (th ? limit(th.valgusR) : cal), !disabled.valgus && th && a.valgusR > th.valgusR, low);
+      setReadout('ro-conf', a.confidence.toFixed(2), low ? t('app.read.confLow') : t('app.read.confOk'), false, low);
     }
     renderPhase(out);
   }
@@ -380,18 +394,19 @@
   function renderPhase(out) {
     const cfg = session.config;
     if (out.phase === 'ended') {
-      ui.phase.textContent = END_TEXT[out.endReason] || 'Sesión terminada';
-      ui.phaseSub.textContent = `${session.reps.length} repeticiones, ${session.events.length} alertas.`;
+      ui.phase.textContent = END_TEXT[out.endReason] || t('app.end.generic');
+      ui.phaseSub.textContent = t('app.phase.endSub', {
+        reps: tn('app.count.reps', session.reps.length), alerts: tn('app.count.alerts', session.events.length) });
       return;
     }
     const current = out.repInProgress ? out.repInProgress.index : out.repsDone + 1;
     if (out.phase === 'calibrating') {
-      ui.phase.textContent = `Calibrando: ${out.calibrationDone} de ${cfg.calibrationReps}`;
-      ui.phaseSub.textContent = out.posture === 'seated' ? 'Sentado. Levántate con tu técnica normal.'
-        : out.posture === 'standing' ? 'De pie. Vuelve a sentarte.' : 'Esperando ver a la persona.';
+      ui.phase.textContent = t('app.phase.calibrating', { done: out.calibrationDone, total: cfg.calibrationReps });
+      ui.phaseSub.textContent = out.posture === 'seated' ? t('app.phase.seated')
+        : out.posture === 'standing' ? t('app.phase.standing') : t('app.phase.waiting');
     } else {
-      ui.phase.textContent = `Repetición ${Math.min(current, cfg.maxReps)} de ${cfg.maxReps}`;
-      ui.phaseSub.textContent = 'Las alertas están activas.';
+      ui.phase.textContent = t('app.phase.rep', { n: Math.min(current, cfg.maxReps), total: cfg.maxReps });
+      ui.phaseSub.textContent = t('app.phase.alertsOn');
     }
   }
 
@@ -415,7 +430,7 @@
     const phrase = PHRASES[key] || NAMES[e.type];
     clearTimeout(alertTimer);
     ui.alertText.textContent = phrase;
-    ui.alertMeta.textContent = `rep ${e.rep} · ${e.value.toFixed(0)}° > ${e.threshold.toFixed(0)}°`;
+    ui.alertMeta.textContent = t('app.alert.meta', { rep: e.rep, value: e.value.toFixed(0), threshold: e.threshold.toFixed(0) });
     ui.alert.className = `alert${e.severity === 1 ? ' sev1' : ''}`;
     ui.alert.hidden = false;
     activeAlert = { key, until: performance.now() + 2500 };
@@ -423,15 +438,15 @@
     speak(VOICE[key] || phrase, 'alert');
   }
 
-  /** Voz en español. Una alerta corta lo que se estaba diciendo; un aviso de progreso espera su turno. */
+  /** Voz en el idioma de la página (ADR-030). Una alerta corta lo que se estaba diciendo; un aviso de progreso espera su turno. */
   function speak(text, priority) {
     if (!ui.voice.checked || !('speechSynthesis' in window)) return;
     try {
       if (priority === 'alert') window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      const voice = window.speechSynthesis.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith('es'));
+      u.lang = I18N.speechLang();
+      const voice = I18N.voiceFor(window.speechSynthesis.getVoices());
       if (voice) u.voice = voice;
-      u.lang = voice ? voice.lang : 'es-PE';
       u.rate = 1.05;
       window.speechSynthesis.speak(u);
     } catch (err) {
@@ -444,8 +459,8 @@
     if (setup) {                                             // todavía preparando la cámara: solo se apaga
       stopSource();
       ui.placeholder.hidden = false;
-      ui.phase.textContent = 'Esperando inicio…';
-      ui.phaseSub.textContent = 'Pulsa un botón para comenzar.';
+      ui.phase.textContent = t('index.phase.wait');
+      ui.phaseSub.textContent = t('index.phase.waitSub');
       setButtons(false);
       return;
     }
@@ -462,12 +477,12 @@
     stopSource();
     if (reason === 'pain_stop') {
       ui.announce.hidden = true;
-      showStop('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
-      speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.', 'alert');
+      showStop(t('app.alert.painStop'));
+      speak(t('app.alert.painStop'), 'alert');
     } else {
       hideAlert();
-      if (reason === 'completed') announce('¡Listo! Sesión completada', { ms: 5000, tone: 'done' });
-      else announce('Sesión terminada', { ms: 3000 });
+      if (reason === 'completed') announce(t('app.announce.completed'), { ms: 5000, tone: 'done' });
+      else announce(t('app.end.generic'), { ms: 3000 });
     }
     renderHud(session.snapshot());
     renderPhase(session.snapshot());
@@ -475,7 +490,7 @@
     renderEvents();
     setButtons(false);
     ui.btnNew.disabled = false;
-    ui.sourceStatus.textContent = source === 'camera' ? 'Cámara apagada.' : 'Demo terminado.';
+    ui.sourceStatus.textContent = source === 'camera' ? t('app.status.cameraOff') : t('app.status.demoOff');
   }
 
   function showStop(text) {
@@ -488,57 +503,91 @@
 
   // ---------------------------------------------------------------- tablas y resumen
   const deg1 = (v) => (Number.isFinite(v) ? v.toFixed(1) : '—');
-  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  const eventName = (e) => `${NAMES[e.type]}${e.side ? ` ${SIDES[e.side]}` : ''}`;
+  const eventName = (e) => EVENT_NAMES[e.type + (e.side ? `_${e.side}` : '')] || NAMES[e.type] || e.type;
+
+  // Filas de las tablas con DOM (nunca innerHTML): celda con texto, celda numérica y etiqueta de color.
+  const cell = (content, cls) => {
+    const td = document.createElement('td');
+    if (cls) td.className = cls;
+    if (content && typeof content === 'object' && content.nodeType) td.append(content);
+    else if (Array.isArray(content)) td.append(...content);
+    else td.textContent = String(content);
+    return td;
+  };
+  const num = (v) => cell(v, 'num');
+  const tag = (cls, text) => {
+    const s = document.createElement('span');
+    s.className = `tag ${cls}`;
+    s.textContent = text;
+    return s;
+  };
+  const row = (...cells) => {
+    const tr = document.createElement('tr');
+    tr.append(...cells);
+    return tr;
+  };
+  const emptyRow = (cols, text) => {
+    const td = cell(text, 'empty');
+    td.colSpan = cols;
+    return row(td);
+  };
+  /** Varias etiquetas separadas por un espacio, como antes. */
+  const tags = (list) => list.flatMap((el, i) => (i ? [document.createTextNode(' '), el] : [el]));
 
   function renderReps() {
     const snap = session ? session.snapshot() : null;
     const b = snap && snap.baseline;
     ui.baseline.textContent = b
-      ? `Línea base (3 repeticiones): rodilla ${deg1(b.knee)}°, tronco ${deg1(b.trunk)}°, valgo izq. ${deg1(b.valgusL)}°, `
-        + `valgo der. ${deg1(b.valgusR)}°.`
-      : 'La línea base aparece al terminar las 3 repeticiones de calibración.';
+      ? t('app.baseline.done', { knee: deg1(b.knee), trunk: deg1(b.trunk), valgusL: deg1(b.valgusL), valgusR: deg1(b.valgusR) })
+      : t('app.baseline.pending');
     const reps = session ? session.reps : [];
-    ui.repsBody.innerHTML = reps.length ? reps.map((r) => `<tr>
-      <td class="num">${r.index}</td>
-      <td>${r.calibration ? '<span class="tag cal">Calibración</span>' : 'Ejercicio'}</td>
-      <td class="num">${deg1(r.kneeRom)}</td><td class="num">${deg1(r.peakTrunk)}</td>
-      <td class="num">${deg1(r.peakValgusL)}</td><td class="num">${deg1(r.peakValgusR)}</td>
-      <td>${r.romReached === null ? '—' : r.romReached ? '<span class="tag ok">Alcanzado</span>' : '<span class="tag warn">No alcanzado</span>'}</td>
-      <td>${r.lowConfidenceRatio > 0.2 ? `<span class="tag warn">Baja (${Math.round(r.lowConfidenceRatio * 100)} %)</span>` : '<span class="tag ok">Buena</span>'}</td>
-      <td>${r.events.length ? r.events.map((e) => `<span class="tag bad">${esc(eventName(e))}</span>`).join(' ') : '—'}</td>
-    </tr>`).join('') : '<tr><td colspan="9" class="empty">Todavía no hay repeticiones.</td></tr>';
+    ui.repsBody.replaceChildren(...(reps.length ? reps.map((r) => row(
+      num(r.index),
+      cell(r.calibration ? tag('cal', t('app.table.calibration')) : t('app.table.exercise')),
+      num(deg1(r.kneeRom)), num(deg1(r.peakTrunk)),
+      num(deg1(r.peakValgusL)), num(deg1(r.peakValgusR)),
+      cell(r.romReached === null ? '—' : r.romReached ? tag('ok', t('app.table.reached')) : tag('warn', t('app.table.notReached'))),
+      cell(r.lowConfidenceRatio > 0.2 ? tag('warn', t('app.table.visLow', { pct: Math.round(r.lowConfidenceRatio * 100) }))
+        : tag('ok', t('app.table.visOk'))),
+      cell(r.events.length ? tags(r.events.map((e) => tag('bad', eventName(e)))) : '—'),
+    )) : [emptyRow(9, t('app.table.noReps'))]));
     ui.btnCopy.disabled = reps.length === 0;
   }
 
   function renderEvents() {
     const events = session ? session.events : [];
-    ui.eventsBody.innerHTML = events.length ? events.map((e) => `<tr>
-      <td class="num">${e.rep}</td><td>${esc(eventName(e))}</td>
-      <td class="num">${deg1(e.value)}</td><td class="num">${deg1(e.peak)}</td><td class="num">${deg1(e.threshold)}</td>
-      <td class="num">${e.severity}</td><td class="num">${e.alertLatencyMs == null ? '…' : e.alertLatencyMs}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty">Sin alertas.</td></tr>';
+    ui.eventsBody.replaceChildren(...(events.length ? events.map((e) => row(
+      num(e.rep), cell(eventName(e)),
+      num(deg1(e.value)), num(deg1(e.peak)), num(deg1(e.threshold)),
+      num(e.severity), num(e.alertLatencyMs == null ? '…' : e.alertLatencyMs),
+    )) : [emptyRow(7, t('app.table.noAlerts'))]));
   }
 
+  /** Resumen para pegar en la nota SOAP, en el idioma de la página (lo arma el navegador; la nota del servidor no). */
   function summaryText() {
     const snap = session.snapshot();
     const cfg = session.config;
     const b = snap.baseline;
     const th = snap.thresholds;
     const lines = [
-      `AXONFAS · prototipo de validación · ${new Date().toLocaleString('es-PE')}`,
-      `Fuente: ${source === 'demo' ? 'demo sintético' : 'cámara'} · Estado: ${END_TEXT[snap.endReason] || 'en curso'}`,
-      b ? `Línea base: rodilla ${deg1(b.knee)}°, tronco ${deg1(b.trunk)}°, valgo izq. ${deg1(b.valgusL)}°, der. ${deg1(b.valgusR)}°`
-        : 'Línea base: sin completar',
-      `Sobre: tronco +${cfg.trunkMarginDeg}°, valgo +${cfg.valgusMarginDeg}°, rodilla pedida ${th ? `≥ ${deg1(th.romTarget)}°` : 'auto'}, `
-        + `confianza mínima ${cfg.minConfidence}`,
+      t('app.summary.head', { date: new Date().toLocaleString(I18N.locale()) }),
+      t('app.summary.source', { source: source === 'demo' ? t('app.summary.sourceDemo') : t('app.summary.sourceCamera'),
+        state: END_TEXT[snap.endReason] || t('app.summary.inProgress') }),
+      b ? t('app.summary.baseline', { knee: deg1(b.knee), trunk: deg1(b.trunk), valgusL: deg1(b.valgusL), valgusR: deg1(b.valgusR) })
+        : t('app.summary.noBaseline'),
+      t('app.summary.envelope', { trunk: cfg.trunkMarginDeg, valgus: cfg.valgusMarginDeg,
+        rom: th ? `≥ ${deg1(th.romTarget)}°` : 'auto', conf: cfg.minConfidence }),
       '',
-      ...session.reps.map((r) => `Rep ${r.index} (${r.calibration ? 'calibración' : 'ejercicio'}): rodilla ${deg1(r.kneeRom)}°, `
-        + `tronco ${deg1(r.peakTrunk)}°, valgo ${deg1(r.peakValgusL)}° / ${deg1(r.peakValgusR)}°`
-        + `${r.lowConfidenceRatio > 0.2 ? ', visibilidad baja' : ''}${r.romReached === false ? ', rango no alcanzado' : ''}`),
+      ...session.reps.map((r) => t('app.summary.rep', {
+        n: r.index, kind: r.calibration ? t('app.summary.kindCal') : t('app.summary.kindEx'),
+        knee: deg1(r.kneeRom), trunk: deg1(r.peakTrunk), valgusL: deg1(r.peakValgusL), valgusR: deg1(r.peakValgusR),
+        extra: `${r.lowConfidenceRatio > 0.2 ? t('app.summary.lowVis') : ''}${r.romReached === false ? t('app.summary.romMissed') : ''}`,
+      })),
       '',
-      ...(session.events.length ? session.events.map((e) => `Alerta rep ${e.rep}: ${eventName(e)} ${deg1(e.value)}° (pico ${deg1(e.peak)}°, `
-        + `umbral ${deg1(e.threshold)}°, severidad ${e.severity}, latencia ${e.alertLatencyMs ?? '?'} ms)`) : ['Sin alertas.']),
+      ...(session.events.length ? session.events.map((e) => t('app.summary.alert', {
+        rep: e.rep, name: eventName(e), value: deg1(e.value), peak: deg1(e.peak), threshold: deg1(e.threshold),
+        severity: e.severity, latency: e.alertLatencyMs ?? '?',
+      })) : [t('app.table.noAlerts')]),
     ];
     return lines.join('\n');
   }
@@ -547,13 +596,13 @@
     const text = summaryText();
     try {
       await navigator.clipboard.writeText(text);
-      ui.copyStatus.textContent = 'Resumen copiado.';
+      ui.copyStatus.textContent = t('app.copy.done');
       ui.copyFallback.hidden = true;
     } catch {
       ui.copyFallback.value = text;
       ui.copyFallback.hidden = false;
       ui.copyFallback.select();
-      ui.copyStatus.textContent = 'No se pudo copiar solo: el texto está seleccionado abajo, cópialo con Ctrl+C.';
+      ui.copyStatus.textContent = t('app.copy.manual');
     }
   }
 
@@ -580,7 +629,7 @@
         ui.romTarget.min = Math.min(Number(ui.romTarget.min), adj.new);
         ui.romTarget.value = adj.new;
         ui.romTarget.dispatchEvent(new Event('input', { bubbles: true }));       // setConfig + salidas de la pantalla
-        announce(`Bajamos el rango: ahora se pide al menos ${adj.new}°`, { ms: 4000 });
+        announce(t('app.announce.romLowered', { deg: adj.new }), { ms: 4000 });
         return true;
       }
       if (adj.param === 'reps') {
@@ -588,7 +637,7 @@
         const total = Math.min(session.config.maxReps, Math.max(session.reps.length + adj.new, keep));
         ui.maxReps.value = total;
         ui.maxReps.dispatchEvent(new Event('input', { bubbles: true }));
-        announce(`Bajamos las repeticiones: ${total - session.reps.length} más`, { ms: 4000 });
+        announce(t('app.announce.repsLowered', { n: total - session.reps.length }), { ms: 4000 });
         return true;
       }
       return false;
@@ -610,5 +659,5 @@
   renderControls();
   renderGuide();
   camOpts = CS ? CS.renderOptions($('cam-setup'), CS.ENGINE.measures,
-    { hint: 'A 2–3 m, a la altura de la cadera, con el cuerpo entero y los pies a la vista.' }) : null;
+    { hint: t('app.setup.hint') }) : null;
 })();

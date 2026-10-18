@@ -13,14 +13,17 @@
   const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
 
+  // Avisos en el idioma actual (i18n/session.js, claves pose.*), leídos en el momento (ADR-030).
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');
+  const t = I18N.t;
   const TEXT = {
-    loading: 'Cargando el modelo de pose (~9 MB la primera vez)…',
-    modelError: 'No se pudo cargar el modelo de pose. Revisa la conexión a internet y vuelve a intentar.',
-    asking: 'Pidiendo permiso para la cámara…',
-    denied: 'El navegador no dio permiso para la cámara. Permítelo en la barra de direcciones y vuelve a intentar.',
-    notFound: 'No se encontró ninguna cámara.',
-    failed: 'No se pudo abrir la cámara.',
-    active: 'Cámara activa. El video no sale de este equipo.',
+    get loading() { return t('pose.loading'); },
+    get modelError() { return t('pose.modelError'); },
+    get asking() { return t('pose.asking'); },
+    get denied() { return t('pose.denied'); },
+    get notFound() { return t('pose.notFound'); },
+    get failed() { return t('pose.failed'); },
+    get active() { return t('pose.active'); },
   };
 
   let loading = null;
