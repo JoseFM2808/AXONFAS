@@ -25,6 +25,10 @@ USAGE_LOCK = threading.Lock()
 USAGE: dict = {"calls": 0, "errors": 0, "prompt_tokens": 0, "completion_tokens": 0, "ms_total": 0, "last_error": None,
                "last_at": None, "by_purpose": {}}
 _model_cache: dict = {}
+# Con un presupuesto, el modelo principal deja este tiempo a la alternativa, y la alternativa solo se intenta si quedan
+# al menos FALLBACK_MIN_S (ADR-033).
+FALLBACK_RESERVE_S = 4.0
+FALLBACK_MIN_S = 2.0
 # El catálogo también trae modelos que no conversan (OCR, embeddings): nunca se eligen solos.
 _NOT_CHAT = re.compile(r"mineru|ocr|embed|rerank|whisper|tts", re.I)
 
@@ -75,16 +79,29 @@ def model_list(cfg: dict) -> list[str]:
 
 class MeteredLLM:
     """El cliente real más el contador de uso. `purpose` agrupa el uso (clinical, coach, soap, advice, admin-test…).
-    Con varios modelos, si uno falla o se pasa del tiempo responde el siguiente; `model` dice cuál respondió."""
+    Con varios modelos, si uno falla o se pasa del tiempo responde el siguiente; `model` dice cuál respondió.
+    `budget_s` (opcional) es el tiempo total de la cadena: el principal deja `FALLBACK_RESERVE_S` para la alternativa,
+    y la alternativa solo se intenta si quedan al menos `FALLBACK_MIN_S` (ADR-033). `label` es lo que la pantalla dice
+    del proveedor (TD-34)."""
 
-    def __init__(self, inner: OpenAICompatible | list[OpenAICompatible], provider: str, purpose: str = "general"):
+    def __init__(self, inner: OpenAICompatible | list[OpenAICompatible], provider: str, purpose: str = "general",
+                 label: str | None = None, budget_s: float | None = None):
         self.chain = inner if isinstance(inner, list) else [inner]
         self.inner, self.provider, self.purpose = self.chain[0], provider, purpose
         self.model = self.inner.model
+        self.label = label or provider
+        self.budget_s = budget_s
 
     def chat(self, messages: list[dict], **kwargs) -> dict:
         last = None
-        for inner in self.chain:
+        t0 = time.monotonic()
+        for idx, inner in enumerate(self.chain):
+            if self.budget_s is not None:
+                left = self.budget_s - (time.monotonic() - t0)
+                if idx > 0 and left < FALLBACK_MIN_S:
+                    break                                   # no alcanza para la alternativa: el que llama decide (reglas)
+                reserve = FALLBACK_RESERVE_S if idx < len(self.chain) - 1 else 0.0
+                inner.timeout = max(1.0, min(inner.timeout, left - reserve))
             try:
                 out = inner.chat(messages, **kwargs)
             except LLMError as err:
@@ -105,17 +122,21 @@ class MeteredLLM:
                 USAGE["by_purpose"][self.purpose] = USAGE["by_purpose"].get(self.purpose, 0) + 1
                 USAGE.setdefault("by_model", {})[inner.model] = USAGE.setdefault("by_model", {}).get(inner.model, 0) + 1
             return {**out, "model": inner.model}
-        raise last
+        raise last or LLMError("sin tiempo para la alternativa")
 
 
-def client(purpose: str = "general", timeout: float = 30.0) -> MeteredLLM | None:
-    """Cliente listo para usar, o None si no hay proveedor configurado."""
+def client(purpose: str = "general", timeout: float = 30.0, retries_429: int | None = None,
+           budget_s: float | None = None, fallback: bool = True) -> MeteredLLM | None:
+    """Cliente listo para usar, o None si no hay proveedor configurado. `retries_429=0` no espera ante un límite de uso;
+    `budget_s` acota el tiempo de toda la cadena de modelos; `fallback=False` usa solo el modelo principal."""
     cfg = config()
     if not cfg:
         return None
     models = model_list(cfg) or [_pick_model(cfg, timeout)]
-    return MeteredLLM([OpenAICompatible(url=cfg["url"], key=cfg["key"], model=m, timeout=timeout) for m in models],
-                      cfg["name"], purpose)
+    if not fallback:
+        models = models[:1]                                  # el conversacional no espera una alternativa (ADR-033)
+    return MeteredLLM([OpenAICompatible(url=cfg["url"], key=cfg["key"], model=m, timeout=timeout, retries_429=retries_429)
+                       for m in models], cfg["name"], purpose, cfg["label"], budget_s)
 
 
 def status(timeout: float = 5.0) -> dict:

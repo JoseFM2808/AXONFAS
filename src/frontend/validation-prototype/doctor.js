@@ -296,6 +296,7 @@
         severity: e.severity }) + (e.alert_latency_ms != null ? ` · ${e.alert_latency_ms} ms` : '')));
     });
     renderSymptoms(d);
+    renderDecisions(d);
     renderTeach(d.plan);
     renderProfile(d);
     renderSuggestions(d);
@@ -331,6 +332,53 @@
         + `${s.text ? ` · «${s.text}»` : ''} · ${symptomAction(s)}`;
       row.append(el('span', null, text), el('span', `tag ${s.kind === 'red_flag' ? 'bad' : 'warn'}`,
         s.kind === 'red_flag' ? t('doctor.symptom.tagAlarm') : t('doctor.symptom.tagDiscomfort')));
+      box.appendChild(row);
+    });
+  }
+
+  // ------------------------------------------------------------------ decisiones del agente (ADR-033)
+  // Lo que escribió el paciente es texto libre: solo textContent. El modelo y el proveedor salen de los datos guardados y
+  // solo se nombran cuando el agente clínico propuso; si decidieron las reglas, se dice así.
+  const DECISION_TONE = { applied: 'ok', escalated_to_therapist: 'warn', rejected: 'bad' };
+  const SKIP_REASONS = ['red_flag', 'guided', 'no_provider', 'unavailable', 'rate_limited', 'busy'];
+  const secondsText = (ms) => (ms / 1000).toLocaleString(I18N.locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  function proposalText(p) {
+    if (!p) return '';
+    const unit = PARAM_UNIT[p.param] || '';
+    const verb = t(p.new < p.old ? 'doctor.decisions.verb.lower' : p.new > p.old ? 'doctor.decisions.verb.raise' : 'doctor.decisions.verb.keep');
+    return t('doctor.decisions.proposal', { verb, param: PARAM_NAME[p.param] || p.param, old: `${p.old}${unit}`, new: `${p.new}${unit}` });
+  }
+
+  function decisionWho(d) {
+    if (d.agent === 'clinical') return t('doctor.decisions.byModel', { model: d.ai_model || t('doctor.decisions.theModel'), provider: d.ai_provider || t('doctor.decisions.amdAi'), latency: d.llm_ms != null ? t('doctor.decisions.latency', { s: secondsText(d.llm_ms) }) : '' });
+    const why = d.llm_outcome === 'timeout' ? t('doctor.decisions.why.timeout') : d.llm_outcome === 'llm_error' ? t('doctor.decisions.why.llm_error')
+      : d.llm_proposal ? t('doctor.decisions.why.refused', { proposal: proposalText(d.llm_proposal) }) : '';
+    return t('doctor.decisions.byRules', { why: why ? ` ${why}` : '' });
+  }
+
+  function renderDecisions(d) {
+    const box = $('p-decisions');
+    box.replaceChildren();
+    const decisions = d.decisions || [];
+    const quiet = (d.turns || []).filter((turn) => !turn.has_decision && (turn.action === 'paused' || turn.action === 'session_stopped'));
+    if (!decisions.length && !quiet.length) box.appendChild(el('p', 'muted', t('doctor.decisions.empty')));
+    decisions.slice(0, 12).forEach((x) => {
+      const ex = C.get(x.exercise_id);
+      const tone = DECISION_TONE[x.outcome] || 'warn';
+      const label = DECISION_TONE[x.outcome] ? t(`doctor.decisions.outcome.${x.outcome}`) : x.outcome;
+      const row = el('div', 'row-between');
+      const body = el('span', null, `${fmtDate(x.created_at)} · ${ex ? ex.name : t('doctor.symptom.noExercise')} · «${x.turn.transcript}» · ${proposalText(x.proposal)}`
+        + `${x.rationale ? ` · ${x.rationale}` : ''} · ${decisionWho(x)}`);
+      row.append(body, el('span', `tag ${tone}`, label));
+      box.appendChild(row);
+    });
+    quiet.slice(0, 12).forEach((turn) => {
+      const ex = C.get(turn.exercise_id);
+      const row = el('div', 'row-between');
+      const why = SKIP_REASONS.includes(turn.ai_skipped) ? `; ${t(`doctor.decisions.skip.${turn.ai_skipped}`)}` : '';
+      row.append(el('span', null, `${fmtDate(turn.created_at)} · ${ex ? ex.name : t('doctor.symptom.noExercise')} · «${turn.transcript}» · ${t('doctor.decisions.quiet')}${why}`),
+        el('span', `tag ${turn.action === 'session_stopped' ? 'bad' : 'warn'}`, turn.action === 'session_stopped' ? t('doctor.symptom.tagAlarm') : t('doctor.decisions.tagPause')));
       box.appendChild(row);
     });
   }
@@ -543,6 +591,7 @@
       try {
         const st = await A.call('therapist', 'GET', '/api/ai/status');
         state.ai = st.available;
+        state.aiProvider = st.provider || null;
         state.aiOwn = /vllm/i.test(st.provider || '');
       } catch { state.ai = false; }
     }
@@ -785,6 +834,13 @@
       announceSymptom(msg);
       loadDetail().catch(() => {});
       refreshPatients().catch(() => {});
+      return;
+    }
+    if (msg.kind === 'agent_turn') {
+      const who = msg.decided_by === 'llm' ? t('doctor.live.byModel', { model: msg.model || t('doctor.decisions.theModel') })
+        : t('doctor.live.byRules');
+      pushFeed(t('doctor.live.agentTurn', { action: symptomAction({ action: msg.action }), who }));
+      loadDetail().catch(() => {});
       return;
     }
     if (msg.kind === 'pain_scored') {

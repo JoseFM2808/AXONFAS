@@ -179,6 +179,24 @@ EN = {
     "el resumen trae cifras que no están en los datos": "the summary has figures that are not in the data",
     "el resumen nombra ejercicios que no están en el plan ni en las sugerencias":
         "the summary names exercises that are neither in the plan nor in the suggestions",
+    # ---------------------------------------------------------------- turno de texto con el agente clínico (ADR-033)
+    "El turno es solo durante una sesión: usa «Tengo una molestia».": "The turn is only during a session: use «I have discomfort».",
+    "Falta un ejercicio del catálogo.": "An exercise from the catalog is missing.",
+    "'voice_turn_ids' debe ser una lista de hasta 20 números.": "'voice_turn_ids' must be a list of up to 20 numbers.",
+    "el resumen nombra medicamentos o diagnósticos": "the summary names medications or diagnoses",
+    "dentro del sobre [{lo}, {hi}]": "within the envelope [{lo}, {hi}]",
+    "fuera del sobre [{lo}, {hi}]: se pausa el ejercicio y lo revisa el fisioterapeuta":
+        "outside the envelope [{lo}, {hi}]: the exercise is paused and the physiotherapist reviews it",
+    "tras una molestia solo se baja la exigencia (ADR-021): lo revisa el fisioterapeuta":
+        "after discomfort only the demand is lowered (ADR-021): the physiotherapist reviews it",
+    "esta pantalla no puede aplicar {param}: no se cambia": "this screen cannot apply {param}: nothing changes",
+    "no hay valor actual de {param} en pantalla: no se cambia": "there is no current value of {param} on screen: nothing changes",
+    "el valor nuevo no es un número válido": "the new value is not a valid number",
+    "las repeticiones deben ser un número entero": "repetitions must be a whole number",
+    "la IA no respondió a tiempo": "the AI did not answer in time",
+    "la IA falló": "the AI failed",
+    "sin IA: decide el motor de reglas": "no AI: the rules engine decides",
+    "ejercicio sin sobre de seguridad": "exercise without a safety envelope",
     # ---------------------------------------------------------------- mensajes al paciente (EVA y molestias, ADR-021/025)
     # Seguridad: dicen lo mismo y con la misma fuerza que el español. "Dolor" es el botón 🛑 (en inglés, "Pain: stop").
     "Es un dolor alto: no repitas el ejercicio hoy y avísale a tu fisioterapeuta. Si es un dolor fuerte, te mareas o "

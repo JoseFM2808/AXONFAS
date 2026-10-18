@@ -236,6 +236,9 @@
     // ---------------------------------------------------------------- demo-telemetry.js
     'demo.share': 'Compartir resultados anónimos de la demo',
     'demo.note': 'Al terminar, la demo guarda de forma anónima solo números (repeticiones, alertas y duración) para que el equipo mejore AXONFAS. Nunca el video ni datos tuyos. Solo lo ve el equipo.',
+    'link.chip': 'Modo paciente · alertas con reglas en este navegador',
+    'link.lead': 'Las alertas salen de reglas fijas en este navegador. Si avisas una molestia, la revisan las reglas del servidor y, si está conectada, la IA de AMD Token Factory.',
+    'link.footer': 'AXONFAS · prototipo de validación en modo paciente. La pose se estima en este navegador con MediaPipe y las alertas salen de reglas fijas (ADR-004), con los umbrales que fija el fisioterapeuta. El video no sale del equipo (ADR-003). Si avisas una molestia, la revisan las reglas del servidor y, si está conectada, la IA de AMD Token Factory. No es un dispositivo médico.',
   },
   en: {
     // ---------------------------------------------------------------- index.html (body)
@@ -470,5 +473,8 @@
     // ---------------------------------------------------------------- demo-telemetry.js
     'demo.share': 'Share anonymous demo results',
     'demo.note': 'When it ends, the demo anonymously saves only numbers (repetitions, alerts and duration) so the team can improve AXONFAS. Never the video or your data. Only the team sees it.',
+    'link.chip': 'Patient mode · alerts from rules in this browser',
+    'link.lead': 'Alerts come from fixed rules in this browser. If you report discomfort, the server rules review it and, if it is connected, the AMD Token Factory AI too.',
+    'link.footer': 'AXONFAS · validation prototype in patient mode. Pose is estimated in this browser with MediaPipe and alerts come from fixed rules (ADR-004), with the thresholds set by the physiotherapist. Video never leaves the device (ADR-003). If you report discomfort, the server rules review it and, if it is connected, the AMD Token Factory AI too. Not a medical device.',
   },
 }));

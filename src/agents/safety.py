@@ -26,11 +26,12 @@ PARAMS = {
     "rest_seconds": {"unit": "s", "min": 10, "max": 180},      # descanso entre series
 }
 
-# Frases de alarma (sin tildes, en minúsculas). Ante la duda, detener: un falso positivo solo corta una sesión.
+# Frases de alarma (sin tildes, en minúsculas). Ante la duda, detener: un falso positivo solo corta una sesión. Por eso la
+# negación no se usa aquí ("no me caí" también detiene) y las frases discutibles quedan para después (TD-127).
 RED_FLAGS = [
     r"dolor (muy )?(agudo|fuerte|intenso|insoportable|punzante|terrible|horrible)",
     r"me duele (much[io]simo|demasiado|horrible|un monton|mucho)",
-    r"\bmare(o|ad[oa]|a|ando)\b|\bme mareo\b|todo me da vueltas",
+    r"\bmare(o|os|e|ad[oa]s?|a|ando|andome)\b|\bme mareo\b|todo me da vueltas",
     r"(perd[i]|pierdo|perdiendo) (la )?fuerza|se me (fue|va) la fuerza|perdida (subita |repentina )?de (la )?fuerza|fuerza (subita|repentina)",
     r"no siento (la|el|las|los) ",
     r"(me siento|estoy|me noto) (muy )?debil|debilidad",
@@ -39,8 +40,20 @@ RED_FLAGS = [
     r"no puedo (mover|sostener|levantar) (la|el|las|los|mi|mis) ",
     r"desmay",
     r"dolor (en el|de) pecho|me duele el pecho",
-    r"no puedo respirar|falta de aire|me ahogo",
-    r"\bcrujio\b|algo se rompio|escuche un (crack|chasquido)",
+    r"no puedo respirar|falta de aire|me ahogo|me falta (el )?aire|no me entra (el )?aire|me quedo sin aire",
+    r"\bcrujio\b|algo se rompio|escuche un (crack|chasquido)|senti un (crack|chasquido)",
+    r"(presion|opresion|apreton) (en el|del) pecho|me aprieta el pecho",
+    r"dolor de cabeza (muy )?(fuerte|intenso|horrible|terrible|insoportable)",
+    r"(veo|vista) (borros|doble|nublad)|se me nubl(a|o) la vista|veo (todo )?(negro|borroso|doble)",
+    r"palpitacion|taquicardia|el corazon (me )?(late|va) (muy )?(rapido|fuerte|raro)",
+    r"(cara|boca) (torcida|chueca|dormida)|no puedo hablar|se me traba la lengua",
+    # "me cayó bien" (frase hecha) también detiene: falso positivo conocido que se deja así a propósito hasta la
+    # revisión con fisioterapeutas (TD-127). No aflojar este patrón sin esa revisión.
+    r"\bme (cai|caigo|cayo)\b|me fui al (piso|suelo)",
+    r"\bsangr(o|a|ando|ado|e)\b|sangrado|hemorragia",
+    r"se me hinch\w*( \w+){0,3} (de golpe|de repente|mucho)|hinchazon (subita|repentina)",
+    r"sudor frio",
+    r"\bduele (muchisimo|demasiado|horrible|un monton)\b",
     # Inglés (ADR-030): la interfaz también está en inglés y el texto libre tiene que detener igual (I-7, I-22).
     r"\b(severe|sharp|intense|unbearable|stabbing|terrible|horrible|excruciating|acute) pain|pain is (severe|unbearable|terrible|horrible)",
     r"\bit hurts (so much|a lot|really bad|too much|badly|terribly)|\bhurts (really |so )?bad",
@@ -53,6 +66,18 @@ RED_FLAGS = [
     r"\bchest pain|pain in (my|the) chest|my chest hurts",
     r"\b(can[’']?t|cannot) breathe|\bshort(ness)? of breath|\bout of breath",
     r"something (snapped|popped|broke|tore)|i heard a (crack|pop|snap)",
+    # Inglés, equivalentes de las alarmas nuevas en español (merge con ADR-030): mismo criterio, ante la duda detener.
+    r"\bcan[’']?t catch my breath|\b(hard|struggling) to breathe",
+    r"\bchest (pressure|tightness)|(pressure|tightness) in (my|the) chest|\bmy chest (feels )?tight",
+    r"\b(severe|bad|terrible|intense|splitting|worst) headache|\bmy head hurts (so much|a lot|really bad)",
+    r"\bblurr(y|ed) vision|\bdouble vision|\bseeing double|\bmy vision (went|is going) (dark|black|blurry)",
+    r"\bpalpitation|\bmy heart is (racing|pounding)|\bracing heart|\bheart is beating (so |very |really )?(fast|hard)",
+    r"\bface (is )?droop|\bmouth is crooked|\bslurred speech|\bslurring|\b(can[’']?t|cannot) speak",
+    r"\bi (fell|fall)\b|\bi[’']?ve fallen|\bfell (down|over)\b|\bhad a fall",
+    r"\bbleed(ing)?\b|\bblood\b",
+    r"\bswell(ed|ing) up (suddenly|all of a sudden)|\bsudden swelling",
+    r"\bcold sweat",
+    r"\bi felt a (crack|pop|snap)",
 ]
 
 
@@ -103,17 +128,34 @@ def discomfort(text: str | None) -> str | None:
     return None
 
 
+# Palabras que niegan una molestia dentro de la misma frase ("no me duele", "sin dolor", "ya no duele", "nada de dolor").
+NEGATORS = {"no", "sin", "ningun", "ninguna", "not", "without", "never", "don't", "doesn't", "isn't", "don’t", "doesn’t", "isn’t"}
+
+
+def _negated(t: str, start: int) -> bool:
+    """¿La palabra de molestia que empieza en `start` está negada en las 3 palabras anteriores de su misma frase?"""
+    clause = re.split(r"[,.;:!?]", t[:start])[-1]
+    words = re.findall(r"[\w'’]+", clause)[-3:]
+    return any(w in NEGATORS for w in words) or "nada de" in " ".join(words)
+
+
 def classify_symptom(text: str | None) -> dict | None:
-    """{kind, category, match} de lo que dijo el paciente, o None. La alarma siempre gana sobre la molestia."""
+    """{kind, category, match} de lo que dijo el paciente, o None. La alarma siempre gana sobre la molestia, aun negada
+    ("no me mareo" detiene). La negación solo afecta a la categoría guardada de una molestia ("sin dolor" → other); no
+    cambia la acción ni `discomfort()`, que sigue cerrando la puerta a subir la exigencia (ADR-021)."""
     flag = red_flag(text or "")
     if flag:
         return {"kind": "red_flag", "category": "red_flag", "match": flag}
     t = normalize(text or "")
+    first = None
     for pattern in DISCOMFORT:
         m = re.search(pattern, t)
-        if m:
+        if not m:
+            continue
+        first = first or m
+        if not _negated(t, m.start()):
             return {"kind": "discomfort", "category": DISCOMFORT_CATEGORY[pattern], "match": m.group(0)}
-    return None
+    return {"kind": "discomfort", "category": "other", "match": first.group(0)} if first else None
 
 
 def reduce_demand(envelope: dict, current: dict) -> dict | None:
@@ -140,21 +182,24 @@ def reduce_demand(envelope: dict, current: dict) -> dict | None:
     return proposal
 
 
+def symptom_action(decision: dict) -> tuple[str, dict | None]:
+    """Acción y ajuste que deja la decisión de un turno con molestia: (`session_stopped`, None) con alarma,
+    (`demand_lowered`, {param, old, new}) si se aplicó una baja, y (`paused`, None) en cualquier otro caso."""
+    if decision.get("red_flag") or decision.get("outcome") == "session_stopped":
+        return "session_stopped", None
+    p = decision.get("proposal")
+    if decision.get("outcome") == "applied" and p:
+        return "demand_lowered", {"param": p["param"], "old": p["old"], "new": p["new"]}
+    return "paused", None
+
+
 def symptom_record(text: str | None, decision: dict) -> dict | None:
     """Registro de la molestia de un turno de voz, o None si el paciente no se quejó. Staging lo guarda con source
-    'voice_turn' cuando se conecte TD-61."""
+    'voice_turn' (ADR-033)."""
     found = classify_symptom(text)
     if not found:
         return None
-    adjustment = None
-    if found["kind"] == "red_flag":
-        action = "session_stopped"
-    elif decision.get("outcome") == "applied" and decision.get("proposal"):
-        action = "demand_lowered"
-        p = decision["proposal"]
-        adjustment = {"param": p["param"], "old": p["old"], "new": p["new"]}
-    else:
-        action = "paused"
+    action, adjustment = ("session_stopped", None) if found["kind"] == "red_flag" else symptom_action(decision)
     return {"kind": found["kind"], "category": found["category"], "text": (text or "").strip()[:200], "action": action,
             "adjustment": adjustment}
 
@@ -189,15 +234,19 @@ def envelope_limits(envelope: dict, param: str) -> tuple[float, float]:
     return lo, hi
 
 
-def validate(proposal: dict, envelope: dict, current: dict, utterance: str | None = None) -> dict:
+def validate(proposal: dict, envelope: dict, current: dict, utterance: str | None = None, *, allowed: set[str] | None = None,
+             discomfort_reported: bool = False) -> dict:
     """Decisión del motor de reglas sobre una propuesta del agente, con la forma de `agent_decision`.
 
-    - Forma inválida, parámetro desconocido o `old` que no coincide con el valor actual → `rejected`.
+    - Forma inválida, parámetro desconocido, parámetro que la pantalla no puede aplicar (`allowed`, ADR-033) o `old` que
+      no coincide con el valor actual → `rejected`.
     - Valor nuevo fuera del sobre → `escalated_to_therapist` (se pausa el ejercicio).
-    - Dentro del sobre → `applied`, salvo que el paciente se haya quejado (`utterance`) y la propuesta suba la exigencia:
-      entonces `escalated_to_therapist` (ADR-021). El valor cabe en el sobre, así que `within_envelope` sigue en True.
+    - Dentro del sobre → `applied`, salvo que el paciente se haya quejado (`utterance` con palabra de molestia, o
+      `discomfort_reported` cuando el turno viene del formulario «Tengo una molestia», ADR-033) y la propuesta suba la
+      exigencia: entonces `escalated_to_therapist` (ADR-021). El valor cabe en el sobre, así que `within_envelope` sigue en True.
     """
     decision = {"proposal": proposal, "within_envelope": False, "outcome": "rejected", "note": ""}
+    complained = bool(discomfort(utterance)) or discomfort_reported
     if not envelope:
         decision["note"] = "sin sobre de seguridad no se ajusta nada (I-3)"
         return decision
@@ -207,6 +256,12 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
     param = proposal["param"]
     if param not in PARAMS:
         decision["note"] = f"parámetro no permitido: {param!r}"
+        return decision
+    if allowed is not None and param not in allowed:
+        decision["note"] = f"esta pantalla no puede aplicar {param}: no se cambia"
+        return decision
+    if allowed is not None and param not in current:        # en el turno, sin valor actual no hay con qué comparar 'old'
+        decision["note"] = f"no hay valor actual de {param} en pantalla: no se cambia"
         return decision
     if param == "rom_target":
         if not (_number(envelope.get("rom_min")) and _number(envelope.get("rom_max"))):
@@ -222,6 +277,16 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
     if isinstance(new, bool) or not isinstance(new, (int, float)):
         decision["note"] = "el valor nuevo no es un número"
         return decision
+    try:
+        finite = math.isfinite(float(new))
+    except OverflowError:
+        finite = False
+    if not finite:
+        decision["note"] = "el valor nuevo no es un número válido"
+        return decision
+    if param == "reps" and not float(new).is_integer():
+        decision["note"] = "las repeticiones deben ser un número entero"
+        return decision
     if param in current and proposal["old"] != current[param]:
         decision["note"] = f"'old' ({proposal['old']}) no coincide con el valor actual ({current[param]})"
         return decision
@@ -231,10 +296,10 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
     lo, hi = envelope_limits(envelope, param)
     if lo <= float(new) <= hi:
         old = proposal["old"]
-        if discomfort(utterance) and not _number(old):
+        if complained and not _number(old):
             decision["note"] = "tras una molestia 'old' debe ser un número para comparar la exigencia"
             return decision
-        if discomfort(utterance) and (float(new) - float(old)) * LESS_DEMAND[param] < 0:
+        if complained and (float(new) - float(old)) * LESS_DEMAND[param] < 0:
             decision.update(within_envelope=True, outcome="escalated_to_therapist",
                             note="tras una molestia solo se baja la exigencia (ADR-021): lo revisa el fisioterapeuta")
             return decision

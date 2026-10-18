@@ -226,6 +226,7 @@ def main() -> int:
     db = args.db or settings.get("AXONFAS_DB") or str(DEFAULT_DB)
     Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"), load_tracking(HERE / "tracker.js"),
                              names_en=load_names_en(HERE / "i18n" / "catalog.en.js"))
+    Handler.api.warm_ai()          # el estado de la IA queda tibio: el primer turno no espera la consulta al catálogo
     Handler.cors = settings.cors_origins()
     if args.cloud:
         args.http_port = int(settings.get("PORT") or args.http_port)

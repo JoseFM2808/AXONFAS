@@ -163,7 +163,7 @@ erDiagram
 | `agent_decision` | `proposal` | jsonb | `{param, old, new, reason}` propuesto por el LLM |
 | `agent_decision` | `within_envelope` | boolean | Resultado de validar contra `safety_envelope` |
 | `agent_decision` | `outcome` | text | `applied`, `rejected`, `escalated_to_therapist`. Sin propuesta del agente no hay fila; una frase de alarma termina la sesión (`end_reason = 'pain_stop'`) y tampoco es una decisión del agente (ADR-016) |
-| `agent_decision` | `agent` | text | Quién propuso. Además de los agentes, `rules` cuando, ante una molestia, la baja la propone el motor de reglas porque el LLM no propuso una válida (ADR-021). En el código de hoy es `source` (`llm` o `rules`) |
+| `agent_decision` | `agent` | text | Quién propuso. Además de los agentes, `rules` cuando, ante una molestia, la baja la propone el motor de reglas porque el LLM no propuso una válida (ADR-021). En Staging se guarda como `clinical` o `rules` (ADR-033) |
 | `symptom_report` | `kind` / `action` | text | `kind`: `red_flag` o `discomfort`. `action`: `session_stopped`, `demand_lowered`, `paused` o `logged`. Dato de salud (ADR-021) |
 | `plan_exercise` | `rest_min_seconds` / `rest_max_seconds` | int | Descanso entre series recomendado, 10–180 s. Es una recomendación, no forma parte de `safety_envelope` (ADR-022) |
 | `clinical_report` | `reviewed_by` | uuid | Terapeuta que aprobó el borrador. Sin revisión, el reporte es borrador |
@@ -198,6 +198,8 @@ del repo y de Drive. Solo datos sintéticos o del equipo con consentimiento (ADR
 | `app_meta` | — (nueva) | Clave y valor del servidor: hoy `guest_sandbox` = id del fisioterapeuta del consultorio de muestra |
 | `organization` | `CLINIC` (Nivel 3) | Organización (ADR-026): `name`, `plan` (`clinic` o `network`), `admin_email` (único: esa cuenta de Google entra como empresa), `ehr_fhir_base_url` (https, sin credenciales) y `ehr_enabled`, `created_at`. Las bases anteriores ganan la tabla al arrancar |
 | `org_license` | — (nueva) | Licencia de profesional: `organization_id`, `email` (invitado, en minúsculas), `therapist_id` (se llena al entrar con Google con ese correo y ser fisioterapeuta), `status` (`active` o `revoked`), `created_at`, `revoked_at`. Índice único parcial: un correo, una sola licencia activa |
+| `voice_turn` | `VOICE_TURN` | Un registro por turno de texto del paciente (ADR-033): `patient_id`, `session_id` (se une al guardar la sesión, por id), `exercise_id`, `created_at`, `speaker` (solo `patient`), `input` (`text`; `voice` queda para TD-120), `transcript` (1–200, ya filtrado de datos personales, ADR-034), `pain_score` (0–10; siempre vacío: el dolor al terminar vive en `session.pain_score`, TD-121 cerrado), `reply` (≤ 300, la frase que vio el paciente), `reply_source` (`template` o `llm`), `action` (la de la molestia), `ai_provider`, `ai_model`, `ai_skipped`, `clinical_ms`, `coach_ms`, `total_ms`, `symptom_report_id` y `redactions` (cuántos datos personales se ocultaron; las bases con la tabla anterior ganan la columna al arrancar). A diferencia de PostgreSQL, guarda la respuesta y los datos de la IA en la misma fila. Dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan la tabla al arrancar |
+| `agent_decision` | `AGENT_DECISION` | Solo si hubo propuesta (del agente clínico o del motor de reglas): `patient_id`, `session_id`, `voice_turn_id`, `exercise_id`, `created_at`, `agent` (`clinical` o `rules`), `proposal` (JSON `{param, old, new, reason}`), `current` (JSON con los valores actuales usados), `within_envelope` (0 o 1), `outcome` (`applied`, `rejected`, `escalated_to_therapist`), `rationale` (≤ 300, la nota del motor de reglas), `llm_outcome` y `llm_proposal` (lo que dijo el LLM cuando decidieron las reglas), `ai_provider`, `ai_model` y `llm_ms`. CHECK: `outcome = 'applied'` exige `within_envelope = 1`. No guarda el texto crudo del LLM. Las bases anteriores ganan la tabla al arrancar |
 
 Reglas que aplica la API:
 
@@ -216,6 +218,12 @@ Reglas que aplica la API:
 - Una molestia solo se registra con consentimiento (403 sin él). Si trae un ejercicio, tiene que estar en el plan
   activo (409). Su decisión es determinista y nunca sale del sobre.
 - `symptom_report_ids` de otro paciente o ya unidos a una sesión se ignoran sin error.
+- `voice_turn_ids` funciona igual: une los turnos y sus decisiones a la sesión; los de otro paciente o ya unidos se
+  ignoran sin error (ADR-033).
+- Un turno de alarma guarda `voice_turn` y `symptom_report`, pero no `agent_decision`: la alarma no es una decisión del
+  agente.
+- El texto libre de `symptom_report.text` y `voice_turn.transcript` se guarda filtrado de datos personales, igual que se
+  envía al LLM; las reglas de seguridad leyeron el original (ADR-034).
 - Un código de afiliación nuevo pone `consent_given = 0` (TD-85).
 - La EVA de una sesión la marca solo su paciente (404 para otra sesión) y una sola vez (409 la segunda); tiene que ser
   un entero de 0 a 10.

@@ -23,7 +23,8 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,6 +40,9 @@ import fhir  # noqa: E402
 import messages  # noqa: E402 — idioma de lo que escribe el servidor (ADR-030, TD-116)
 import organizations  # noqa: E402 — Nivel 3: organizaciones y licencias (ADR-026) — export FHIR R4; vive junto a este módulo (serve.py y los tests ponen src/backend en sys.path)
 from agents import coach, safety  # noqa: E402
+from agents import privacy  # noqa: E402 — filtro de datos personales antes de la IA (ADR-034)
+from agents import turn as agent_turn  # noqa: E402 — turno de texto del paciente (ADR-033)
+from agents.llm import LLMError  # noqa: E402
 from agents.safety import PARAMS  # noqa: E402 — límites fijos del rango, para no duplicar números
 
 SCHEMA = """
@@ -95,6 +99,34 @@ CREATE TABLE IF NOT EXISTS symptom_report (
   action TEXT NOT NULL CHECK (action IN ('session_stopped', 'demand_lowered', 'paused', 'logged')),
   adjustment TEXT,                     -- JSON {param, old, new} solo con demand_lowered
   source TEXT NOT NULL CHECK (source IN ('patient_form', 'voice_turn')));
+-- Turno de texto del paciente con el agente clínico (ADR-033): un registro por turno y, si hubo propuesta, una decisión.
+CREATE TABLE IF NOT EXISTS voice_turn (
+  id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id),
+  session_id INTEGER REFERENCES session(id), exercise_id TEXT, created_at TEXT NOT NULL,
+  speaker TEXT NOT NULL DEFAULT 'patient' CHECK (speaker IN ('patient')),
+  input TEXT NOT NULL DEFAULT 'text' CHECK (input IN ('text', 'voice')),
+  transcript TEXT NOT NULL CHECK (length(transcript) BETWEEN 1 AND 200),
+  pain_score INTEGER CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10),   -- siempre NULL por ahora (TD-121)
+  reply TEXT NOT NULL CHECK (length(reply) <= 300),
+  reply_source TEXT NOT NULL CHECK (reply_source IN ('template', 'llm')),
+  action TEXT CHECK (action IS NULL OR action IN ('session_stopped', 'demand_lowered', 'paused', 'logged')),
+  ai_provider TEXT, ai_model TEXT, ai_skipped TEXT, clinical_ms INTEGER, coach_ms INTEGER, total_ms INTEGER,
+  symptom_report_id INTEGER REFERENCES symptom_report(id),
+  redactions INTEGER NOT NULL DEFAULT 0);   -- datos personales ocultados en el texto guardado (ADR-034)
+CREATE TABLE IF NOT EXISTS agent_decision (
+  id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id),
+  session_id INTEGER REFERENCES session(id), voice_turn_id INTEGER NOT NULL REFERENCES voice_turn(id),
+  exercise_id TEXT, created_at TEXT NOT NULL,
+  agent TEXT NOT NULL CHECK (agent IN ('clinical', 'rules')),
+  proposal TEXT NOT NULL,              -- JSON {param, old, new, reason}
+  current TEXT,                        -- JSON con los valores actuales que se usaron (auditoría)
+  within_envelope INTEGER NOT NULL CHECK (within_envelope IN (0, 1)),
+  outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'rejected', 'escalated_to_therapist')),
+  rationale TEXT CHECK (rationale IS NULL OR length(rationale) <= 300),
+  llm_outcome TEXT, llm_proposal TEXT, ai_provider TEXT, ai_model TEXT, llm_ms INTEGER,
+  CHECK (outcome <> 'applied' OR within_envelope = 1));
+CREATE INDEX IF NOT EXISTS idx_turn_patient ON voice_turn(patient_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_decision_patient ON agent_decision(patient_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_symptom_patient ON symptom_report(patient_id, reported_at);
 CREATE INDEX IF NOT EXISTS idx_patient_therapist ON patient(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_session_patient ON session(patient_id, ended_at);
@@ -137,6 +169,20 @@ SYMPTOM_OPTIONS = {"pain_mild": "pain", "fatigue": "fatigue", "cramp": "cramp", 
 REST_DEFAULT_SECONDS = 60
 REST_LIMITS = (PARAMS["rest_seconds"]["min"], PARAMS["rest_seconds"]["max"])
 MAX_BODY = 256 * 1024
+# Parámetros que la pantalla del paciente (index.html?plan=) sabe aplicar. rest_seconds queda fuera hasta TD-119: no hay
+# cuenta de descanso en esa pantalla (ADR-033).
+TURN_APPLICABLE = {"rom_target", "reps"}
+AI_FRESH_S = 30            # el estado de la IA se refresca (en segundo plano) si tiene más de esto
+AI_STALE_S = 600           # con más de esto ya no se confía en él: el turno espera una consulta nueva
+
+
+def env_seconds(key: str, default: float, lo: float, hi: float) -> float:
+    """Segundos de una variable de entorno (AXONFAS_TURN_*), acotados; un valor que no es un número usa el de partida."""
+    try:
+        value = float(settings.get(key, ""))
+    except ValueError:
+        return default
+    return min(hi, max(lo, value)) if math.isfinite(value) else default
 # Meta de recorrido por ejercicio de la galería (ADR-025): límites fijos por unidad de la medida de tracker.js. Son de
 # forma, no clínicos: el valor lo elige el fisioterapeuta.
 RANGE_GOAL_BOUNDS = {"°": (1.0, 180.0), "cm": (0.5, 50.0), "%": (1.0, 200.0)}
@@ -184,6 +230,30 @@ WALL_REASONS = [
 
 def wall_reason(method: str, path: str) -> str:
     return next((text for m, rx, text in WALL_REASONS if m in (None, method) and rx.fullmatch(path)), "guardar cambios")
+
+
+class LazyLLM:
+    """Cliente del LLM que se crea en el primer chat(), dentro del hilo con tiempo límite del turno: pedir el catálogo de
+    modelos no corre por cuenta del paciente. Expone `model` y `label` una vez creado."""
+
+    def __init__(self, build):
+        self._build, self._inner = build, None
+
+    @property
+    def model(self):                                   # el que respondió: con una cadena puede ser la alternativa (TD-34)
+        return getattr(self._inner, "model", None) if self._inner is not None else None
+
+    @property
+    def label(self):
+        return getattr(self._inner, "label", None) if self._inner is not None else None
+
+    def chat(self, messages, **kwargs):
+        if self._inner is None:
+            inner = self._build()
+            if inner is None:
+                raise LLMError("sin IA configurada")
+            self._inner = inner
+        return self._inner.chat(messages, **kwargs)
 
 
 @dataclass
@@ -412,6 +482,17 @@ def clean_rep(rep: dict) -> dict:
 
 # ------------------------------------------------------------------------------------------------ API
 class StagingApi:
+    # Cupo de AMD Token Factory (la clave es del equipo) y presupuesto del turno de texto (ADR-033). Valores de partida,
+    # no medidos (TD-123): fáciles de cambiar aquí.
+    # Valores de partida hasta medir con `py -m agents.turn --measure N`; se ajustan con AXONFAS_TURN_* sin tocar código.
+    TURN_BUDGET_S = 18.0            # tiempo total del turno en el servidor (clínico + conversacional + 1)
+    TURN_CLINICAL_S = 12.0          # tope del agente clínico
+    TURN_COACH_S = 5.0              # tope del agente conversacional (solo si el clínico tardó poco)
+    TURN_COACH_IF_UNDER_S = 6.0     # el conversacional solo se pide si el clínico terminó en menos de esto
+    TURN_MIN_GAP_S = 3.0            # entre dos turnos con IA del mismo paciente
+    TURN_MAX_PER_HOUR = 20          # turnos con IA por paciente y hora
+    TURN_MAX_PARALLEL = 4           # turnos con IA a la vez en todo el servidor
+
     def __init__(self, db_path: str | Path, catalog: dict[str, str], names: dict[str, str] | None = None,
                  tracking: dict[str, dict] | None = None, names_en: dict[str, str] | None = None):
         if str(db_path) != ":memory:":
@@ -432,6 +513,8 @@ class StagingApi:
                   INSERT INTO token_new SELECT token, role, subject_id, created_at FROM token;
                   DROP TABLE token;
                   ALTER TABLE token_new RENAME TO token;""")
+        if "redactions" not in {r["name"] for r in self.db.execute("PRAGMA table_info(voice_turn)")}:
+            self.db.execute("ALTER TABLE voice_turn ADD COLUMN redactions INTEGER NOT NULL DEFAULT 0")   # tabla de antes de ADR-034
         self.jwks = google_auth.Jwks()
         plan_columns = {r["name"] for r in self.db.execute("PRAGMA table_info(plan_exercise)")}
         for column in ("rest_min_seconds", "rest_max_seconds"):
@@ -462,6 +545,14 @@ class StagingApi:
         self._req = threading.local()                       # idioma de la petición en curso (cada petición, su hilo)
         self.tracking = tracking if tracking is not None else (load_tracking(DEFAULT_TRACKER) if DEFAULT_TRACKER.exists() else {})
         self._ai = {"checked": 0.0, "available": False}
+        self._ai_refreshing = False
+        self.TURN_CLINICAL_S = env_seconds("AXONFAS_TURN_CLINICAL_S", type(self).TURN_CLINICAL_S, 4, 20)
+        self.TURN_COACH_S = env_seconds("AXONFAS_TURN_COACH_S", type(self).TURN_COACH_S, 2, 8)
+        self.TURN_BUDGET_S = env_seconds("AXONFAS_TURN_BUDGET_S", type(self).TURN_BUDGET_S, self.TURN_CLINICAL_S + 1, 30)
+        self.TURN_BUDGET_S = max(self.TURN_BUDGET_S, self.TURN_CLINICAL_S + 1)
+        self._pool = ThreadPoolExecutor(max_workers=self.TURN_MAX_PARALLEL, thread_name_prefix="axonfas-turn")
+        self._turn_slots = threading.BoundedSemaphore(self.TURN_MAX_PARALLEL)
+        self._turn_log: dict[int, deque] = defaultdict(deque)       # patient_id → instantes (monotonic) de turnos con IA
         self.hub = LiveHub()
         self.routes = [
             ("POST", r"/api/therapists", self.create_therapist, None),
@@ -507,6 +598,7 @@ class StagingApi:
             ("GET", r"/api/me/stream", self.live_stream_for_patient, "patient"),
             ("PUT", r"/api/me/profile", self.set_my_profile, "patient"),
             ("POST", r"/api/me/discomfort", self.report_discomfort, "patient"),
+            ("POST", r"/api/me/turn", self.patient_turn, "patient"),
         ]
 
     # -------------------------------------------------------------------------------------- utilidades
@@ -653,6 +745,27 @@ class StagingApi:
                                "FROM symptom_report WHERE patient_id = ? ORDER BY id DESC LIMIT ?", (patient_id, limit))
         return [{**dict(r), "adjustment": json.loads(r["adjustment"]) if r["adjustment"] else None} for r in rows]
 
+    def _decisions(self, patient_id: int, limit: int = 30, lang: str = "es") -> list[dict]:
+        """Decisiones del agente del paciente con lo que dijo (JOIN solo con turnos del mismo paciente, I-10)."""
+        rows = self.db.execute(
+            "SELECT d.id, d.session_id, d.exercise_id, d.created_at, d.agent, d.proposal, d.outcome, d.within_envelope, "
+            "d.rationale, d.llm_outcome, d.llm_proposal, d.ai_provider, d.ai_model, d.llm_ms, v.transcript, v.reply_source "
+            "FROM agent_decision d JOIN voice_turn v ON v.id = d.voice_turn_id AND v.patient_id = d.patient_id "
+            "WHERE d.patient_id = ? ORDER BY d.id DESC LIMIT ?", (patient_id, limit))
+        return [{**{k: r[k] for k in ("id", "session_id", "exercise_id", "created_at", "agent", "outcome",
+                                      "llm_outcome", "ai_provider", "ai_model", "llm_ms")},
+                 "rationale": messages.tr(r["rationale"], lang),
+                 "proposal": json.loads(r["proposal"]), "within_envelope": bool(r["within_envelope"]),
+                 "llm_proposal": json.loads(r["llm_proposal"]) if r["llm_proposal"] else None,
+                 "turn": {"transcript": r["transcript"], "reply_source": r["reply_source"]}} for r in rows]
+
+    def _turns(self, patient_id: int, limit: int = 30) -> list[dict]:
+        rows = self.db.execute("SELECT v.id, v.session_id, v.exercise_id, v.created_at, v.transcript, v.action, v.ai_provider, "
+                               "v.ai_model, v.ai_skipped, v.clinical_ms, v.reply_source, "
+                               "EXISTS (SELECT 1 FROM agent_decision d WHERE d.voice_turn_id = v.id) AS has_decision "
+                               "FROM voice_turn v WHERE v.patient_id = ? ORDER BY v.id DESC LIMIT ?", (patient_id, limit))
+        return [{**dict(r), "has_decision": bool(r["has_decision"])} for r in rows]
+
     def _events(self, session_ids: list[int]) -> list[dict]:
         if not session_ids:
             return []
@@ -704,6 +817,7 @@ class StagingApi:
             sessions = self._sessions(patient_id)
             events = self._events([s["id"] for s in sessions])
             symptoms = self._symptoms(patient_id)
+            decisions, turns = self._decisions(patient_id, lang=self.lang()), self._turns(patient_id)
         with self.lock:
             marks = ",".join("?" * len(sessions[:30]))
             reports = {r["session_id"]: r["reviewed_by"] for r in self.db.execute(
@@ -714,7 +828,7 @@ class StagingApi:
             s["baseline"] = json.loads(s["baseline"]) if s["baseline"] else None
         metrics = compute_metrics(plan, [{**s, "reps": json.dumps(s["reps"])} for s in sessions], events, symptoms=symptoms)
         return 200, {"patient": self._patient_public(p), "plan": plan, "sessions": sessions[:30], "events": events[:60],
-                     "symptoms": symptoms[:30], "metrics": metrics, "live": self.hub.last(("therapist", patient_id))}
+                     "symptoms": symptoms[:30], "decisions": decisions, "turns": turns, "metrics": metrics, "live": self.hub.last(("therapist", patient_id))}
 
     def set_plan(self, therapist_id, data, patient_id):
         items = data.get("exercises")
@@ -802,8 +916,8 @@ class StagingApi:
         return dict(rows[-1]) if rows else None
 
     def _report_input(self, row: sqlite3.Row, lang: str = "es") -> dict:
-        """Entrada de `soap.facts` armada solo con datos guardados de la sesión (I-6). Staging todavía no guarda
-        `agent_decision` ni `voice_turn` (TD-61): la nota los recibe vacíos."""
+        """Entrada de `soap.facts` armada solo con datos guardados de la sesión (I-6): molestias, decisiones del agente
+        (`agent_decision`) y lo que el paciente escribió en el turno (`voice_turn`, ADR-033)."""
         item = self._plan_item_at(row["patient_id"], row["exercise_id"], row["ended_at"])
         target = None
         if item:
@@ -819,13 +933,21 @@ class StagingApi:
         symptoms = [{"category": x["category"], "text": x["text"], "action": x["action"], "in_session": x["session_id"] is not None}
                     for x in reversed(self._symptoms(row["patient_id"]))
                     if x["session_id"] == row["id"] or (x["session_id"] is None and x["reported_at"][:10] == day)]
+        decisions = [{"agent": d["agent"], "proposal": json.loads(d["proposal"]), "outcome": d["outcome"],
+                      "within_envelope": bool(d["within_envelope"])}
+                     for d in self.db.execute("SELECT agent, proposal, outcome, within_envelope FROM agent_decision "
+                                              "WHERE session_id = ? ORDER BY id", (row["id"],))]
+        # Cada turno del formulario también es una molestia: si la S citara ambos, repetiría la frase dos veces (ADR-033).
+        reported = {x["text"] for x in symptoms if x["in_session"] and x["text"]}
+        utterances = [t["transcript"] for t in self.db.execute("SELECT transcript FROM voice_turn WHERE session_id = ? ORDER BY id",
+                                                              (row["id"],)) if t["transcript"] not in reported]
         return {"id": row["id"], "patient_id": row["patient_id"], "monitored": row["mode"] == "monitored",
                 "exercise_id": row["exercise_id"], "exercise_name": self._names(lang).get(row["exercise_id"], row["exercise_id"]),
                 "started_at": row["started_at"], "ended_at": row["ended_at"], "reps_done": row["reps_done"],
                 "reps_target": target, "end_reason": row["end_reason"], "events": [{"type": e["type"]} for e in events],
                 "rom_mean": round(sum(knees) / len(knees), 1) if knees else None,
-                "pain_reported": bool(row["pain_reported"]), "pain_score": row["pain_score"], "decisions": [], "utterances": [],
-                "no_camera": bool(row["no_camera"]),
+                "pain_reported": bool(row["pain_reported"]), "pain_score": row["pain_score"], "decisions": decisions,
+                "utterances": utterances, "no_camera": bool(row["no_camera"]),
                 "symptom_reports": symptoms}
 
     def _report_public(self, session_id: int, lang: str | None = None) -> dict:
@@ -1343,27 +1465,60 @@ class StagingApi:
         self.hub.publish(("patient", patient_id), {"kind": "profile_updated", "at": now_iso()})
         return 200, {"profile": profile}
 
-    def _llm(self, purpose: str = "advice"):
+    def _llm(self, purpose: str = "advice", timeout: float = 30, retries_429: int | None = None,
+             budget_s: float | None = None, fallback: bool = True):
         from agents import providers
-        return providers.client(purpose, timeout=30)
+        return providers.client(purpose, timeout=timeout, retries_429=retries_429, budget_s=budget_s, fallback=fallback)
 
     def ai_status(self, _therapist_id, _data):
-        """¿Hay IA de AMD conectada (Token Factory o vLLM propio)? Se consulta el catálogo como mucho cada 30 s."""
+        """¿Hay IA de AMD conectada (Token Factory o vLLM propio)? Con el estado ya guardado y de menos de 10 min responde
+        al instante y, si tiene más de 30 s, lo refresca en segundo plano; en frío (nunca consultado) espera la consulta."""
         from agents import providers
         if not providers.config():
             return 200, {"available": False, "provider": None, "reason": messages.tr("sin proveedor de IA configurado", self.lang())}
-        if time.time() - self._ai["checked"] > 30:
-            st = providers.status(timeout=4)
-            self._ai.update(checked=time.time(), available=st["available"], provider=st["provider"], reason=st["reason"])
+        age = time.time() - self._ai["checked"]
+        if self._ai["checked"] and age <= AI_STALE_S:
+            if age > AI_FRESH_S:
+                self._refresh_ai_in_background()
+        else:
+            self._refresh_ai()
         return 200, {"available": self._ai["available"], "provider": self._ai.get("provider"),
                      "reason": messages.tr(self._ai.get("reason"), self.lang())}
+
+    def _refresh_ai(self) -> None:
+        from agents import providers
+        st = providers.status(timeout=4)
+        self._ai.update(checked=time.time(), available=st["available"], provider=st["provider"], reason=st["reason"])
+
+    def _refresh_ai_in_background(self) -> threading.Thread | None:
+        """Un refresco a la vez; si falla, queda el estado anterior. Devuelve el hilo (o None si ya había uno)."""
+        with self.lock:
+            if self._ai_refreshing:
+                return None
+            self._ai_refreshing = True
+
+        def run():
+            try:
+                self._refresh_ai()
+            except Exception:
+                pass
+            finally:
+                self._ai_refreshing = False
+        thread = threading.Thread(target=run, daemon=True, name="axonfas-ai-status")
+        thread.start()
+        return thread
+
+    def warm_ai(self) -> threading.Thread | None:
+        """Primer chequeo de la IA en segundo plano; lo llama serve.py al arrancar (no __init__, para que los tests no usen red)."""
+        from agents import providers
+        return self._refresh_ai_in_background() if providers.config() else None
 
     def advice(self, therapist_id, data, patient_id):
         """Resumen con IA de las sugerencias que ya calcularon las reglas. Sin LLM conectado: 503."""
         items = data.get("suggestions")
         if not isinstance(items, list) or not items or len(items) > 20 or not all(isinstance(s, dict) for s in items):
             raise ApiError(400, "'suggestions' debe ser una lista de 1 a 20 sugerencias.")
-        clean = [{k: str(s.get(k) or "")[:400] for k in ("title", "detail", "because")} | {"priority": s.get("priority")}
+        clean = [{k: privacy.redact(str(s.get(k) or "")[:400])[0] for k in ("title", "detail", "because")} | {"priority": s.get("priority")}
                  for s in items]
         with self.lock:
             p = self._own_patient(therapist_id, patient_id)
@@ -1382,7 +1537,10 @@ class StagingApi:
         llm = self._llm()
         if llm is None:
             raise ApiError(503, "La IA no está conectada: falta configurar AMD Token Factory en el servidor.")
-        out = advisor.summarize(llm, json.loads(p["profile"]) if p["profile"] else None, clean, known, lang)
+        profile = json.loads(p["profile"]) if p["profile"] else None
+        if profile and profile.get("note"):                  # la nota es texto libre: se filtra antes de salir hacia la IA (ADR-034)
+            profile = {**profile, "note": privacy.redact(profile["note"])[0]}
+        out = advisor.summarize(llm, profile, clean, known, lang)
         if out.get("text") and advisor.mentions_unknown(out["text"], known, both):
             out = {"text": None, "source": "rejected", "reason": "el resumen nombra ejercicios que no están en el plan ni en las sugerencias"}
         if out.get("reason"):
@@ -1448,9 +1606,13 @@ class StagingApi:
                 done[s["exercise_id"]] += 1
             if parse_iso(s["ended_at"]) >= fortnight:     # el día de hoy lo calcula care-plan.js con la hora local
                 history[s["exercise_id"]].append(s["ended_at"])
+        from agents import providers
         return 200, {"patient": {"id": p["id"], "alias": p["alias"], "consent_given": bool(p["consent_given"]),
                                  "profile": json.loads(p["profile"]) if p["profile"] else None},
                      "therapist": {"name": therapist["name"]},
+                     # Solo la caché (sin red): la pantalla elige su texto de espera y cuánto esperar (ADR-033).
+                     "assistant": {"available": bool(self._ai.get("available")) and bool(providers.config()),
+                                   "provider": self._ai.get("provider"), "wait_s": math.ceil(self.TURN_BUDGET_S + 7)},
                      "plan": [{**item, "done_7d": done[item["exercise_id"]], "history": sorted(history[item["exercise_id"]])}
                               for item in plan]}
 
@@ -1489,6 +1651,10 @@ class StagingApi:
         if (not isinstance(symptom_ids, list) or len(symptom_ids) > 20
                 or not all(isinstance(i, int) and not isinstance(i, bool) for i in symptom_ids)):
             raise ApiError(400, "'symptom_report_ids' debe ser una lista de hasta 20 números.")
+        turn_ids = data.get("voice_turn_ids") or []
+        if (not isinstance(turn_ids, list) or len(turn_ids) > 20
+                or not all(isinstance(i, int) and not isinstance(i, bool) for i in turn_ids)):
+            raise ApiError(400, "'voice_turn_ids' debe ser una lista de hasta 20 números.")
         clean_events = []
         for e in events:
             if not isinstance(e, dict) or e.get("type") not in EVENT_TYPES:
@@ -1518,6 +1684,12 @@ class StagingApi:
                 marks = ",".join("?" * len(symptom_ids))
                 self.db.execute(f"UPDATE symptom_report SET session_id = ? WHERE id IN ({marks}) AND patient_id = ? "
                                 "AND session_id IS NULL", (cur.lastrowid, *symptom_ids, patient_id))
+            if turn_ids:          # igual que las molestias: por id, y solo los turnos de este paciente que no tengan sesión
+                marks = ",".join("?" * len(turn_ids))
+                self.db.execute(f"UPDATE voice_turn SET session_id = ? WHERE id IN ({marks}) AND patient_id = ? "
+                                "AND session_id IS NULL", (cur.lastrowid, *turn_ids, patient_id))
+                self.db.execute(f"UPDATE agent_decision SET session_id = ? WHERE voice_turn_id IN ({marks}) AND patient_id = ? "
+                                "AND session_id IS NULL", (cur.lastrowid, *turn_ids, patient_id))
         self.hub.publish(("therapist", patient_id), {"kind": "session_saved", "session_id": cur.lastrowid, "exercise_id": ex_id,
                                                      "end_reason": end_reason, "no_camera": no_camera, "at": now_iso()})
         return 201, {"session_id": cur.lastrowid, "no_camera": no_camera}
@@ -1610,13 +1782,175 @@ class StagingApi:
                     "SELECT 1 FROM plan_exercise WHERE patient_id = ? AND exercise_id = ? AND active = 1", (patient_id, exercise_id)).fetchone():
                 raise ApiError(409, "Ese ejercicio no está en tu plan.")
             record = self._assess_symptom(patient_id, exercise_id, option, text, data.get("in_session") is True, current)
+        record["text"] = privacy.redact(text)[0][:200] if text else text      # las reglas leyeron el original; se guarda el filtrado
         report = self._save_symptom(patient_id, exercise_id, record, "patient_form")
         action, adjustment = record["action"], record["adjustment"]
-        message = {"session_stopped": coach.STOP_TEXT, "paused": coach.PAUSE_TEXT,
-                   "demand_lowered": coach.template({"outcome": "applied", "proposal": adjustment}) if adjustment else coach.PAUSE_TEXT,
-                   "logged": "Gracias: se lo avisamos a tu fisioterapeuta. Si empeora, no hagas el ejercicio y consúltale."}[action]
         return 201, {"report": report, "action": action, "adjustment": adjustment, "stop": action == "session_stopped",
-                     "message": messages.tr(message, self.lang())}
+                     "message": messages.tr(self._symptom_message(action, adjustment), self.lang())}
+
+    @staticmethod
+    def _symptom_message(action: str, adjustment: dict | None) -> str:
+        return {"session_stopped": coach.STOP_TEXT, "paused": coach.PAUSE_TEXT,
+                "demand_lowered": coach.template({"outcome": "applied", "proposal": adjustment}) if adjustment else coach.PAUSE_TEXT,
+                "logged": "Gracias: se lo avisamos a tu fisioterapeuta. Si empeora, no hagas el ejercicio y consúltale."}[action]
+
+    # ------------------------------------------------------------------ turno de texto del paciente (ADR-033)
+    @staticmethod
+    def _validated_current(raw, item: dict | None) -> dict:
+        """Valores actuales para el agente. rom_target y reps los manda el navegador (es lo que se ve en pantalla) y solo
+        entran si son números válidos: lo que se aplica es `new`, que se valida contra el sobre guardado aquí, así que
+        un `current` falso solo cambia el `old` auditado. rest_seconds sale del plan, nunca del navegador."""
+        raw = raw if isinstance(raw, dict) else {}
+        current = {}
+        finite = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+        if finite(raw.get("rom_target")) and 10 <= raw["rom_target"] <= 140:
+            current["rom_target"] = int(round(raw["rom_target"]))
+        max_reps = ((item or {}).get("safety_envelope") or {}).get("max_reps")
+        reps = raw.get("reps")
+        if finite(reps) and float(reps).is_integer() and finite(max_reps) and 1 <= reps <= max_reps:
+            current["reps"] = int(reps)
+        if item:
+            current["rest_seconds"] = item["rest"]["min"]
+        return current
+
+    @staticmethod
+    def _clean_recent(raw) -> list[dict]:
+        """Hasta 5 repeticiones {index, kneeRom, peakTrunk} con números finitos; lo demás se descarta."""
+        out = []
+        for rep in (raw if isinstance(raw, list) else [])[-5:]:
+            if not isinstance(rep, dict):
+                continue
+            clean = {k: round(float(rep[k]), 1) for k in ("index", "kneeRom", "peakTrunk")
+                     if isinstance(rep.get(k), (int, float)) and not isinstance(rep.get(k), bool) and math.isfinite(rep[k])}
+            if clean:
+                out.append(clean)
+        return out
+
+    def _turn_admit(self, patient_id: int) -> str | None:
+        """None si este turno puede usar la IA (y toma un lugar), o el motivo: `rate_limited` o `busy`. Cuida el cupo
+        de Token Factory, que comparte todo el equipo; sin IA el turno sigue por reglas, sin error (ADR-033)."""
+        now = time.monotonic()
+        with self.lock:
+            log = self._turn_log[patient_id]
+            while log and now - log[0] > 3600:
+                log.popleft()
+            if (log and now - log[-1] < self.TURN_MIN_GAP_S) or len(log) >= self.TURN_MAX_PER_HOUR:
+                return "rate_limited"
+            if not self._turn_slots.acquire(blocking=False):
+                return "busy"
+            log.append(now)
+        return None
+
+    def patient_turn(self, patient_id, data):
+        """Turno de texto del paciente durante una sesión (ADR-033). Orden fijo: reglas primero (la alarma nunca espera al
+        LLM), después el agente clínico de AMD si hay sobre, IA y cupo; sin IA, con fallo o sin tiempo, deciden las reglas
+        y el paciente no ve un error. Todo turno cuenta como molestia declarada: solo se baja la exigencia."""
+        lang = self.lang()                                  # los hilos del grupo no tienen la petición: se lee aquí (ADR-032)
+        text = self._text(data, "text", 200)
+        if data.get("in_session") is not True:
+            raise ApiError(400, "El turno es solo durante una sesión: usa «Tengo una molestia».")
+        option = data.get("option")
+        if option is not None and (not isinstance(option, str) or option not in SYMPTOM_OPTIONS):
+            raise ApiError(400, "Esa opción no existe.")
+        exercise_id = data.get("exercise_id")
+        if not isinstance(exercise_id, str) or exercise_id not in self.catalog:
+            raise ApiError(400, "Falta un ejercicio del catálogo.")
+        with self.lock:
+            p = self.db.execute("SELECT consent_given FROM patient WHERE id = ?", (patient_id,)).fetchone()
+            if not p or not p["consent_given"]:
+                raise ApiError(403, "Sin consentimiento no se registran molestias.")
+            item = next((i for i in self._plan(patient_id) if i["exercise_id"] == exercise_id), None)
+            if item is None:
+                raise ApiError(409, "Ese ejercicio no está en tu plan.")                  # I-9
+            current = self._validated_current(data.get("current"), item)
+            record = self._assess_symptom(patient_id, exercise_id, option, text, True, current)     # reglas, con el texto original
+        safe_text, redactions = privacy.redact(text)          # ADR-034: de aquí en adelante solo el texto filtrado
+        safe_text = safe_text[:200]
+        record["text"] = safe_text
+        monitored = bool(item["safety_envelope"])
+        ctx = {"exercise_id": exercise_id, "exercise_name": self.names.get(exercise_id, exercise_id), "current": current,
+               "envelope": safety.agent_envelope(item["safety_envelope"]), "recent_reps": self._clean_recent(data.get("recent_reps"))}
+        no_ai = {"provider": None, "model": None, "clinical_ms": None, "coach_ms": None, "decided_by": "rules",
+                 "phrased_by": "rules", "llm_answered": False, "skipped": None, "error": None}
+        if record["kind"] == "red_flag":              # I-1, I-7: ningún cliente LLM, ni siquiera se consulta el estado de la IA
+            out = {"decision": None, "reply": coach.STOP_TEXT, "reply_source": "template", "ai": {**no_ai, "skipped": "red_flag"},
+                   "timings_ms": {"total": 0}}
+        else:
+            out = self._turn_with_ai(patient_id, safe_text, ctx, monitored, lang)
+        decision, ai = out["decision"], out["ai"]
+        # La plantilla se traduce en el servidor; la frase del conversacional ya salió en el idioma pedido (I-22, TD-34).
+        message = out["reply"] if out["reply_source"] == "llm" else messages.tr(out["reply"], lang)
+        # Coherencia con las reglas (TD-88): kind y category son los de _assess_symptom; la acción, la de la decisión final.
+        record["action"], record["adjustment"] = (("session_stopped", None) if decision is None
+                                                  else safety.symptom_action(decision))
+        report = self._save_symptom(patient_id, exercise_id, record, "voice_turn")
+        at = now_iso()
+        public = None
+        with self.lock, self.db:
+            turn_id = self.db.execute(
+                "INSERT INTO voice_turn (patient_id, exercise_id, created_at, transcript, reply, reply_source, action, ai_provider, "
+                "ai_model, ai_skipped, clinical_ms, coach_ms, total_ms, symptom_report_id, redactions) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (patient_id, exercise_id, at, safe_text, message[:300], out["reply_source"], record["action"], ai["provider"],
+                 ai["model"], ai["skipped"], ai["clinical_ms"], ai["coach_ms"], out["timings_ms"]["total"], report["id"],
+                 redactions)).lastrowid
+            if decision and decision.get("proposal") and decision.get("outcome") in ("applied", "rejected", "escalated_to_therapist"):
+                # La propuesta es de las reglas solo cuando las reglas pusieron su baja; si pausaron, la propuesta que
+                # queda es la que hizo el agente clínico y se le atribuye a él (TD-34).
+                by_llm = decision.get("source") == "llm" or bool(decision.get("paused"))
+                public = {"agent": "clinical" if by_llm else "rules", "outcome": decision["outcome"],
+                          "within_envelope": bool(decision.get("within_envelope")), "proposal": decision["proposal"]}
+                llm_prop = decision.get("llm_proposal")
+                self.db.execute(
+                    "INSERT INTO agent_decision (patient_id, exercise_id, voice_turn_id, created_at, agent, proposal, current, "
+                    "within_envelope, outcome, rationale, llm_outcome, llm_proposal, ai_provider, ai_model, llm_ms) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (patient_id, exercise_id, turn_id, at, public["agent"], json.dumps(decision["proposal"], ensure_ascii=False),
+                     json.dumps(current), 1 if public["within_envelope"] else 0, decision["outcome"],
+                     (decision.get("note") or "")[:300] or None, decision.get("llm_outcome"),
+                     json.dumps(llm_prop, ensure_ascii=False) if llm_prop else None,
+                     ai["provider"], ai["model"], decision.get("llm_ms")))
+        self.hub.publish(("therapist", patient_id), {
+            "kind": "agent_turn", "turn_id": turn_id, "exercise_id": exercise_id, "action": record["action"],
+            "decided_by": ai["decided_by"], "provider": ai["provider"], "model": ai["model"], "clinical_ms": ai["clinical_ms"],
+            "outcome": decision["outcome"] if decision else "session_stopped", "at": at})
+        return 201, {"report": report, "action": record["action"], "adjustment": record["adjustment"],
+                     "stop": record["action"] == "session_stopped", "message": message, "turn": {"id": turn_id},
+                     "decision": public, "ai": ai, "privacy": {"redactions": redactions}}
+
+    def _turn_with_ai(self, patient_id: int, text: str, ctx: dict, monitored: bool, lang: str = "es") -> dict:
+        """Corre el turno con la IA de AMD si está conectada y hay cupo; si no, la vía de reglas (misma decisión)."""
+        from agents import providers
+        clinical_llm = coach_llm = None
+        ai_state = self.ai_status(patient_id, {})[1]
+        skipped, slot = None, False
+        if not ai_state.get("available"):
+            skipped = "no_provider" if not providers.config() else "unavailable"
+        else:
+            skipped = self._turn_admit(patient_id)
+            slot = skipped is None
+        if slot:
+            if monitored:
+                # La cadena de modelos (ADR-031) vive dentro del tope del clínico: el principal deja tiempo a la alternativa.
+                clinical_llm = LazyLLM(lambda: self._llm("clinical-turn", timeout=self.TURN_CLINICAL_S, retries_429=0,
+                                                         budget_s=self.TURN_CLINICAL_S - 0.3))
+            coach_llm = LazyLLM(lambda: self._llm("coach-turn", timeout=self.TURN_COACH_S, retries_429=0, fallback=False))
+        try:
+            out = agent_turn.run_text_turn(clinical_llm, coach_llm, text, ctx, monitored=monitored, allowed=TURN_APPLICABLE,
+                                           budget_s=self.TURN_BUDGET_S, clinical_timeout_s=self.TURN_CLINICAL_S,
+                                           coach_timeout_s=self.TURN_COACH_S, coach_if_under_s=self.TURN_COACH_IF_UNDER_S,
+                                           lang=lang, translate=lambda s: messages.tr(s, lang), executor=self._pool)
+        finally:
+            if slot:
+                self._turn_slots.release()
+        ai = out["ai"]
+        ai["skipped"] = ai["skipped"] or skipped
+        built = next((l for l in (clinical_llm, coach_llm) if l is not None and l.model), None)
+        if built:                                    # solo hay proveedor y modelo si algún LLM llegó a crearse
+            ai["provider"], ai["model"] = ai_state.get("provider") or built.label, built.model
+        else:
+            ai["provider"] = ai["model"] = None
+        return out
 
     def publish_live(self, patient_id, data):
         frame = {"kind": "frame", "at": now_iso(), "exercise_id": data.get("exercise_id") if data.get("exercise_id") in self.catalog else None}

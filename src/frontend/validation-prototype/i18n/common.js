@@ -63,6 +63,7 @@
     // api-client.js
     'api.offline': 'No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.',
     'api.error': 'Error {status}',
+    'api.timeout': 'No llegó la respuesta a tiempo.',
 
     // auth-wall.js: barra del invitado y muro de autenticación
     'guest.bar': 'Estás como invitado: puedes mirar todo con datos de muestra. Para hacer tu rutina completa, guardar tu progreso o ver tu historial, crea tu cuenta.',
@@ -343,6 +344,7 @@
     // api-client.js
     'api.offline': 'No connection to the AXONFAS server. Check your internet or, on this PC, that lanzar-prototipo.cmd is running.',
     'api.error': 'Error {status}',
+    'api.timeout': 'The reply did not arrive in time.',
 
     // auth-wall.js: guest bar and authentication wall
     'guest.bar': "You're a guest: you can look at everything with sample data. To do your full routine, save your progress or see your history, create your account.",

@@ -30,32 +30,42 @@
     } catch { /* sin almacenamiento: la sesión dura lo que la pestaña */ }
   }
 
-  async function call(role, method, path, body) {
+  /** opts.timeoutMs corta la espera (AbortController): el error trae status 0 y timeout true. Sin opts, espera lo normal. */
+  async function call(role, method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json', 'Accept-Language': lang() };
     const account = role ? load(alias[role] || role) : null;
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
-    let res;
+    const controller = opts.timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
     try {
-      res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
-    } catch {
-      const err = new Error(t('api.offline'));
-      err.status = 0;
-      throw err;
-    }
-    let data = null;
-    try { data = await res.json(); } catch { /* sin cuerpo */ }
-    if (!res.ok) {
-      const err = new Error((data && data.error) || t('api.error', { status: res.status }));
-      err.status = res.status;
-      err.code = data && data.code;
-      // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.
-      // `reason` es la frase que completa su texto ("Para guardar tu progreso…"); `message`, el error completo.
-      if (err.code === 'auth_required' && root.dispatchEvent && typeof CustomEvent === 'function') {
-        root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { reason: (data && data.reason) || null, message: err.message, path } }));
+      let res;
+      try {
+        res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store',
+          signal: controller ? controller.signal : undefined });
+      } catch {
+        const timedOut = Boolean(controller && controller.signal.aborted);
+        const err = new Error(timedOut ? t('api.timeout') : t('api.offline'));
+        err.status = 0;
+        err.timeout = timedOut;
+        throw err;
       }
-      throw err;
+      let data = null;
+      try { data = await res.json(); } catch { /* sin cuerpo, o cortado por el tiempo límite */ }
+      if (!res.ok) {
+        const err = new Error((data && data.error) || t('api.error', { status: res.status }));
+        err.status = res.status;
+        err.code = data && data.code;
+        // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.
+        // `reason` es la frase que completa su texto ("Para guardar tu progreso…"); `message`, el error completo.
+        if (err.code === 'auth_required' && root.dispatchEvent && typeof CustomEvent === 'function') {
+          root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { reason: (data && data.reason) || null, message: err.message, path } }));
+        }
+        throw err;
+      }
+      return data;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    return data;
   }
 
   /** Lee un canal de eventos con reconexión automática. Devuelve { stop() }. */

@@ -39,5 +39,27 @@ class EnglishSafetyTest(unittest.TestCase):
         self.assertEqual(set(safety.DISCOMFORT), set(safety.DISCOMFORT_CATEGORY))
 
 
+class EnglishNewAlarmsTest(unittest.TestCase):
+    """Equivalentes en inglés de las alarmas nuevas en español (merge con ADR-030): ante la duda, detener."""
+
+    def test_alarmas_nuevas_en_ingles(self):
+        for text in ["I can't catch my breath", "chest pressure", "I have tightness in my chest", "worst headache of my life",
+                     "blurry vision", "I have double vision", "my heart is racing", "my face is drooping", "slurred speech",
+                     "I fell", "I fell down the stairs", "I'm bleeding", "it swelled up suddenly", "cold sweat",
+                     "I felt a pop", "I felt a crack"]:
+            self.assertIsNotNone(safety.red_flag(text), text)
+
+    def test_lo_que_no_es_alarma_sigue_sin_detener(self):
+        for text in ["my knee is sore", "I'm tired", "it feels stiff", "my knee hurts a little"]:
+            self.assertIsNone(safety.red_flag(text), text)
+
+    def test_la_negacion_en_ingles_solo_cambia_la_categoria(self):
+        self.assertEqual(safety.classify_symptom("it doesn't hurt, I'm just tired")["category"], "fatigue")
+        self.assertEqual(safety.classify_symptom("no pain")["category"], "other")
+        self.assertEqual(safety.classify_symptom("it isn’t sore")["category"], "other")
+        self.assertEqual(safety.classify_symptom("I don't feel dizzy")["kind"], "red_flag", "la alarma gana aun negada")
+        self.assertTrue(safety.discomfort("no pain"))
+
+
 if __name__ == "__main__":
     unittest.main()

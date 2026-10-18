@@ -212,7 +212,7 @@
   }
 
   function startGuided(item, ex) {
-    state.guided = { item, ex, setsDone: 0, startedAt: new Date().toISOString(), symptomIds: [] };
+    state.guided = { item, ex, setsDone: 0, startedAt: new Date().toISOString(), symptomIds: [], turnIds: [] };
     $('g-title').textContent = ex.name;
     B.render($('g-map'), { intensities: B.staticLoad(ex),
       caption: t('patient.guided.caption', { muscles: B.muscleNames(ex.muscles).join(', '), bones: ex.bones.join(', ') }) });
@@ -228,7 +228,7 @@
     $('g-status').textContent = '';
     stopRest();
     if (window.AxonSymptom) {
-      AxonSymptom.render($('g-symptom'), { exerciseId: ex.id, inSession: true, current: () => null, onResult: onSymptom });
+      AxonSymptom.render($('g-symptom'), { exerciseId: ex.id, inSession: true, current: () => null, turn: true, assistant: state.me && state.me.assistant, onResult: onSymptom });
     }
     renderGuided();
     show('guided');
@@ -241,7 +241,8 @@
   function onSymptom(res) {
     const g = state.guided;
     if (!g) return;
-    g.symptomIds.push(res.report.id);
+    if (res.report) g.symptomIds.push(res.report.id);
+    if (res.turn) g.turnIds.push(res.turn.id);
     if (res.stop) { endGuided('pain_stop'); return; }
     speak(res.message);                                   // texto del servidor, en el idioma de la página (TD-116)
     if (res.action === 'paused') startRest();             // tras una molestia, el descanso recomendado
@@ -265,7 +266,7 @@
     try {
       saved = await A.call('patient', 'POST', '/api/sessions', { exercise_id: g.ex.id, mode: 'guided', source: 'guided',
         started_at: g.startedAt, ended_at: new Date().toISOString(), end_reason: reason, reps_done: g.setsDone * g.item.reps,
-        symptom_report_ids: g.symptomIds });
+        symptom_report_ids: g.symptomIds, voice_turn_ids: g.turnIds });
       if (reason === 'pain_stop') speak(t('patient.speak.painStop'));
       else if (reason === 'completed') speak(t('patient.speak.done'));
     } catch (err) {

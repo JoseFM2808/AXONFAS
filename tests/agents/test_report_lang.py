@@ -78,5 +78,16 @@ class AdvisorLangTest(unittest.TestCase):
         self.assertEqual(advisor.mentions_unknown("Agrega apoyo en un pie.", known, catalog), ["Apoyo en un pie"])
 
 
+class DecisionAuthorLangTest(unittest.TestCase):
+    def test_quien_propuso_el_ajuste_sale_en_el_idioma_de_la_nota(self):
+        session = {"exercise_name": "Sit to stand", "ended_at": "2026-10-15T10:00:00Z", "reps_done": 5, "reps_target": 10,
+                   "end_reason": "completed", "events": [], "utterances": [], "symptom_reports": [],
+                   "decisions": [{"agent": "rules", "outcome": "applied",
+                                  "proposal": {"param": "rom_target", "old": 90, "new": 80, "reason": "x"}}]}
+        self.assertIn("rom_target 90 → 80 (motor de reglas)", soap.draft(None, session, "es")["soap"]["O"])
+        self.assertIn("rom_target 90 → 80 (rules engine)", soap.draft(None, session, "en")["soap"]["O"])
+        self.assertNotIn("reason", soap.facts(session, "en")["ajustes_del_agente"][0])
+
+
 if __name__ == "__main__":
     unittest.main()

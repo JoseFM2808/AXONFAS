@@ -55,7 +55,7 @@
     ex: null, spec: null, dose: null, tracker: null, map: null,
     cam: null, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
-    patient: null, item: null, symptomIds: [], lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
+    patient: null, item: null, symptomIds: [], turnIds: [], lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
     lastLimitSpoken: 0,
     practice: null,        // { mode: 'tutorial' | 'offer' | 'nocam', reason?, counter?, guide? } (TD-109, TD-110)
   };
@@ -257,6 +257,7 @@
     st.ended = false;
     st.saved = false;
     st.symptomIds = [];
+    st.turnIds = [];
     st.lowStreak = 0;
     st.frames = 0;
     st.lowFrames = 0;
@@ -827,6 +828,7 @@
       const res = await A.call('patient', 'POST', '/api/sessions', {
         exercise_id: st.ex.id, mode: 'guided', source: 'camera', started_at: st.startedAt || new Date().toISOString(),
         ended_at: new Date().toISOString(), end_reason: reason, reps_done: reps, symptom_report_ids: st.symptomIds,
+        voice_turn_ids: st.turnIds,
         // Por repetición (TD-49): recorrido máximo desde la posición inicial, sostén, duración y lado. Nunca video.
         reps: st.tracker.reps.slice(0, 100).map((r) => ({
           index: r.index, side: r.side || undefined, peak: r.peak ?? undefined, holdSec: r.holdSec ?? undefined,
@@ -843,7 +845,8 @@
 
   /** Respuesta del formulario de molestia: se une a la sesión por id; una alarma la termina por dolor (I-7). */
   function onSymptom(res) {
-    st.symptomIds.push(res.report.id);
+    if (res.report) st.symptomIds.push(res.report.id);
+    if (res.turn) st.turnIds.push(res.turn.id);
     if (res.stop) { finish('pain_stop'); return; }
     if ((st.tracker || (st.practice && st.practice.mode === 'nocam')) && !st.ended) announce(res.message, { ms: 4000 });
   }
@@ -873,7 +876,7 @@
       // La molestia es un reporte del paciente, no una alerta del sistema: el seguimiento nunca alerta (I-12).
       if (window.AxonSymptom) {
         AxonSymptom.render($('symptom-track'), { exerciseId: st.ex.id, inSession: () => (Boolean(st.tracker) || Boolean(st.practice && st.practice.mode === 'nocam')) && !st.ended,
-          current: () => null, onResult: onSymptom });
+          current: () => null, turn: true, assistant: me.assistant, onResult: onSymptom });
       }
       A.stream('patient', '/api/me/stream', (msg) => {
         if (msg.kind === 'highlight' && window.AxonTeach) AxonTeach.show(msg);

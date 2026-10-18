@@ -131,3 +131,52 @@ test('el aviso de sesión sin cámara dice lo mismo que la nota SOAP (TD-111) y 
   assert.ok(!/toLocale(?:Date|Time)?String\('es-PE'/.test(js), 'fechas con I18N.locale()');
   assert.ok(js.includes('I18N.locale()'));
 });
+
+// ---------------------------------------------------------------- decisiones del agente (ADR-033)
+const I18N = require(path.join(SRC, 'i18n.js'));
+
+test('el panel tiene la sección «Decisiones del agente» con nombre accesible y recibe el turno en vivo', () => {
+  assert.match(html, /<section[^>]*aria-labelledby="p-decisions-title"[^>]*>\s*<h2 id="p-decisions-title" data-i18n="doctor\.decisions\.title">Decisiones del agente<\/h2>/);
+  assert.match(html, /id="p-decisions"/);
+  assert.match(html, /data-i18n="doctor\.decisions\.intro"/);
+  assert.match(js, /msg\.kind === 'agent_turn'/);
+  assert.ok(js.includes('renderDecisions(d)'));
+  for (const [lang, title] of [['es', 'Decisiones del agente'], ['en', 'Agent decisions']]) {
+    I18N.use(lang);
+    assert.equal(I18N.t('doctor.decisions.title'), title);
+  }
+  I18N.use('es');
+});
+
+test('el modelo solo se nombra cuando propuso el agente clínico; si decidieron las reglas se dice así (TD-34)', () => {
+  const withModel = js.split('\n').filter((l) => l.includes('ai_model'));
+  assert.ok(withModel.length > 0 && withModel.every((l) => l.includes("d.agent === 'clinical'")), 'ai_model solo en la rama del agente clínico');
+  assert.ok(js.includes("t('doctor.decisions.byRules'") && js.includes("t('doctor.decisions.quiet')"));
+  const live = js.split("msg.kind === 'agent_turn'")[1].split("msg.kind === 'pain_scored'")[0];
+  assert.match(live, /msg\.decided_by === 'llm' \? t\('doctor\.live\.byModel'[\s\S]*: t\('doctor\.live\.byRules'\)/, 'el modelo del aviso en vivo solo si lo decidió la IA');
+  assert.ok(js.includes('d.ai_provider') && !/Token Factory/.test(js), 'el proveedor sale de los datos, no se escribe a mano');
+  I18N.use('es');
+  assert.equal(I18N.t('doctor.decisions.byRules', { why: '' }), 'Propuso el motor de reglas');
+  assert.equal(I18N.t('doctor.decisions.quiet'), 'sin cambio de dosis; respondieron las reglas');
+  I18N.use('en');
+  assert.equal(I18N.t('doctor.decisions.byRules', { why: '' }), 'Proposed by the rules engine');
+  assert.equal(I18N.t('doctor.decisions.quiet'), 'no dose change; the rules answered');
+  I18N.use('es');
+});
+
+test('el resultado de la decisión se dice con texto y no solo con color, y lo escrito por el paciente va como texto', () => {
+  for (const [lang, words] of [['es', ['Aplicado', 'Escalado', 'Rechazado']], ['en', ['Applied', 'Escalated', 'Rejected']]]) {
+    I18N.use(lang);
+    assert.deepEqual(['applied', 'escalated_to_therapist', 'rejected'].map((k) => I18N.t(`doctor.decisions.outcome.${k}`)), words);
+  }
+  I18N.use('es');
+  assert.ok(js.includes('doctor.decisions.outcome.${x.outcome}'));
+  const render = js.split('function renderDecisions')[1].split('/** Aviso en vivo')[0];
+  assert.ok(!render.includes('innerHTML'));
+  assert.ok(!render.includes('.forEach((t) =>'), 'el parámetro no tapa la función t()');
+});
+
+test('el panel ya no atribuye la IA a la GPU (TD-34)', () => {
+  assert.ok(!/GPU AMD esté conectada|modelo en la GPU|IA en la GPU AMD/.test(js + html));
+  assert.ok(js.includes("t('doctor.ai.asking')"));
+});

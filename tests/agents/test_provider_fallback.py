@@ -66,5 +66,48 @@ class FallbackTest(unittest.TestCase):
                     os.environ[k] = v
 
 
+class FakeT(Fake):
+    """Cliente de mentira que guarda el `timeout` que le deja la cadena."""
+
+    def __init__(self, model, fail=False, timeout=30.0):
+        super().__init__(model, fail)
+        self.timeout = timeout
+
+
+class BudgetTest(unittest.TestCase):
+    """La cadena del agente clínico vive dentro de su tope: el principal deja tiempo a la alternativa (ADR-033)."""
+
+    def test_con_presupuesto_responde_la_alternativa_si_el_principal_falla_al_instante(self):
+        a, b = FakeT("DeepSeek-V4-Flash", fail=True), FakeT("Gemma-4-31B-IT")
+        llm = providers.MeteredLLM([a, b], "tokenfactory", "test", budget_s=5)
+        out = llm.chat([{"role": "user", "content": "x"}])
+        self.assertEqual((out["model"], llm.model), ("Gemma-4-31B-IT", "Gemma-4-31B-IT"))
+
+    def test_el_principal_no_se_come_el_tiempo_de_la_alternativa(self):
+        a, b = FakeT("DeepSeek-V4-Flash"), FakeT("Gemma-4-31B-IT")
+        providers.MeteredLLM([a, b], "tokenfactory", "test", budget_s=12).chat([{"role": "user", "content": "x"}])
+        self.assertLessEqual(a.timeout, 8.0, "12 s de presupuesto menos 4 s de reserva")
+        a, b = FakeT("A", timeout=30), FakeT("B", timeout=30)
+        providers.MeteredLLM([a], "tokenfactory", "test", budget_s=12).chat([{"role": "user", "content": "x"}])
+        self.assertAlmostEqual(a.timeout, 12, places=2, msg="el último de la cadena (o el único) usa todo el presupuesto")
+
+    def test_sin_tiempo_para_la_alternativa_no_se_intenta(self):
+        a, b = FakeT("DeepSeek-V4-Flash", fail=True), FakeT("Gemma-4-31B-IT")
+        llm = providers.MeteredLLM([a, b], "tokenfactory", "test", budget_s=1.5)
+        with self.assertRaises(LLMError):
+            llm.chat([{"role": "user", "content": "x"}])
+        self.assertEqual(b.calls, 0)
+
+    def test_el_conversacional_usa_solo_el_principal_y_el_cliente_dice_su_proveedor(self):
+        saved = {k: os.environ.get(k) for k in ("AMD_TOKENFACTORY_BASE_URL", "AMD_TOKENFACTORY_API_KEY", "AMD_TOKENFACTORY_MODEL")}
+        self.addCleanup(lambda: [os.environ.__setitem__(k, v) if v is not None else os.environ.pop(k, None) for k, v in saved.items()])
+        os.environ.update(AMD_TOKENFACTORY_BASE_URL="http://127.0.0.1:9/v1", AMD_TOKENFACTORY_API_KEY="k", AMD_TOKENFACTORY_MODEL="A,B")
+        full = providers.client("x", budget_s=12)
+        self.assertEqual([c.model for c in full.chain], ["A", "B"])
+        one = providers.client("x", fallback=False)
+        self.assertEqual(len(one.chain), 1)
+        self.assertEqual(one.label, "AMD Token Factory")
+
+
 if __name__ == "__main__":
     unittest.main()

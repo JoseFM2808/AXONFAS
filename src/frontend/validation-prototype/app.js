@@ -621,6 +621,13 @@
       if (left >= 1) out.reps = left;
       return Object.keys(out).length ? out : null;
     },
+    /** Últimas 5 repeticiones sin calibración { index, kneeRom, peakTrunk } (1 decimal) para el contexto del agente. */
+    recent() {
+      if (!session) return [];
+      const round = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : undefined);
+      return session.reps.filter((r) => !r.calibration && Number.isFinite(r.kneeRom)).slice(-5)
+        .map((r) => ({ index: r.index, kneeRom: round(r.kneeRom), peakTrunk: round(r.peakTrunk) }));
+    },
     /** Aplica { param, new } de la respuesta de la API. Devuelve true si cambió algo. */
     adjust(adj) {
       if (!session || !adj || session.snapshot().phase === 'ended') return false;

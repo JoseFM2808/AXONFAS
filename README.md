@@ -27,6 +27,8 @@ pila ya está lista para encenderse (ADR-016).
 | Descanso recomendado entre series, que se puede saltar o alargar (ADR-022) | ✅ prototipo |
 | Panel del fisioterapeuta en la nube | ⏳ hackathon |
 | IA con AMD Token Factory (agentes, resumen para el fisioterapeuta) | ✅ verificado con la clave del equipo |
+| Agente clínico en el flujo del paciente, con texto: propone una baja dentro del sobre, las reglas la validan y la pantalla dice qué modelo de AMD respondió y en cuánto, o que respondieron las reglas (ADR-033) | ✅ prototipo (Staging; la voz queda en TD-120) |
+| Privacidad antes de la IA: se ocultan correos, teléfonos, documentos, direcciones y nombres antes de enviar el texto al asistente de AMD, y se guarda lo mismo que se envía (ADR-034) | ✅ prototipo (Staging) |
 | Inicio de sesión con Google, roles y Administrador maestro | ✅ verificado con el Administrador real |
 | Despliegue en la nube de AMD (Docker + HTTPS) y web en Vercel | ✅ listo para publicar ([`config/deploy/`](config/deploy/README.md), TD-71) |
 

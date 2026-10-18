@@ -38,7 +38,8 @@
 | 030 | 2026-10-18 | Aceptada | Idioma de la interfaz según el navegador (español e inglés), con selector manual y sin geolocalización por IP |
 | 031 | 2026-10-18 | Aceptada | Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT |
 | 032 | 2026-10-18 | Aceptada | El servidor escribe en el idioma de la interfaz |
-| 033 | 2026-10-18 | Aceptada | Auditoría UI/UX: cabecera estable, tarjetas que caben en celular, cámara sin deformar y entorno visible |
+| 033 | 2026-10-18 | Aceptada | Turno de texto del paciente con el agente clínico de AMD: reglas primero, tiempo acotado y atribución visible |
+| 034 | 2026-10-18 | Aceptada | Filtro determinista de datos personales antes de cualquier LLM; se guarda lo mismo que se envía |
 
 ---
 
@@ -405,7 +406,7 @@
     Todo texto lo dice.
   - El paciente ve una cuenta regresiva (`rest-timer.js`) al terminar una serie y tras una pausa por molestia. Puede
     saltarla o sumar 30 s. Nunca bloquea el siguiente paso.
-  - El agente: el `current.rest_seconds` que reciba con TD-61 será `rest.min`; se valida solo con los límites fijos
+  - El agente: el `current.rest_seconds` que recibe en el turno del paciente es `rest.min` (ADR-033; en el demo todavía no se aplica en ninguna pantalla, TD-119); se valida solo con los límites fijos
     10–180; tras una molestia solo puede subirlo (`LESS_DEMAND`). Un `rest_seconds` aplicado cambia la cuenta de esa
     sesión, nunca el plan. La reducción determinista de ADR-021 nunca lo usa.
 - **Consecuencias:**
@@ -709,30 +710,107 @@
   - Los textos que escribió una persona no se traducen.
   - Cierra TD-116, salvo la revisión clínica de la traducción por un fisioterapeuta con inglés nativo (TD-117).
 
-## ADR-033 · Auditoría UI/UX: cabecera estable, tarjetas que caben en celular, cámara sin deformar y entorno visible — Aceptada
+## ADR-033 · Turno de texto del paciente con el agente clínico de AMD, tiempo acotado y atribución visible — Aceptada
 
 - **Fecha:** 2026-10-18
-- **Contexto:** el owner reportó cinco problemas de UI/UX. La auditoría, con mediciones en el navegador, los confirmó:
-  - **Menú:** saltaba de una página a otra. Su borde izquierdo iba de 522 a 676 px según el largo del subtítulo y la
-    barra de scroll, y en celular la cabecera fija medía 160–229 px.
-  - **Tarjetas:** en celular medían 920–1.100 px y no entraban en pantalla.
-  - **Cámara:** el cuadro era 16:9 fijo y el canvas tomaba 1280×720 si el video todavía no informaba su tamaño, lo que
-    desalineaba el esqueleto. Además, `camera-setup.js` fallaba en cada frame sin nadie a la vista, porque el parámetro
-    de tiempo `t` tapaba la función de traducción `t`.
-  - **Entorno:** nada distinguía la demo pública de la plataforma clínica.
+- **Contexto:**
+  - El agente clínico con IA de AMD Token Factory solo corría por línea de comandos (`py -m agents.turn`). En el
+    producto, la molestia del paciente la resolvían solo las reglas (`POST /api/me/discomfort`, ADR-021) (TD-61).
+  - Staging no guardaba `agent_decision` ni `voice_turn`, y la nota SOAP los recibía vacíos (TD-82). Las molestias del
+    turno no se guardaban con `source = 'voice_turn'` (TD-88).
+  - La regla del hackathon pide que la carga de AMD se vea en el producto, sin atribuirle a la IA lo que no hizo (TD-34).
+  - La clave de Token Factory es una por equipo, con límite de uso. Un turno no puede colgar la pantalla del paciente.
 - **Decisión:**
-  - Cabecera en grilla (marca | menú | idioma) con `scrollbar-gutter: stable`. El texto de la marca se corta con "…" y
-    la etiqueta del Prototipo se oculta. En celular, la cabecera queda en 100 px con el menú en una fila desplazable.
-  - Tarjetas en celular sin subgrid, con la figura y el mapa lado a lado, la figura apilada y los botones en una fila.
-  - Cámara: `pose-camera.js` espera el tamaño real y lo vuelve a aplicar con `resize`. El cuadro toma `--src-ratio`
-    también en escritorio. En `camera-setup.js` el parámetro pasa a llamarse `now`.
-  - `env-banner.js` con los dos entornos y sus colores de token (ámbar y verde). Los textos van en `i18n/common.js`, en
-    español e inglés.
+  - **Ruta nueva `POST /api/me/turn`**, con texto (sin voz por ahora). El formulario “Tengo una molestia” la usa solo
+    durante una sesión y con texto escrito. Fuera de sesión, o solo con una opción, sigue `POST /api/me/discomfort`, que
+    no cambia.
+  - **Orden fijo.** 1) Reglas siempre (`_assess_symptom`). 2) Una frase u opción de alarma detiene la sesión sin crear
+    ningún cliente de LLM y sin consultar el estado de la IA (I-1, I-7). 3) Solo con sobre, IA disponible y cupo, el
+    agente clínico propone. 4) `safety.validate` decide. 5) El agente conversacional redacta la frase si queda tiempo.
+  - **Todo turno del formulario es una molestia declarada** (`discomfort_reported`): la regla de dirección y el respaldo
+    de reglas de ADR-021 rigen aunque el texto no traiga una palabra de molestia. El resultado siempre es
+    `demand_lowered` (por el agente o por las reglas), `paused` o `session_stopped`. Nada sube la exigencia.
+  - **Solo parámetros que la pantalla aplica** (`allowed`): en `index.html?plan=` son `rom_target` y `reps`. En el turno,
+    un parámetro sin valor actual en pantalla tampoco se ajusta: el agente no puede inventar el `old`.
+  - **Valor actual (`current`).** `rom_target` y `reps` los manda el navegador (lo que se ve en pantalla) y el servidor
+    los acota: `rom_target` 10–140, `reps` entero de 1 a `max_reps`. `rest_seconds` lo pone el servidor con `rest.min`
+    del plan (ADR-022) y nunca el navegador; no se aplica en ninguna pantalla (TD-119). Lo único que se aplica es `new`,
+    validado contra el sobre guardado en el servidor.
+  - **Guiados y seguimiento** (sin sobre): no se consulta al agente clínico (I-3). Deciden las reglas (pausa y descanso
+    recomendado). El agente conversacional puede redactar la frase.
+  - **Tiempo acotado** (valores del 2026-10-18, de partida hasta medir). Agente clínico hasta 12 s (`TURN_CLINICAL_S`),
+    en un grupo de 4 hilos y sin reintentos ante 429. Agente conversacional hasta 5 s (`TURN_COACH_S`) y solo si el
+    clínico tardó 6 s o menos (`TURN_COACH_IF_UNDER_S`): nunca le quita tiempo al clínico. 18 s en total en el servidor
+    (`TURN_BUDGET_S`). El navegador espera el presupuesto más 7 s (25 s), que le dice `/api/me`. Se ajustan sin tocar
+    código con `AXONFAS_TURN_CLINICAL_S`, `AXONFAS_TURN_COACH_S` y `AXONFAS_TURN_BUDGET_S`, y se fijan con datos con
+    `py -m agents.turn --measure N` en la terminal del owner. Una tarea vencida se cancela. Sin respuesta a tiempo, o
+    con error, deciden las reglas y el paciente no ve un error. Con varios modelos (ADR-031), la alternativa vive dentro de los 12 s del agente clínico: el principal deja 4 s y la alternativa solo se intenta con 2 s o más; el conversacional usa solo el principal. La pantalla dice el modelo que respondió.
+  - **Menos latencia sin tocar la seguridad.** Si el proveedor rechaza `response_format`, se recuerda y no se vuelve a
+    mandar (una petición por llamada, no dos). El contexto va en JSON compacto y el motivo en 12 palabras como mucho. El
+    estado de la IA se precalienta al arrancar `serve.py` y, ya caliente (menos de 10 min), el turno no lo espera: se
+    refresca en segundo plano.
+  - **Cupo de Token Factory.** Como mucho una llamada clínica y una conversacional por turno, nunca por frame. Por
+    paciente: 3 s entre turnos con IA y 20 por hora. En todo el servidor: 4 turnos con IA a la vez. Pasado el límite,
+    responden las reglas (`ai.skipped = rate_limited` o `busy`). Son valores de partida, en memoria (TD-123).
+  - **Privacidad.** Al LLM van el ejercicio, el sobre, los valores actuales, hasta 5 repeticiones y el texto
+    (≤ 200 caracteres), ya filtrado de datos personales (ADR-034). Nunca el alias, el año de nacimiento ni el nombre del
+    fisioterapeuta. Solo Staging (ADR-010).
+  - **Registro.** Un `voice_turn` por turno; un `agent_decision` solo si hubo propuesta (del agente o de las reglas); la
+    molestia en `symptom_report` con `source = 'voice_turn'`. Se unen a la sesión al guardarla, por id (`voice_turn_ids`).
+    No se guarda el texto crudo del LLM. El fisioterapeuta recibe `agent_turn` en vivo y ve “Decisiones del agente”.
+  - **Atribución verdadera (TD-34).** La respuesta trae `ai` (proveedor, modelo, latencias, quién decidió y quién
+    redactó). La pantalla del paciente dice qué modelo de AMD propuso y en cuánto tiempo, o “Te respondieron las reglas
+    de seguridad de AXONFAS.” (texto neutro y verdadero; el motivo exacto queda en el panel del fisioterapeuta). Mientras
+    espera, “El asistente de AMD está revisando lo que dijiste…” solo si `/api/me` dice que la IA está disponible; si no,
+    “Revisando lo que dijiste con las reglas de seguridad…”. El proveedor y el modelo salen de los datos, nunca de un
+    texto fijo. Los textos salen en el idioma de la interfaz (ADR-030, ADR-032): la plantilla se traduce en el servidor y el conversacional redacta en ese idioma (I-22). Si la frase del LLM no está en el idioma de la interfaz (cuenta palabras de enlace de cada idioma, `coach.in_language`), vuelve la plantilla traducida.
+  - **SOAP.** La nota lee las decisiones aplicadas, con quién las propuso (“agente clínico” o “motor de reglas”), y las
+    frases del paciente que no estén ya como molestia. El motivo del LLM no entra en la nota (I-6).
 - **Consecuencias:**
-  - Mismas medidas de cabecera en las ocho páginas.
-  - axe-core sin violaciones en escritorio, celular y los dos idiomas.
-  - La reestructuración del Home, los nombres del menú, la densidad de las tarjetas en escritorio y los colores del
-    entorno necesitan una decisión del owner (TD-120 a TD-123).
+  - Los jueces ven la IA de AMD en el producto: modelo y latencia en la pantalla del paciente y en el panel.
+  - La vía de reglas sigue igual: sin IA, el turno da la misma acción, el mismo ajuste y la misma frase que
+    `/api/me/discomfort`.
+  - Es más restrictiva que ADR-005 y ADR-021, y no los reemplaza. Invariante I-23 en [01](01-logic.md).
+  - Pendientes: descanso aplicable (TD-119), voz (TD-120), escala de dolor (TD-121), reenvío sin duplicar (TD-122),
+    límites persistentes (TD-123), texto libre hacia un servicio externo (TD-124) y decisiones en FHIR (TD-125).
+
+## ADR-034 · Filtro determinista de datos personales antes de cualquier LLM — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - El texto libre del paciente viaja a AMD Token Factory, un servicio fuera de la máquina (TD-124): en el turno (al
+    agente clínico y al conversacional), en el resumen para el fisioterapeuta (la nota del perfil y las sugerencias) y
+    en la A y la P del borrador SOAP (molestias y frases).
+  - Hasta ahora solo se limitaba a 200 caracteres y no iban el alias ni el año de nacimiento. Un paciente puede escribir
+    su correo, su teléfono, su DNI, su dirección o su nombre.
+  - El usuario aceptó el envío para el demo pidiendo reforzar las reglas.
+- **Decisión:**
+  - `src/agents/privacy.py` (`redact`, solo biblioteca estándar y sin LLM) cambia por marcadores: correos (`[correo]`),
+    enlaces (`[enlace]`), teléfonos (`[teléfono]`), documentos y números de 6 o más dígitos (`[documento]`), direcciones
+    con número (`[dirección]`) y nombres tras “me llamo”, “mi nombre es”, “mi apellido es” o “Soy <Nombre con
+    mayúscula>” (`[nombre]`).
+  - No toca información clínica: cifras de 1 a 5 dígitos sueltas (“90 grados”, “llevo 20000 pasos”), fechas
+    (“18-10-2026”), series de números chicos (“90 100 110 120”), cantidades con unidad tras una calle (“en la calle me
+    caí 2 veces”) ni frases hechas (“me llamo la atención”). El nombre termina en una palabra de enlace o de molestia
+    (“me llamo Ana Torres duele” → “me llamo [nombre] duele”).
+  - **Orden:** las reglas de seguridad (alarma y clasificación) leen el texto **original**; después corre el filtro, y
+    todo lo que va a un LLM es el texto **filtrado**.
+  - **Se guarda lo filtrado**, lo mismo que se envía: en `symptom_report.text` y `voice_turn.transcript` (con
+    `voice_turn.redactions`, cuántos datos se ocultaron). Así hay menos datos personales guardados (ADR-010, TD-91) y el
+    fisioterapeuta audita exactamente lo que vio la IA. Las filas anteriores se filtran al armar el mensaje de la nota
+    SOAP.
+  - Aplica al turno, al formulario “Tengo una molestia” (`/api/me/discomfort`), al resumen del fisioterapeuta y a la nota
+    SOAP. La prueba del Administrador (`/api/admin/ai/test`) no lleva datos de pacientes y no se filtra.
+  - **Aviso visible** bajo el campo, cuando el asistente está disponible: “Lo revisan las reglas de seguridad de AXONFAS
+    y el asistente de AMD. Se envía sin tu nombre; ocultamos correos, teléfonos y documentos.” Tras el turno, si se ocultó
+    algo: “Ocultamos N datos personales antes de enviarlo.”
+  - En inglés también: "my name is", "my last name is", "I'm/I am <Nombre>" con mayúscula, SSN, pasaporte y licencia de conducir, y calles con Street/Avenue/Road/apt. Lo que falta va en TD-136.
+- **Consecuencias:**
+  - Un falso positivo solo oculta texto; nunca decide nada ni oculta una alarma (se lee del original).
+  - El dato personal original no se guarda.
+  - No detecta nombres sin disparador, datos escritos con letras ni un teléfono escrito en grupos de dos cifras; eso
+    queda para Producción (TD-132).
+  - Invariante I-24 en [01](01-logic.md).
 
 ---
 
