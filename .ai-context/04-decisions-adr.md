@@ -32,6 +32,7 @@
 | 024 | 2026-10-17 | Aceptada | El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera |
 | 025 | 2026-10-17 | Aceptada | Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar (EVA) |
 | 026 | 2026-10-18 | Aceptada | Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos |
+| 027 | 2026-10-17 | Aceptada | Video de presentación generado con código: Remotion y voz local con Kokoro |
 
 ---
 
@@ -543,6 +544,33 @@
     pacientes entre profesionales de una misma organización quedan en TD-105.
   - Antes de Producción hace falta autenticación real para las cuentas de empresa (TD-41) y la revisión de protección de
     datos de los correos de los profesionales (TD-14).
+
+## ADR-027 · Video de presentación generado con código: Remotion y voz local con Kokoro — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - La entrega de lablab pide un video demo (TD-11). El owner quiere un video animado, todo en inglés, hecho con código y
+    con el guion del documento estratégico *Investigacion_y_Guion_Video_AXONFAS* (4 fases: The Problem, The Capture, The
+    Brain, The Impact).
+  - El repo es público y vive en Google Drive: las dependencias pesadas no pueden ir en Drive (como en Mi-puestito), el
+    audio y el video no se versionan (ADR-003, `.gitignore`) y no se pueden usar imágenes de terceros.
+  - La frase de la fase 3 del documento atribuía la lógica del movimiento a la IA y la latencia a "edge GPU clusters",
+    lo que contradice ADR-004, ADR-018 y TD-34.
+- **Decisión:**
+  - **Remotion 4** (React + TypeScript, versiones fijadas) en `src/axonfas-video-presentation/`: emula el HUD del
+    prototipo con SVG propio y los tokens de `docs/design-system/tokens.css`, que se copian al compilar (no se duplican).
+  - **Voz en off con Kokoro-82M** (Apache-2.0, el TTS de ADR-016) en ONNX sobre la CPU con `kokoro-onnx`: local, sin
+    claves. Si no está instalado, las voces en inglés de Windows (SAPI). Cada escena dura lo que su audio, con la duración
+    base del guion como mínimo.
+  - Un solo guion, `script/voiceover.json`, para los subtítulos y el TTS. La fase 3 se reescribe en tres frases
+    alineadas con los ADRs; la original queda en el JSON.
+  - `video.py` (solo biblioteca estándar) copia el proyecto a `~/.axonfas/video-presentation`, fuera de Drive y del
+    repo, y ahí instala, narra y renderiza. El modelo se verifica con SHA-256.
+- **Consecuencias:**
+  - Node y Remotion entran al repo solo para el video; el producto sigue sin build de frontend.
+  - El primer render baja Chrome Headless Shell y usa Google Fonts: necesita internet.
+  - Remotion es gratis para personas y equipos pequeños; una empresa grande necesitaría licencia comercial (TD-112).
+  - Cambiar el guion obliga a correr `py video.py voice` y `py video.py render` de nuevo.
 
 ---
 

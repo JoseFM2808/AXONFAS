@@ -1,0 +1,7 @@
+# Se generan en el workdir fuera de Drive (video.py); por si alguien corre npm aquí por error.
+node_modules/
+out/
+public/
+.venv/
+models/
+src/design-system/
