@@ -6,7 +6,7 @@
   const A = window.AxonApi;
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-  const ROLE = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', pending: 'Pendiente' };
+  const ROLE = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', pending: 'Pendiente', org_admin: 'Empresa' };
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
   function kpi(k, v, s) {
@@ -74,7 +74,7 @@
       const tr = el('tr');
       tr.append(el('td', null, u.email), el('td', null, u.name || '—'));
       const roleTd = el('td');
-      if (u.role === 'admin' || u.role === 'patient') roleTd.textContent = ROLE[u.role];
+      if (u.role === 'admin' || u.role === 'patient' || u.role === 'org_admin') roleTd.textContent = ROLE[u.role];
       else {
         const sel = document.createElement('select');
         sel.setAttribute('aria-label', `Rol de ${u.email}`);
@@ -102,6 +102,40 @@
     });
   }
 
+  /** Organizaciones del Nivel 3 (ADR-026): solo plan, licencias y conteos. */
+  async function loadOrgs() {
+    const { organizations } = await A.call('admin', 'GET', '/api/admin/orgs');
+    const body = $('orgs');
+    body.replaceChildren();
+    if (!organizations.length) {
+      const tr = el('tr');
+      const td = el('td', 'empty', 'Todavía no hay organizaciones.');
+      td.colSpan = 5;
+      tr.appendChild(td);
+      body.appendChild(tr);
+      return;
+    }
+    organizations.forEach((o) => {
+      const tr = el('tr');
+      tr.append(el('td', null, o.organization.name), el('td', null, o.organization.plan_label), el('td', null, o.admin_email),
+        el('td', 'num', `${o.seats.used} de ${o.seats.total}`), el('td', 'num', String(o.patients.total)));
+      body.appendChild(tr);
+    });
+  }
+
+  $('org-new').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    $('orgs-status').textContent = 'Creando…';
+    try {
+      const r = await A.call('admin', 'POST', '/api/admin/orgs', {
+        name: $('org-name').value.trim(), plan: $('org-plan').value, admin_email: $('org-admin').value.trim() });
+      $('orgs-status').textContent = `Creada: ${r.organization.name}. Su administración entra con Google con ${r.admin_email}.`;
+      $('org-name').value = '';
+      $('org-admin').value = '';
+      await Promise.all([loadOrgs(), loadUsers()]);
+    } catch (err) { $('orgs-status').textContent = err.message; }
+  });
+
   async function update(user, change) {
     $('users-status').textContent = 'Guardando…';
     try {
@@ -125,7 +159,8 @@
   $('btn-logout').addEventListener('click', async () => { await A.logout('admin'); location.href = 'login.html'; });
 
   async function refresh() {
-    await Promise.all([loadOverview(), loadUsers(), loadAi().catch((err) => { $('ai-status').textContent = err.message; })]);
+    await Promise.all([loadOverview(), loadUsers(), loadOrgs().catch((err) => { $('orgs-status').textContent = err.message; }),
+      loadAi().catch((err) => { $('ai-status').textContent = err.message; })]);
   }
 
   (async () => {

@@ -25,9 +25,9 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/patients/{id}/live` | fisioterapeuta | Server-Sent Events con lo que publica ese paciente |
 | `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir. Con `AXONFAS_DEMO_ACCOUNTS=0` → 403 (se entra con Google) |
 | `GET /api/auth/config` | — | → `{google_client_id, demo_accounts, ai_provider}` (público; ADR-019) |
-| `POST /api/auth/google` | — | `{credential}` (ID token de Google) → `{role, token, user}`. `role` = `admin` si el correo está en `AXONFAS_ADMIN_EMAILS`, el rol ya elegido, o `user` si es una cuenta nueva. Token inválido → 401; cuenta desactivada → 403 |
+| `POST /api/auth/google` | — | `{credential}` (ID token de Google) → `{role, token, user}`. `role` = `admin` si el correo está en `AXONFAS_ADMIN_EMAILS`; `org` si es el correo de administración de una organización (ADR-026); si no, el rol ya elegido, o `user` si es una cuenta nueva. Vincula la licencia que espera a ese correo si ya es fisioterapeuta. Token inválido → 401; cuenta desactivada → 403 |
 | `POST /api/auth/role` | user | `{role: "therapist", name?}` → 201 `{role, token, therapist}`; `{role: "patient", code, consent: true}` → 201 `{role, token, patient, therapist}`; ya con rol → 409 |
-| `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración) |
+| `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración); con `org`, además `organization: {id, name}` |
 | `POST /api/auth/logout` | cualquiera | Borra ese token |
 | `GET /api/admin/overview` | admin | → conteos (cuentas por rol, fisioterapeutas, pacientes, sesiones, detenciones por dolor), `config` (qué falta, sin la lista de correos) y `ai_usage` |
 | `GET /api/admin/users` · `PUT /api/admin/users/{id}` | admin | Lista de cuentas de Google · `{role: "pending" \| "therapist"}` o `{disabled: bool}`; no a sí mismo ni a otro admin; revoca los tokens |
@@ -46,6 +46,12 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/sessions/{id}/report` | fisioterapeuta | → `{report}`; sin borrador → 404 |
 | `POST /api/sessions/{id}/report/approve` | fisioterapeuta | `{A?, P?}` (texto de hasta 1000) → `{report}` con `status: "final"`; S y O no se editan; ya firmada → 409; sin borrador → 404 |
 | `GET /api/sessions/{id}/fhir` | fisioterapeuta | → `Observation` FHIR R4 (abajo); no escribe nada (TD-10) |
+| `GET /api/sessions/{id}/fhir/document` | fisioterapeuta | → la nota SOAP como `Bundle` FHIR R4 de tipo `document` (abajo); sin nota → 404; no escribe nada (TD-103) |
+| `GET /api/admin/orgs` · `POST /api/admin/orgs` | admin | Organizaciones con su resumen y `admin_email` · `{name, plan: "clinic" \| "network", admin_email}` → 201; correo ya usado → 409; correo de un Administrador maestro o datos inválidos → 400 (ADR-026) |
+| `GET /api/org/summary` | org | → `{organization: {id, name, plan, plan_label}, seats: {total, used, free}, patients: {total, capacity, over}, professionals: [{license_id, email, status, linked, patients}], ehr: {fhir_base_url, enabled}}`. Sin datos clínicos (I-19) |
+| `POST /api/org/licenses` | org | `{email}` → 201 con el resumen; correo inválido, ya activo o sin licencias libres → 400; activo en otra organización → 409 |
+| `POST /api/org/licenses/{id}/revoke` | org | → el resumen con esa licencia `revoked`; de otra organización o inexistente → 404 |
+| `PUT /api/org/ehr` | org | `{fhir_base_url, enabled}` → el resumen. Solo https, sin usuario, clave, consulta ni fragmento; con `token`, `password` u otra credencial → 400 |
 
 En las cuatro rutas, una sesión de otro fisioterapeuta da 404 (I-10).
 
@@ -75,6 +81,16 @@ P, solo si hay nota).
   (`valueBoolean`) y `pain-score-end` (`valueInteger`, la EVA 0–10 al terminar, ADR-025). Cantidades en UCUM (`http://unitsofmeasure.org`). Sin dato no hay componente.
 - Los sistemas de código propios cuelgan de `https://axonfas.example/fhir/...` (dominio reservado: es Staging). No hay
   códigos LOINC. Nunca van el año de nacimiento ni el nombre del fisioterapeuta.
+
+**Documento FHIR R4 de la nota SOAP** (`GET /api/sessions/{id}/fhir/document`, `fhir.document`): `Bundle` con `type:
+"document"`, `identifier` y `timestamp` (firma o creación del borrador). El primer `entry` es la `Composition`:
+`status` `preliminary` o `final`, `type` LOINC `11506-3` (Progress note), `subject` al `Patient`, `author` (el `Device`
+AXONFAS; con firma, primero el `Practitioner`), `attester` `legal` con la hora de la firma, `custodian` = la
+`Organization` si el fisioterapeuta tiene licencia activa, y cuatro `section` con LOINC `61150-9` (S), `61149-1` (O),
+`51848-0` (A) y `18776-5` (P), cada una con su narrativa XHTML escapada; la O apunta a la `Observation`. Le siguen el
+`Patient` (solo seudónimo `p<id>`, sin nombre ni fecha de nacimiento), el `Device`, la `Observation` (con `subject` y
+`performer` por referencia), el `Practitioner` (solo `t<id>` y solo si firmó) y la `Organization` (`o<id>` y su
+nombre). `fullUrl` = `urn:uuid` deterministas (uuid5): todas las referencias resuelven dentro del Bundle.
 
 ## Servicios de la GPU (ADR-016)
 

@@ -6,7 +6,8 @@
  */
 (function (root) {
   'use strict';
-  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user' };
+  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user',
+    org: 'axonfas.org' };   // org = administración de una organización (Nivel 3, ADR-026)
   const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
   const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
 
@@ -124,7 +125,7 @@
   }
 
   /** Página de inicio de cada rol. */
-  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html' };
+  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html', org: 'empresa.html' };
 
   root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, HOME };
 })(typeof self !== 'undefined' ? self : this);

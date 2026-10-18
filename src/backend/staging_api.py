@@ -33,7 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))       # src/backend, pa
 import google_auth  # noqa: E402
 import settings  # noqa: E402
 
-import fhir  # noqa: E402 — export FHIR R4; vive junto a este módulo (serve.py y los tests ponen src/backend en sys.path)
+import fhir  # noqa: E402
+import organizations  # noqa: E402 — Nivel 3: organizaciones y licencias (ADR-026) — export FHIR R4; vive junto a este módulo (serve.py y los tests ponen src/backend en sys.path)
 from agents import coach, safety  # noqa: E402
 from agents.safety import PARAMS  # noqa: E402 — límites fijos del rango, para no duplicar números
 
@@ -45,7 +46,7 @@ CREATE TABLE IF NOT EXISTS patient (
   alias TEXT NOT NULL, birth_year INTEGER, consent_given INTEGER NOT NULL DEFAULT 0,
   invite_code TEXT UNIQUE, joined_at TEXT, created_at TEXT NOT NULL, profile TEXT);
 CREATE TABLE IF NOT EXISTS token (
-  token TEXT PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user')),
+  token TEXT PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user', 'org', 'guest')),
   subject_id INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app_user (
   id INTEGER PRIMARY KEY, google_sub TEXT NOT NULL UNIQUE, email TEXT NOT NULL, name TEXT,
@@ -90,6 +91,16 @@ CREATE TABLE IF NOT EXISTS symptom_report (
 CREATE INDEX IF NOT EXISTS idx_symptom_patient ON symptom_report(patient_id, reported_at);
 CREATE INDEX IF NOT EXISTS idx_patient_therapist ON patient(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_session_patient ON session(patient_id, ended_at);
+CREATE TABLE IF NOT EXISTS organization (           -- Nivel 3, empresa (ADR-026)
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, plan TEXT NOT NULL CHECK (plan IN ('clinic', 'network')),
+  admin_email TEXT NOT NULL UNIQUE, ehr_fhir_base_url TEXT, ehr_enabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS org_license (
+  id INTEGER PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organization(id), email TEXT NOT NULL,
+  therapist_id INTEGER REFERENCES therapist(id),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')), created_at TEXT NOT NULL, revoked_at TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_license_active_email ON org_license(email) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_license_org ON org_license(organization_id);
 """
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"        # sin I, O, 0, 1 para dictarlo sin confusiones
@@ -351,11 +362,11 @@ class StagingApi:
         if "profile" not in {r["name"] for r in self.db.execute("PRAGMA table_info(patient)")}:
             self.db.execute("ALTER TABLE patient ADD COLUMN profile TEXT")    # bases creadas antes de ADR-017
         token_sql = self.db.execute("SELECT sql FROM sqlite_master WHERE name = 'token'").fetchone()["sql"]
-        if "'admin'" not in token_sql:                                        # bases creadas antes de ADR-019
+        if "'guest'" not in token_sql:                     # bases creadas antes de ADR-019 (admin) o de ADR-026/027
             with self.db:
                 self.db.executescript("""
                   CREATE TABLE token_new (token TEXT PRIMARY KEY,
-                    role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user')),
+                    role TEXT NOT NULL CHECK (role IN ('therapist', 'patient', 'admin', 'user', 'org', 'guest')),
                     subject_id INTEGER NOT NULL, created_at TEXT NOT NULL);
                   INSERT INTO token_new SELECT token, role, subject_id, created_at FROM token;
                   DROP TABLE token;
@@ -392,6 +403,7 @@ class StagingApi:
             ("GET", r"/api/sessions/(\d+)/report", self.get_report, "therapist"),
             ("POST", r"/api/sessions/(\d+)/report/approve", self.approve_report, "therapist"),
             ("GET", r"/api/sessions/(\d+)/fhir", self.session_fhir, "therapist"),
+            ("GET", r"/api/sessions/(\d+)/fhir/document", self.session_fhir_document, "therapist"),
             ("GET", r"/api/ai/status", self.ai_status, "therapist"),
             ("POST", r"/api/join", self.join, None),
             ("GET", r"/api/auth/config", self.auth_config, None),
@@ -404,6 +416,12 @@ class StagingApi:
             ("PUT", r"/api/admin/users/(\d+)", self.admin_update_user, "admin"),
             ("GET", r"/api/admin/ai", self.admin_ai, "admin"),
             ("POST", r"/api/admin/ai/test", self.admin_ai_test, "admin"),
+            ("GET", r"/api/admin/orgs", self.admin_orgs, "admin"),
+            ("POST", r"/api/admin/orgs", self.admin_create_org, "admin"),
+            ("GET", r"/api/org/summary", self.org_summary, "org"),
+            ("POST", r"/api/org/licenses", self.org_invite, "org"),
+            ("POST", r"/api/org/licenses/(\d+)/revoke", self.org_revoke, "org"),
+            ("PUT", r"/api/org/ehr", self.org_ehr, "org"),
             ("GET", r"/api/me", self.patient_me, "patient"),
             ("POST", r"/api/sessions", self.create_session, "patient"),
             ("PUT", r"/api/sessions/(\d+)/pain", self.score_pain, "patient"),
@@ -748,6 +766,21 @@ class StagingApi:
             patient = self.db.execute("SELECT id, alias FROM patient WHERE id = ?", (row["patient_id"],)).fetchone()
         return 200, fhir.observation(entry, soap.facts(entry), report, {"id": patient["id"], "alias": patient["alias"]})
 
+    def session_fhir_document(self, therapist_id, _data, session_id):
+        """Nota SOAP como Bundle FHIR R4 de tipo `document` (TD-103): `preliminary` hasta la firma. Con licencia de una
+        organización (Nivel 3), su `Organization` va como custodio. Se genera al pedirla; no se envía a ninguna parte."""
+        from agents import soap
+        with self.lock:
+            row = self._own_session(therapist_id, session_id)
+            if not self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
+                raise ApiError(404, "Todavía no hay nota SOAP para esta sesión.")
+            entry = self._report_input(row)
+            report = self._report_public(session_id)["report"]
+            patient = self.db.execute("SELECT id, alias FROM patient WHERE id = ?", (row["patient_id"],)).fetchone()
+            org = self._org_of_therapist(therapist_id)
+        return 200, fhir.document(entry, soap.facts(entry), report, {"id": patient["id"], "alias": patient["alias"]},
+                                  {"id": org["id"], "name": org["name"]} if org else None)
+
     def get_report(self, therapist_id, _data, session_id):
         with self.lock:
             self._own_session(therapist_id, session_id)
@@ -782,6 +815,9 @@ class StagingApi:
         role = user["role"]
         if role == "admin":
             return {"role": "admin", "token": self._token("admin", user["id"])}
+        org = self.db.execute("SELECT id FROM organization WHERE admin_email = ?", (user["email"],)).fetchone()
+        if org:                                          # administración de una organización (Nivel 3, ADR-026)
+            return {"role": "org", "token": self._token("org", org["id"])}
         if role == "therapist" and user["therapist_id"]:
             return {"role": "therapist", "token": self._token("therapist", user["therapist_id"])}
         if role == "patient" and user["patient_id"]:
@@ -818,6 +854,7 @@ class StagingApi:
             self.db.execute("UPDATE app_user SET email = ?, name = ?, role = ?, last_login_at = ? WHERE id = ?",
                             (email, name, new_role, now_iso(), user["id"]))
             user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user["id"],)).fetchone()
+            self._link_license(user["email"], user["therapist_id"])
             session = self._session_for(user)
         return 200, {**session, "user": self._user_public(user)}
 
@@ -835,6 +872,7 @@ class StagingApi:
             with self.lock, self.db:
                 cur = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)", (name, now_iso()))
                 self.db.execute("UPDATE app_user SET role = 'therapist', therapist_id = ? WHERE id = ?", (cur.lastrowid, user_id))
+                self._link_license(user["email"], cur.lastrowid)
                 token = self._token("therapist", cur.lastrowid)
             return 201, {"role": "therapist", "token": token, "therapist": {"id": cur.lastrowid, "name": name}}
         if role == "patient":
@@ -847,6 +885,11 @@ class StagingApi:
         with self.lock:
             if who["role"] in ("admin", "user"):
                 row = self.db.execute("SELECT * FROM app_user WHERE id = ?", (who["subject_id"],)).fetchone()
+            elif who["role"] == "org":
+                org = self._org(who["subject_id"])
+                out["organization"] = {"id": org["id"], "name": org["name"]}
+                row = self.db.execute("SELECT * FROM app_user WHERE email = ? ORDER BY last_login_at DESC",
+                                      (org["admin_email"],)).fetchone()
             else:
                 col = "therapist_id" if who["role"] == "therapist" else "patient_id"
                 row = self.db.execute(f"SELECT * FROM app_user WHERE {col} = ?", (who["subject_id"],)).fetchone()
@@ -873,6 +916,7 @@ class StagingApi:
                 "sessions_total": q("SELECT COUNT(*) FROM session"), "sessions_7d": q("SELECT COUNT(*) FROM session WHERE ended_at >= ?", week),
                 "pain_stops_30d": q("SELECT COUNT(*) FROM session WHERE end_reason = 'pain_stop' AND ended_at >= ?", month),
                 "events_total": q("SELECT COUNT(*) FROM compensation_event"),
+                "organizations": q("SELECT COUNT(*) FROM organization"),
             }
         cfg = providers.config()
         data["config"] = {"google_login": bool(settings.google_client_id()), "demo_accounts": settings.demo_accounts(),
@@ -909,10 +953,107 @@ class StagingApi:
                 if role == "therapist" and not user["therapist_id"]:
                     cur = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)", (user["name"] or user["email"], now_iso()))
                     self.db.execute("UPDATE app_user SET therapist_id = ? WHERE id = ?", (cur.lastrowid, user_id))
+                    self._link_license(user["email"], cur.lastrowid)
                 self.db.execute("UPDATE app_user SET role = ? WHERE id = ?", (role, user_id))
                 self._revoke(user)                       # la próxima vez entra con el rol nuevo
             user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
         return 200, {"user": self._user_public(user)}
+
+    # ------------------------------------------------------------------ Nivel 3: organizaciones (ADR-026)
+    def _org(self, org_id: int) -> sqlite3.Row:
+        org = self.db.execute("SELECT * FROM organization WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            raise ApiError(404, "No existe esa organización.")
+        return org
+
+    def _org_of_therapist(self, therapist_id: int):
+        return self.db.execute("SELECT o.* FROM organization o JOIN org_license l ON l.organization_id = o.id "
+                               "WHERE l.therapist_id = ? AND l.status = 'active'", (therapist_id,)).fetchone()
+
+    def _link_license(self, email: str, therapist_id) -> None:
+        """Una licencia activa invitada a este correo queda vinculada a su fisioterapeuta."""
+        if therapist_id:
+            self.db.execute("UPDATE org_license SET therapist_id = ? WHERE email = ? AND status = 'active' "
+                            "AND therapist_id IS NULL", (therapist_id, email.lower()))
+
+    def _org_summary(self, org) -> dict:
+        """Solo plan, licencias y conteos de pacientes por profesional: ningún dato clínico (I-19)."""
+        licenses = [dict(r) for r in self.db.execute("SELECT * FROM org_license WHERE organization_id = ? ORDER BY id",
+                                                      (org["id"],))]
+        ids = [lic["therapist_id"] for lic in licenses if lic["therapist_id"] is not None]
+        counts = {}
+        if ids:
+            marks = ",".join("?" * len(ids))
+            counts = {r["therapist_id"]: r["n"] for r in self.db.execute(
+                f"SELECT therapist_id, COUNT(*) AS n FROM patient WHERE therapist_id IN ({marks}) GROUP BY therapist_id", ids)}
+        return organizations.summary(dict(org), licenses, counts)
+
+    def admin_orgs(self, _admin_id, _data):
+        with self.lock:
+            orgs = self.db.execute("SELECT * FROM organization ORDER BY id").fetchall()
+            return 200, {"organizations": [{**self._org_summary(o), "admin_email": o["admin_email"]} for o in orgs]}
+
+    def admin_create_org(self, _admin_id, data):
+        try:
+            name = organizations.clean_name(data.get("name"))
+            plan = organizations.clean_plan(data.get("plan"))
+            admin_email = organizations.clean_email(data.get("admin_email"))
+        except organizations.OrgError as err:
+            raise ApiError(400, str(err))
+        if admin_email in settings.admin_emails():
+            raise ApiError(400, "Ese correo es de un Administrador maestro; usa otro para la organización.")
+        with self.lock, self.db:
+            if self.db.execute("SELECT 1 FROM organization WHERE admin_email = ?", (admin_email,)).fetchone():
+                raise ApiError(409, "Ese correo ya administra otra organización.")
+            cur = self.db.execute("INSERT INTO organization (name, plan, admin_email, created_at) VALUES (?, ?, ?, ?)",
+                                  (name, plan, admin_email, now_iso()))
+            for user in self.db.execute("SELECT * FROM app_user WHERE email = ?", (admin_email,)).fetchall():
+                self._revoke(user)                       # la próxima vez entra como organización
+            org = self._org(cur.lastrowid)
+            return 201, {**self._org_summary(org), "admin_email": admin_email}
+
+    def org_summary(self, org_id, _data):
+        with self.lock:
+            return 200, self._org_summary(self._org(org_id))
+
+    def org_invite(self, org_id, data):
+        with self.lock, self.db:
+            org = self._org(org_id)
+            licenses = [dict(r) for r in self.db.execute("SELECT * FROM org_license WHERE organization_id = ?", (org_id,))]
+            try:
+                email = organizations.check_invite(dict(org), licenses, data.get("email"))
+            except organizations.OrgError as err:
+                raise ApiError(400, str(err))
+            if self.db.execute("SELECT 1 FROM org_license WHERE email = ? AND status = 'active'", (email,)).fetchone():
+                raise ApiError(409, "Ese profesional ya tiene una licencia activa en otra organización.")
+            user = self.db.execute("SELECT therapist_id FROM app_user WHERE email = ? AND therapist_id IS NOT NULL",
+                                   (email,)).fetchone()
+            self.db.execute("INSERT INTO org_license (organization_id, email, therapist_id, status, created_at) "
+                            "VALUES (?, ?, ?, 'active', ?)", (org_id, email, user["therapist_id"] if user else None, now_iso()))
+            return 201, self._org_summary(org)
+
+    def org_revoke(self, org_id, _data, license_id):
+        """Libera una licencia. El fisioterapeuta y sus pacientes siguen igual; la organización deja de contarlo."""
+        with self.lock, self.db:
+            org = self._org(org_id)
+            lic = self.db.execute("SELECT * FROM org_license WHERE id = ? AND organization_id = ?",
+                                  (license_id, org_id)).fetchone()
+            if not lic:
+                raise ApiError(404, "No existe esa licencia.")
+            if lic["status"] != "revoked":
+                self.db.execute("UPDATE org_license SET status = 'revoked', revoked_at = ? WHERE id = ?", (now_iso(), license_id))
+            return 200, self._org_summary(org)
+
+    def org_ehr(self, org_id, data):
+        try:
+            ehr = organizations.clean_ehr(data)
+        except organizations.OrgError as err:
+            raise ApiError(400, str(err))
+        with self.lock, self.db:
+            self._org(org_id)
+            self.db.execute("UPDATE organization SET ehr_fhir_base_url = ?, ehr_enabled = ? WHERE id = ?",
+                            (ehr["fhir_base_url"], int(ehr["enabled"]), org_id))
+            return 200, self._org_summary(self._org(org_id))
 
     def _revoke(self, user) -> None:
         self.db.execute("DELETE FROM token WHERE role = 'user' AND subject_id = ?", (user["id"],))

@@ -124,6 +124,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-16 | Ante una molestia, el sistema solo baja la exigencia: si el agente no propone una baja válida, la aplica el motor de reglas dentro del sobre; sin límites, pausa. Toda molestia se registra y se avisa al fisioterapeuta | ADR-005, ADR-021 |
 | I-17 | Sin descargo aceptado y triaje vigente no hay rutinas de autogestión; una bandera roja las bloquea y recomienda urgencias o una consulta. El triaje es de reglas fijas: ningún LLM lo decide ni lo resume, y las respuestas no salen del navegador | ADR-023 |
 | I-18 | El dolor al terminar (EVA) lo marca solo el paciente, una vez por sesión. No detiene ni cambia el plan y ningún LLM decide con él; ante dolor agudo, mareo o pérdida de fuerza vale I-7 | ADR-025 |
+| I-19 | La administración de una organización (Nivel 3) solo ve su plan, sus licencias y cuántos pacientes atiende cada profesional: nunca sesiones, notas, molestias ni alias de pacientes. La dirección FHIR de su historia clínica es https y nunca lleva credenciales | ADR-026 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -198,6 +199,37 @@ libre y el Prototipo sin `?plan=`.
 Son reglas fijas y sin IA (I-17). Las respuestas no salen del navegador ni se guardan; solo queda el resultado, su
 vencimiento y el tono (03 · `axonfas.triage`). Es una puerta del lado del cliente: sirve para orientar y proteger a quien
 la usa, no como control de acceso. Esa parte vendrá con las cuentas reales (TD-41).
+
+## Gemelo digital del Prototipo (TD-101)
+
+Con la cámara, el video y el esqueleto se ven en espejo (clase `.mirror` de `pose-camera.js`): la persona se ve como
+frente a un espejo. `twin.js` dibuja el esqueleto con los colores de los tokens y, mientras dura una alerta del motor,
+pinta en `--alert` los segmentos que compensan y agrega una guía de corrección en `--safe`:
+
+| Alerta | Línea objetivo (punteada) | Flecha |
+|---|---|---|
+| Valgo de rodilla (izquierda o derecha) | De la cadera al tobillo de ese lado | De la rodilla al punto de esa línea a su misma altura |
+| Flexión de tronco | El mismo tronco, vertical desde el centro de la cadera | Del centro de los hombros a ese punto |
+
+Solo dibuja: la alerta sale del motor de reglas (I-1). No escribe texto en el canvas, porque el espejo lo invertiría.
+
+## Nivel 3: organizaciones y licencias (ADR-026)
+
+Una organización (clínica u hospital) contrata un plan con un cupo de licencias de profesional. El Administrador
+maestro la crea con un correo de administración; esa cuenta de Google entra a `empresa.html`.
+
+| Regla (`organizations.py`) | Valor de partida (TD-105) |
+|---|---|
+| Planes: "Clínica pequeña" y "Red hospitalaria", sin precio (el modelo de negocio se valida, 04 · Anexo) | 5 y 50 licencias; cupo de 30 y 40 pacientes por licencia |
+| Cada profesional invitado por correo ocupa una licencia activa; no se invita si no quedan libres | — |
+| Un correo tiene a lo sumo una licencia activa en todo el sistema; una licencia liberada se puede volver a invitar | — |
+| Al entrar con Google con ese correo y ser fisioterapeuta, la licencia se vincula a su cuenta | — |
+| Liberar una licencia no toca al fisioterapeuta ni a sus pacientes: la organización deja de contarlo | — |
+| La dirección FHIR de la historia clínica: https, sin usuario, clave, consulta ni fragmento; nunca credenciales. En Staging solo se guarda: no se envía nada (TD-20) | — |
+| Con licencia activa, la nota SOAP como documento FHIR lleva a la organización como custodio (TD-103) | — |
+
+El panel de empresa solo muestra conteos (I-19). La administración de una organización tiene prioridad sobre otro rol
+de la misma cuenta de Google, salvo el Administrador maestro: quien dirige la clínica y además atiende usa otra cuenta.
 
 ## Galería de ejercicios (ADR-011)
 
@@ -392,6 +424,7 @@ ejercicios ajenos a los datos.
 | Fisioterapeuta | Cuenta de Google nueva que elige "Soy fisioterapeuta", o una cuenta que el Administrador deja como fisioterapeuta; también la cuenta de demostración | `doctor.html` |
 | Paciente | Cuenta de Google nueva con el código de su fisioterapeuta y el consentimiento; también el código sin cuenta (demostración) | `paciente.html` |
 | Pendiente | Cuenta de Google nueva que todavía no eligió | `login.html` para elegir |
+| Empresa (Nivel 3) | Correo de administración de una organización que creó el Administrador (ADR-026) | `empresa.html`: plan, licencias, pacientes por profesional y dirección FHIR. Sin datos clínicos (I-19) |
 
 Una cuenta desactivada no puede entrar y pierde sus tokens. Con `AXONFAS_DEMO_ACCOUNTS=0` solo se entra con Google.
 

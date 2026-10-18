@@ -77,6 +77,37 @@
       </section>
     </div>
 
+    <section class="panel-card stack" aria-labelledby="orgs-title">
+      <h2 id="orgs-title">Organizaciones (Nivel 3)</h2>
+      <p class="muted">Clínicas u hospitales con su plan de licencias. La cuenta de Google con el correo de administración
+        entra a <a href="empresa.html">Empresa</a>, donde invita a sus profesionales. Planes y cupos son valores de partida.</p>
+      <form id="org-new" class="field-row" style="align-items:end;">
+        <div class="field">
+          <label for="org-name">Nombre</label>
+          <input id="org-name" type="text" maxlength="80" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="org-plan">Plan</label>
+          <select id="org-plan">
+            <option value="clinic">Clínica pequeña (5 licencias)</option>
+            <option value="network">Red hospitalaria (50 licencias)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="org-admin">Correo de administración</label>
+          <input id="org-admin" type="email" maxlength="254" required autocomplete="off">
+        </div>
+        <button class="btn primary" type="submit">Crear organización</button>
+      </form>
+      <p class="status-line" id="orgs-status" role="status"></p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de organizaciones">
+        <table>
+          <thead><tr><th>Organización</th><th>Plan</th><th>Administración</th><th>Licencias</th><th>Pacientes</th></tr></thead>
+          <tbody id="orgs"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel-card" aria-labelledby="users-title">
       <h2 id="users-title">Cuentas de Google</h2>
       <p class="muted" style="margin-bottom:10px;">El rol de Administrador sale solo de <code>AXONFAS_ADMIN_EMAILS</code>. Aquí

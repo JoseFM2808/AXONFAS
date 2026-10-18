@@ -41,7 +41,6 @@
   const NAMES = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDES = { left: 'izquierda', right: 'derecha' };
   const END_TEXT = { completed: 'Sesión completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano' };
-  const BONES = [[11, 12], [23, 24], [11, 23], [12, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
 
   let session = null;
   let source = null;              // 'camera' | 'demo'
@@ -346,41 +345,10 @@
   }
 
   // ---------------------------------------------------------------- dibujo y lecturas
-  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
+  /** Gemelo digital (twin.js, TD-101): esqueleto en espejo y, durante una alerta, la guía de corrección. */
   function drawPose(image, out) {
-    const w = ui.canvas.width, h = ui.canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    if (!image) return;
-    const now = performance.now();
-    const alertOn = activeAlert && activeAlert.until > now ? activeAlert.key : null;
-    const ok = out.lowConfidence ? cssVar('--muted') : '#56B6E6';
-    const bad = '#F07A6F';
-    const isBad = (a, b) => alertOn && (
-      (alertOn === 'trunk_flexion' && ((a === 11 && b === 23) || (a === 12 && b === 24) || (a === 11 && b === 12)))
-      || (alertOn === 'knee_valgus_left' && (a === 23 || a === 25) && (b === 25 || b === 27))
-      || (alertOn === 'knee_valgus_right' && (a === 24 || a === 26) && (b === 26 || b === 28)));
-    ctx.lineCap = 'round';
-    ctx.lineWidth = Math.max(4, w / 220);
-    for (const [a, b] of BONES) {
-      const p = image[a], q = image[b];
-      if (!p || !q) continue;
-      ctx.strokeStyle = isBad(a, b) ? bad : ok;
-      ctx.globalAlpha = Math.min(p.visibility, q.visibility) < 0.5 ? 0.35 : 1;
-      ctx.beginPath();
-      ctx.moveTo(p.x * w, p.y * h);
-      ctx.lineTo(q.x * w, q.y * h);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#E0E9EC';
-    for (const i of [11, 12, 23, 24, 25, 26, 27, 28]) {
-      const p = image[i];
-      if (!p) continue;
-      ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, Math.max(5, w / 200), 0, Math.PI * 2);
-      ctx.fill();
-    }
+    const alertKey = activeAlert && activeAlert.until > performance.now() ? activeAlert.key : null;
+    AxonTwin.draw(ctx, image, { alertKey, lowConfidence: out.lowConfidence });
   }
 
   function setReadout(id, value, threshold, over, low) {

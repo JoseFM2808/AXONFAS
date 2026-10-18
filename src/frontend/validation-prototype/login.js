@@ -7,7 +7,7 @@
   'use strict';
   const A = window.AxonApi;
   const $ = (id) => document.getElementById(id);
-  const ROLE_TEXT = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', user: 'Cuenta nueva' };
+  const ROLE_TEXT = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', user: 'Cuenta nueva', org: 'Empresa' };
 
   function show(view) {
     ['signin', 'choose', 'signed'].forEach((id) => { $(id).hidden = id !== view; });
@@ -65,7 +65,7 @@
   }
 
   async function signedState() {
-    for (const role of ['admin', 'therapist', 'patient', 'user']) {
+    for (const role of ['admin', 'org', 'therapist', 'patient', 'user']) {
       const acc = A.load(role);
       if (!acc) continue;
       try {

@@ -30,6 +30,8 @@
 | 022 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
 | 023 | 2026-10-17 | Aceptada | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
 | 024 | 2026-10-17 | Aceptada | El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera |
+| 025 | 2026-10-17 | Aceptada | Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar (EVA) |
+| 026 | 2026-10-18 | Aceptada | Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos |
 
 ---
 
@@ -511,6 +513,36 @@
     siguen siendo el camino ante dolor agudo, mareo o pérdida de fuerza (I-7).
   - Una meta guardada en el plan solo cambia el seguimiento en modo paciente; la galería abierta sigue con `SPECS`.
   - No amplía el alcance clínico de ADR-009: no agrega ejercicios ni compensaciones, y el seguimiento sigue sin alertar.
+
+## ADR-026 · Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - El estudio de tele-rehabilitación (2026-10-17) propone un tercer perfil, la empresa: cadenas de clínicas u
+    hospitales que contratan un plan, gestionan las licencias de sus profesionales y conectan su historia clínica
+    electrónica con HL7 FHIR.
+  - ADR-002 ya vende a clínicas, pero el modelo de Staging tiene "una sola clínica implícita" (03) y no hay manera de
+    contar licencias ni de ubicar a un profesional en una organización.
+- **Decisión:**
+  - Tablas `organization` y `org_license` en Staging. Reglas puras en `src/backend/organizations.py`: dos planes sin
+    precio ("Clínica pequeña", 5 licencias; "Red hospitalaria", 50), una licencia activa por correo en todo el sistema,
+    liberar sin tocar al profesional ni a sus pacientes, y la dirección FHIR solo https y sin credenciales.
+  - El Administrador maestro crea la organización con un correo de administración (`POST /api/admin/orgs`). Esa cuenta
+    de Google recibe un token `org` (sujeto = la organización) y entra a `empresa.html`. Tiene prioridad sobre otro rol
+    de la misma cuenta, salvo el Administrador maestro.
+  - La administración invita profesionales por correo. La licencia se vincula al fisioterapeuta cuando entra con Google
+    con ese correo y elige ese rol, o cuando el Administrador lo deja como fisioterapeuta.
+  - El panel de empresa solo devuelve plan, licencias y cuántos pacientes atiende cada profesional (I-19).
+  - Con licencia activa, la nota SOAP como documento FHIR lleva a la organización como custodio (TD-103). En Staging no
+    se envía nada a la historia clínica: solo se guarda la dirección (TD-20).
+  - El token gana los roles `org` y `guest` (este último, reservado para TD-106). Las bases anteriores reconstruyen la
+    tabla `token` al arrancar, como en ADR-019.
+- **Consecuencias:**
+  - Amplía ADR-002 con un perfil de empresa, pero no cambia el producto clínico ni el alcance de ADR-009.
+  - Planes, cupos y la regla de una licencia por correo son valores de partida. Facturación, precios y la asignación de
+    pacientes entre profesionales de una misma organización quedan en TD-105.
+  - Antes de Producción hace falta autenticación real para las cuentas de empresa (TD-41) y la revisión de protección de
+    datos de los correos de los profesionales (TD-14).
 
 ---
 
