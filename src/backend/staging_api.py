@@ -56,14 +56,16 @@ CREATE TABLE IF NOT EXISTS plan_exercise (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id), exercise_id TEXT NOT NULL,
   sets INTEGER NOT NULL, reps INTEGER NOT NULL, hold_seconds INTEGER NOT NULL, per_week INTEGER NOT NULL,
   safety_envelope TEXT NOT NULL, notes TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
-  rest_min_seconds INTEGER, rest_max_seconds INTEGER);
+  rest_min_seconds INTEGER, rest_max_seconds INTEGER,
+  range_goal TEXT);                    -- JSON {target, limit, unit} del seguimiento con cámara (ADR-025)
 CREATE TABLE IF NOT EXISTS session (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id), exercise_id TEXT NOT NULL,
   mode TEXT NOT NULL CHECK (mode IN ('monitored', 'guided')),
   source TEXT NOT NULL CHECK (source IN ('camera', 'demo', 'guided')),
   started_at TEXT NOT NULL, ended_at TEXT NOT NULL,
   end_reason TEXT NOT NULL CHECK (end_reason IN ('completed', 'pain_stop', 'envelope_breach', 'user_quit')),
-  reps_done INTEGER NOT NULL, baseline TEXT, reps TEXT, pain_reported INTEGER NOT NULL DEFAULT 0);
+  reps_done INTEGER NOT NULL, baseline TEXT, reps TEXT, pain_reported INTEGER NOT NULL DEFAULT 0,
+  pain_score INTEGER CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10), pain_scored_at TEXT);
 CREATE TABLE IF NOT EXISTS compensation_event (
   id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES session(id), rep INTEGER NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('trunk_flexion', 'knee_valgus')), side TEXT, value REAL, peak REAL,
@@ -106,6 +108,12 @@ SYMPTOM_OPTIONS = {"pain_mild": "pain", "fatigue": "fatigue", "cramp": "cramp", 
 REST_DEFAULT_SECONDS = 60
 REST_LIMITS = (PARAMS["rest_seconds"]["min"], PARAMS["rest_seconds"]["max"])
 MAX_BODY = 256 * 1024
+# Meta de recorrido por ejercicio de la galería (ADR-025): límites fijos por unidad de la medida de tracker.js. Son de
+# forma, no clínicos: el valor lo elige el fisioterapeuta.
+RANGE_GOAL_BOUNDS = {"°": (1.0, 180.0), "cm": (0.5, 50.0), "%": (1.0, 200.0)}
+# EVA al terminar (ADR-025): desde 7/10 el panel lo marca como dolor alto. Valor de partida, no clínico (TD-104).
+PAIN_HIGH = 7
+DEFAULT_TRACKER = Path(__file__).resolve().parents[1] / "frontend" / "validation-prototype" / "tracker.js"
 
 
 class ApiError(Exception):
@@ -159,6 +167,41 @@ def load_catalog(path: Path) -> dict[str, str]:
     return dict(found)
 
 
+def load_tracking(path: Path) -> dict[str, dict]:
+    """{id: {metric, mode, dir, unit}} leído de SPECS y METRICS de tracker.js, la fuente única del seguimiento (ADR-014).
+    Con esto se valida la meta de recorrido del plan (ADR-025) sin duplicar qué mide cada ejercicio."""
+    text = path.read_text(encoding="utf-8")
+    units = dict(re.findall(r"(\w+): \{ label: '[^']+', unit: '([^']+)'", text))
+    found = re.findall(r"'([a-z0-9-]+)': \{ metric: '(\w+)',(?: combine: '\w+',)? mode: '(reps|hold|manual)'(?:, dir: (-?\d+))?", text)
+    if not found:
+        raise ValueError(f"no se encontraron SPECS en {path}")
+    return {ex: {"metric": metric, "mode": mode, "dir": int(d or 0), "unit": units.get(metric)} for ex, metric, mode, d in found}
+
+
+def clean_range_goal(raw, track: dict | None, monitoring: str) -> dict:
+    """Meta de recorrido del plan (ADR-025), en la unidad de la medida del ejercicio. En repeticiones, `target` es el
+    recorrido pedido desde la posición inicial y `limit` el máximo; en sostenes, el valor a sostener y hasta dónde llegar.
+    El límite siempre queda más allá de la meta en el sentido del esfuerzo."""
+    if monitoring == "auto":
+        raise ApiError(400, "Sentarse y pararse usa el sobre de seguridad (rom_min y rom_max), no una meta de recorrido.")
+    if not track or track["mode"] == "manual" or track["unit"] not in RANGE_GOAL_BOUNDS:
+        raise ApiError(400, "La cámara no mide el recorrido de ese ejercicio: no lleva meta de recorrido.")
+    if not isinstance(raw, dict):
+        raise ApiError(400, "'range_goal' debe ser un objeto {target, limit}.")
+    lo, hi = RANGE_GOAL_BOUNDS[track["unit"]]
+    values = []
+    for key in ("target", "limit"):
+        v = raw.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+            raise ApiError(400, f"'range_goal.{key}' debe ser un número entre {lo:g} y {hi:g} {track['unit']}.")
+        values.append(round(float(v), 1))
+    target, limit = values
+    beyond = limit < target if track["mode"] == "hold" and track["dir"] < 0 else limit > target
+    if not beyond:
+        raise ApiError(400, "El límite tiene que ir más allá de la meta, en el sentido del ejercicio.")
+    return {"target": target, "limit": limit, "unit": track["unit"]}
+
+
 # ------------------------------------------------------------------------------------------------ canal en vivo
 class LiveHub:
     """Suscripciones en memoria. ('therapist', id) recibe lo que publica el paciente id; ('patient', id) recibe lo que
@@ -209,6 +252,8 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
       unidad de su medida) y el sostén medio, de la primera y la última sesión (TD-49).
     - pain_stops_30d: sesiones detenidas por dolor en 30 días (bandera roja para el fisioterapeuta).
     - discomfort_30d y red_flags_30d: molestias que reportó el paciente en 30 días (todas, y las que fueron alarma).
+    - pain_*: dolor que marcó el paciente al terminar cada sesión (EVA 0-10, ADR-025): el último, la serie y cuántas
+      sesiones de 30 días llegaron a PAIN_HIGH.
     """
     now = now or datetime.now(timezone.utc)
     week_ago, month_ago = now - timedelta(days=7), now - timedelta(days=30)
@@ -231,7 +276,8 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
             camera[s["exercise_id"]].append({
                 "session_id": s["id"], "ended_at": s["ended_at"], "reps": len(reps),
                 "peak": round(sum(peaks) / len(peaks), 1) if peaks else None,
-                "hold": round(sum(holds) / len(holds), 1) if holds else None})
+                "hold": round(sum(holds) / len(holds), 1) if holds else None,
+                "over_limit": sum(1 for r in reps if r.get("overLimit") is True)})
     for p in per_exercise:
         series = camera.get(p["exercise_id"], [])
         p.update({"camera_first": series[0] if series else None, "camera_last": series[-1] if series else None,
@@ -252,6 +298,8 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         if knees:
             rom.append({"session_id": s["id"], "ended_at": s["ended_at"], "knee": round(sum(knees) / len(knees), 1)})
     recent_symptoms = [x for x in symptoms or [] if parse_iso(x["reported_at"]) >= month_ago]
+    scored = [{"session_id": s["id"], "exercise_id": s["exercise_id"], "ended_at": s["ended_at"], "score": s["pain_score"]}
+              for s in sorted(sessions, key=lambda s: s["ended_at"]) if s.get("pain_score") is not None]
     mean = lambda xs: round(sum(xs) / len(xs), 3) if xs else None
     trend = (round(mean([q["clean"] for q in quality[-3:]]) - mean([q["clean"] for q in quality[:3]]), 3)
              if len(quality) >= 4 else None)
@@ -262,14 +310,17 @@ def compute_metrics(plan: list[dict], sessions: list[dict], events: list[dict], 
         "pain_stops_30d": sum(1 for s in sessions if s["end_reason"] == "pain_stop" and parse_iso(s["ended_at"]) >= month_ago),
         "discomfort_30d": sum(1 for x in recent_symptoms),
         "red_flags_30d": sum(1 for x in recent_symptoms if x["kind"] == "red_flag"),
+        "pain_last": scored[-1] if scored else None, "pain_series": scored[-20:],
+        "pain_high_30d": sum(1 for x in scored if x["score"] >= PAIN_HIGH and parse_iso(x["ended_at"]) >= month_ago),
         "sessions_total": len(sessions), "last_session_at": max((s["ended_at"] for s in sessions), default=None),
     }
 
 
 # Campos por repetición que se guardan: los del motor de reglas (sentarse y pararse) y los del conteo con cámara de
-# la galería (TD-49: recorrido máximo, sostén, duración y lado). Todo lo demás se descarta.
+# la galería (TD-49: recorrido máximo, sostén, duración y lado; ADR-025: si pasó el límite del plan). Todo lo demás se
+# descarta.
 REP_NUMBERS = ("kneeRom", "peakTrunk", "peakValgusL", "peakValgusR", "lowConfidenceRatio", "peak", "holdSec", "seconds")
-REP_FLAGS = ("calibration", "romReached", "holdOk")
+REP_FLAGS = ("calibration", "romReached", "holdOk", "overLimit")
 REP_SIDES = ("L", "R", "+", "-")
 
 
@@ -289,7 +340,8 @@ def clean_rep(rep: dict) -> dict:
 
 # ------------------------------------------------------------------------------------------------ API
 class StagingApi:
-    def __init__(self, db_path: str | Path, catalog: dict[str, str], names: dict[str, str] | None = None):
+    def __init__(self, db_path: str | Path, catalog: dict[str, str], names: dict[str, str] | None = None,
+                 tracking: dict[str, dict] | None = None):
         if str(db_path) != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -313,9 +365,16 @@ class StagingApi:
         for column in ("rest_min_seconds", "rest_max_seconds"):
             if column not in plan_columns:
                 self.db.execute(f"ALTER TABLE plan_exercise ADD COLUMN {column} INTEGER")      # bases anteriores a ADR-022
+        if "range_goal" not in plan_columns:
+            self.db.execute("ALTER TABLE plan_exercise ADD COLUMN range_goal TEXT")              # bases anteriores a ADR-025
+        if "pain_score" not in {r["name"] for r in self.db.execute("PRAGMA table_info(session)")}:
+            self.db.execute("ALTER TABLE session ADD COLUMN pain_score INTEGER "
+                            "CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10)")
+            self.db.execute("ALTER TABLE session ADD COLUMN pain_scored_at TEXT")
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
+        self.tracking = tracking if tracking is not None else (load_tracking(DEFAULT_TRACKER) if DEFAULT_TRACKER.exists() else {})
         self._ai = {"checked": 0.0, "available": False}
         self.hub = LiveHub()
         self.routes = [
@@ -347,6 +406,7 @@ class StagingApi:
             ("POST", r"/api/admin/ai/test", self.admin_ai_test, "admin"),
             ("GET", r"/api/me", self.patient_me, "patient"),
             ("POST", r"/api/sessions", self.create_session, "patient"),
+            ("PUT", r"/api/sessions/(\d+)/pain", self.score_pain, "patient"),
             ("POST", r"/api/live", self.publish_live, "patient"),
             ("GET", r"/api/me/stream", self.live_stream_for_patient, "patient"),
             ("PUT", r"/api/me/profile", self.set_my_profile, "patient"),
@@ -455,6 +515,7 @@ class StagingApi:
         return [{"id": r["id"], "exercise_id": r["exercise_id"], "sets": r["sets"], "reps": r["reps"],
                  "hold_seconds": r["hold_seconds"], "per_week": r["per_week"],
                  "safety_envelope": json.loads(r["safety_envelope"]), "notes": r["notes"], "since": r["created_at"],
+                 "range_goal": json.loads(r["range_goal"]) if r["range_goal"] else None,
                  "rest": ({"min": r["rest_min_seconds"], "max": r["rest_max_seconds"], "default": False}
                           if r["rest_min_seconds"] is not None and r["rest_max_seconds"] is not None
                           else {"min": REST_DEFAULT_SECONDS, "max": REST_DEFAULT_SECONDS, "default": True})} for r in rows]
@@ -574,16 +635,20 @@ class StagingApi:
                 rest_min, rest_max = (rest_min if rest_min is not None else rest_max), (rest_max if rest_max is not None else rest_min)
                 if rest_min > rest_max:
                     raise ApiError(400, "El descanso mínimo no puede ser mayor que el máximo.")
+            goal = None                                           # meta de recorrido con cámara, opcional (ADR-025)
+            if item.get("range_goal") is not None:
+                goal = clean_range_goal(item["range_goal"], self.tracking.get(ex_id), self.catalog[ex_id])
             clean.append((ex_id, self._int(item, "sets", 1, 10), self._int(item, "reps", 1, 50),
                           self._int(item, "hold_seconds", 0, 120, 0), self._int(item, "per_week", 1, 7),
-                          json.dumps(envelope), self._text(item, "notes", 300, required=False), rest_min, rest_max))
+                          json.dumps(envelope), self._text(item, "notes", 300, required=False), rest_min, rest_max,
+                          json.dumps(goal) if goal else None))
         with self.lock, self.db:
             self._own_patient(therapist_id, patient_id)
             self.db.execute("UPDATE plan_exercise SET active = 0 WHERE patient_id = ?", (patient_id,))
             for row in clean:
                 self.db.execute("INSERT INTO plan_exercise (patient_id, exercise_id, sets, reps, hold_seconds, per_week, "
-                                "safety_envelope, notes, rest_min_seconds, rest_max_seconds, created_at) "
-                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                "safety_envelope, notes, rest_min_seconds, rest_max_seconds, range_goal, created_at) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (patient_id, *row, now_iso()))
             plan = self._plan(patient_id)
         self.hub.publish(("patient", patient_id), {"kind": "plan_updated", "at": now_iso()})
@@ -642,7 +707,7 @@ class StagingApi:
                 "started_at": row["started_at"], "ended_at": row["ended_at"], "reps_done": row["reps_done"],
                 "reps_target": target, "end_reason": row["end_reason"], "events": [{"type": e["type"]} for e in events],
                 "rom_mean": round(sum(knees) / len(knees), 1) if knees else None,
-                "pain_reported": bool(row["pain_reported"]), "decisions": [], "utterances": [],
+                "pain_reported": bool(row["pain_reported"]), "pain_score": row["pain_score"], "decisions": [], "utterances": [],
                 "symptom_reports": symptoms}
 
     def _report_public(self, session_id: int) -> dict:
@@ -978,16 +1043,22 @@ class StagingApi:
             p = self.db.execute("SELECT * FROM patient WHERE id = ?", (patient_id,)).fetchone()
             therapist = self.db.execute("SELECT name FROM therapist WHERE id = ?", (p["therapist_id"],)).fetchone()
             plan = self._plan(patient_id)
-            sessions = self._sessions(patient_id, 50)
-        done = defaultdict(int)
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            sessions = self._sessions(patient_id, 200)
+        done, history = defaultdict(int), defaultdict(list)
+        now = datetime.now(timezone.utc)
+        week_ago, fortnight = now - timedelta(days=7), now - timedelta(days=14)
         for s in sessions:
-            if s["end_reason"] == "completed" and parse_iso(s["ended_at"]) >= week_ago:
+            if s["end_reason"] != "completed":
+                continue
+            if parse_iso(s["ended_at"]) >= week_ago:
                 done[s["exercise_id"]] += 1
+            if parse_iso(s["ended_at"]) >= fortnight:     # el día de hoy lo calcula care-plan.js con la hora local
+                history[s["exercise_id"]].append(s["ended_at"])
         return 200, {"patient": {"id": p["id"], "alias": p["alias"], "consent_given": bool(p["consent_given"]),
                                  "profile": json.loads(p["profile"]) if p["profile"] else None},
                      "therapist": {"name": therapist["name"]},
-                     "plan": [{**item, "done_7d": done[item["exercise_id"]]} for item in plan]}
+                     "plan": [{**item, "done_7d": done[item["exercise_id"]], "history": sorted(history[item["exercise_id"]])}
+                              for item in plan]}
 
     def create_session(self, patient_id, data):
         ex_id = data.get("exercise_id")
@@ -1049,6 +1120,28 @@ class StagingApi:
         self.hub.publish(("therapist", patient_id), {"kind": "session_saved", "session_id": cur.lastrowid, "exercise_id": ex_id,
                                                      "end_reason": end_reason, "at": now_iso()})
         return 201, {"session_id": cur.lastrowid}
+
+    def score_pain(self, patient_id, data, session_id):
+        """EVA 0-10 que el paciente marca al terminar una sesión (ADR-025, TD-100). Una vez por sesión: es lo que sintió al
+        terminar, no una lectura que se corrige después. Lo ve el fisioterapeuta; no decide nada clínico ni lo lee la IA."""
+        score = data.get("score")
+        if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 10:
+            raise ApiError(400, "'score' debe ser un número entero de 0 a 10.")
+        with self.lock, self.db:
+            row = self.db.execute("SELECT id, exercise_id, pain_score FROM session WHERE id = ? AND patient_id = ?",
+                                  (session_id, patient_id)).fetchone()
+            if not row:
+                raise ApiError(404, "No existe esa sesión.")
+            if row["pain_score"] is not None:
+                raise ApiError(409, "Ya marcaste el dolor de esta sesión.")
+            at = now_iso()
+            self.db.execute("UPDATE session SET pain_score = ?, pain_scored_at = ? WHERE id = ?", (score, at, session_id))
+        high = score >= PAIN_HIGH
+        self.hub.publish(("therapist", patient_id), {"kind": "pain_scored", "session_id": session_id,
+                                                     "exercise_id": row["exercise_id"], "score": score, "high": high, "at": at})
+        message = ("Es un dolor alto: no repitas el ejercicio hoy y avísale a tu fisioterapeuta. Si es un dolor fuerte, te "
+                   "mareas o pierdes fuerza, busca atención." if high else "Gracias: tu fisioterapeuta verá cómo terminaste.")
+        return 200, {"session_id": session_id, "pain_score": score, "high": high, "message": message}
 
     # ------------------------------------------------------------------ molestias del paciente (ADR-021)
     def _assess_symptom(self, patient_id: int, exercise_id: str | None, option: str | None, text: str | None,

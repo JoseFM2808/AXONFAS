@@ -55,6 +55,8 @@ def observation(session: dict, facts: dict, report: dict | None, patient: dict) 
         comps.append(_component("end-reason", "Motivo de fin de la sesión", valueCodeableConcept={
             "coding": [{"system": f"{BASE}/end-reason", "code": reason, "display": label}], "text": label}))
     comps.append(_component("pain-reported", "Dolor reportado", valueBoolean=bool(facts.get("dolor_reportado"))))
+    if facts.get("dolor_al_terminar_eva") is not None:      # EVA 0-10 que marcó el paciente al terminar (ADR-025)
+        comps.append(_component("pain-score-end", "Dolor al terminar (EVA 0-10)", valueInteger=facts["dolor_al_terminar_eva"]))
 
     obs = {
         "resourceType": "Observation",

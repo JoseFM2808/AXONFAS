@@ -38,7 +38,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "backend"))
-from staging_api import StagingApi, Stream, load_catalog, load_names  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
+from staging_api import StagingApi, Stream, load_catalog, load_names, load_tracking  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
 import settings  # noqa: E402  (variables de entorno y ~/.axonfas/axonfas.env, ADR-018/019/020)
 
 DEFAULT_DB = Path.home() / ".axonfas" / "staging.sqlite3"   # fuera del repo y de Drive (ADR-012)
@@ -224,7 +224,7 @@ def main() -> int:
     args = ap.parse_args()
     env_file = settings.load_env_file()
     db = args.db or settings.get("AXONFAS_DB") or str(DEFAULT_DB)
-    Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"))
+    Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"), load_tracking(HERE / "tracker.js"))
     Handler.cors = settings.cors_origins()
     if args.cloud:
         args.http_port = int(settings.get("PORT") or args.http_port)

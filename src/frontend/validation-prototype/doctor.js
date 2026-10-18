@@ -18,6 +18,14 @@
     alertMuscles: [], feed: [], refreshTimer: 0, livenessTimer: 0, suggestions: [], ai: null };
 
   const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)} %`);
+  const PAIN_HIGH = 7;                                       // como PAIN_HIGH de staging_api.py (ADR-025, TD-104)
+  const unitText = (v, unit) => `${v}${unit === '°' ? '°' : ` ${unit}`}`;
+  /** Cómo cambió el dolor al terminar: la última sesión contra la anterior. */
+  function painTrend(series) {
+    if (!series || series.length < 2) return 'primera marcada';
+    const d = series[series.length - 1].score - series[series.length - 2].score;
+    return d === 0 ? 'igual que la anterior' : `${d > 0 ? '+' : ''}${d} contra la anterior`;
+  }
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : '—');
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
@@ -163,6 +171,7 @@
     if (last.peak != null) parts.push(`recorrido ${v(last.peak)}${x.camera_sessions > 1 && first.peak != null ? ` (1.ª: ${v(first.peak)})` : ''}`);
     const holds = item.hold_seconds > 0 || (spec && spec.mode !== 'reps');      // sin sostén en la dosis, no se muestra
     if (last.hold != null && holds) parts.push(`sostén ${last.hold} s`);
+    if (last.over_limit) parts.push(`${last.over_limit} sobre el límite`);       // pasó la meta máxima del plan (ADR-025)
     return parts.length ? parts.join(' · ') : '—';
   }
 
@@ -181,6 +190,8 @@
       kpi('Rodilla (ROM)', m.rom_last == null ? '—' : `${m.rom_last}°`, m.rom_first == null ? 'sin sesiones monitoreadas' : `primera sesión: ${m.rom_first}°`),
       kpi('Detenciones por dolor', String(m.pain_stops_30d), 'en 30 días'),
       kpi('Molestias 30 días', String(m.discomfort_30d ?? 0), m.red_flags_30d ? `${m.red_flags_30d} con señal de alarma` : 'reportadas por el paciente'),
+      kpi('Dolor al terminar (EVA)', m.pain_last ? `${m.pain_last.score}/10` : '—', !m.pain_last ? 'el paciente no lo marcó todavía'
+        : m.pain_high_30d ? `${m.pain_high_30d} sesión(es) con ${PAIN_HIGH} o más en 30 días` : `última sesión · ${painTrend(m.pain_series)}`),
       kpi('Sesiones', String(m.sessions_total), `última: ${fmtDate(m.last_session_at)}`));
 
     const perEx = Object.fromEntries(m.per_exercise.map((x) => [x.exercise_id, x]));
@@ -200,8 +211,10 @@
       const dose = `${item.sets} × ${item.reps}${item.hold_seconds ? ` · ${item.hold_seconds} s` : ''}`;
       const week = perEx[item.exercise_id] ? `${perEx[item.exercise_id].done_7d} de ${item.per_week}` : `0 de ${item.per_week}`;
       const romText = env && env.rom_min != null && env.rom_max != null ? ` · rodilla ${env.rom_min}–${env.rom_max}°` : '';
+      const goal = item.range_goal;
       const envText = env && env.trunk_margin ? `tronco +${env.trunk_margin}° · valgo +${env.valgus_margin}° · ${env.max_reps} reps${romText}`
-        : 'sin alertas: conteo con cámara o guiado';
+        : goal ? `sin alertas · meta ${unitText(goal.target, goal.unit)}, límite ${unitText(goal.limit, goal.unit)}`
+          : 'sin alertas: conteo con cámara o guiado';
       const r = item.rest;
       const restText = !r || r.default ? `${r ? r.min : 60} s (por defecto)` : r.min === r.max ? `${r.min} s` : `${r.min}–${r.max} s`;
       [ex ? ex.name : item.exercise_id, dose, week, cameraText(perEx[item.exercise_id], item), envText, restText]
@@ -216,7 +229,7 @@
     if (!d.sessions.length) {
       const tr = el('tr');
       const td = el('td', 'empty', 'Todavía no hay sesiones.');
-      td.colSpan = 7;
+      td.colSpan = 8;
       tr.appendChild(td);
       sBody.appendChild(tr);
     }
@@ -230,6 +243,10 @@
       end.appendChild(el('span', `tag ${s.end_reason === 'completed' ? 'ok' : s.end_reason === 'pain_stop' ? 'bad' : 'warn'}`, END[s.end_reason] || s.end_reason));
       tr.appendChild(end);
       tr.appendChild(el('td', 'num', String(eventsBySession[s.id] || 0)));
+      const eva = el('td', 'num');                            // dolor al terminar que marcó el paciente (ADR-025)
+      if (s.pain_score == null) eva.textContent = '—';
+      else eva.appendChild(el('span', s.pain_score >= PAIN_HIGH ? 'tag bad' : 'tag ok', `${s.pain_score}/10`));
+      tr.appendChild(eva);
       const note = el('td');
       const label = REPORT_ACTION[s.report_status || 'none'];
       const btn = el('button', 'btn', label);
@@ -536,6 +553,23 @@
       input('rest_max_seconds', 'Descanso entre series, máximo (s)', rest.max ?? '', 10, 180));
     fields.append(el('p', 'muted', `Referencia: ${ex.dose.text}`), row, restRow,
       el('p', 'muted', 'Recomendación para el paciente, no un límite: puede saltarlo o alargarlo. Vacío = 60 s (valor de partida, no clínico).'));
+    const spec = window.AxonTracker && AxonTracker.SPECS[ex.id];
+    if (ex.monitoring !== 'auto' && spec && spec.mode !== 'manual') {
+      // Meta de recorrido por paciente (ADR-025): reemplaza la de la galería en el seguimiento con cámara.
+      const unit = AxonTracker.METRICS[spec.metric].unit;
+      const gallery = spec.mode === 'reps' ? spec.delta : spec.threshold;
+      const goal = v.range_goal || {};
+      const what = spec.mode === 'reps' ? 'Recorrido objetivo desde la posición inicial' : `Valor a sostener (${spec.dir < 0 ? 'o menos' : 'o más'})`;
+      const goalRow = el('div', 'field-row');
+      const step = unit === 'cm' ? 0.5 : 1;
+      const gi = input('goal_target', `${what} (${unit}), opcional`, goal.target ?? '', unit === 'cm' ? 0.5 : 1, unit === '%' ? 200 : unit === 'cm' ? 50 : 180);
+      const gl = input('goal_limit', `Límite (${unit}), opcional`, goal.limit ?? '', unit === 'cm' ? 0.5 : 1, unit === '%' ? 200 : unit === 'cm' ? 50 : 180);
+      [gi, gl].forEach((f) => { f.querySelector('input').step = String(step); });
+      goalRow.append(gi, gl);
+      fields.append(goalRow, el('p', 'muted', `${AxonTracker.METRICS[spec.metric].label}. Vacío = el de la galería (${unitText(gallery, unit)}). `
+        + `El límite va más allá de la meta${spec.mode === 'hold' && spec.dir < 0 ? ' (más bajo)' : ''}: si el paciente lo pasa, la cámara le dice `
+        + '"hasta ahí basta" y la repetición queda marcada; no es una alerta.'));
+    }
     if (ex.monitoring === 'auto') {
       const env = v.safety_envelope || {};
       const envRow = el('div', 'field-row');
@@ -618,6 +652,7 @@
   $('plan-save').addEventListener('click', async () => {
     const exercises = [];
     let incompleteRange = false;
+    let incompleteGoal = false;
     document.querySelectorAll('#plan-list .plan-ex[data-on="true"]').forEach((box) => {
       const val = (name) => { const i = box.querySelector(`[data-name="${name}"]`); return i ? i.value : null; };
       const num = (name) => Number(val(name));
@@ -625,6 +660,10 @@
         per_week: num('per_week'), notes: val('notes') || null };
       // El descanso es opcional: Number('') da 0, así que solo viaja lo que tiene valor.
       ['rest_min_seconds', 'rest_max_seconds'].forEach((name) => { const t = (val(name) || '').trim(); if (t) item[name] = Number(t); });
+      const goalTarget = (val('goal_target') || '').trim();
+      const goalLimit = (val('goal_limit') || '').trim();
+      if (goalTarget && goalLimit) item.range_goal = { target: Number(goalTarget), limit: Number(goalLimit) };
+      else if (goalTarget || goalLimit) incompleteGoal = true;
       if (box.querySelector('[data-name="trunk_margin"]')) {
         item.safety_envelope = { trunk_margin: num('trunk_margin'), valgus_margin: num('valgus_margin'), max_reps: num('max_reps') };
         // Number('') da 0: el rango opcional solo viaja si los dos campos tienen valor.
@@ -637,6 +676,10 @@
     });
     if (incompleteRange) {
       $('plan-error').textContent = 'Completa el rango mínimo y el máximo, o deja los dos vacíos.';
+      return;
+    }
+    if (incompleteGoal) {
+      $('plan-error').textContent = 'Completa la meta de recorrido y su límite, o deja los dos vacíos.';
       return;
     }
     try {
@@ -674,6 +717,15 @@
     if (msg.kind === 'profile_updated') { loadDetail().catch(() => {}); return; }
     if (msg.kind === 'symptom_reported') {
       announceSymptom(msg);
+      loadDetail().catch(() => {});
+      refreshPatients().catch(() => {});
+      return;
+    }
+    if (msg.kind === 'pain_scored') {
+      const ex = C.get(msg.exercise_id);
+      const text = `Dolor al terminar${ex ? ` ${ex.name}` : ''}: ${msg.score}/10${msg.high ? ' (alto)' : ''}.`;
+      $('p-symptom-alert').textContent = text;
+      pushFeed(text, Boolean(msg.high));
       loadDetail().catch(() => {});
       refreshPatients().catch(() => {});
       return;

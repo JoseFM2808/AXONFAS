@@ -23,7 +23,7 @@
   const banner = document.createElement('section');
   banner.className = 'panel-card';
   banner.style.marginBottom = '16px';
-  banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p><div id="symptom-index"></div>';
+  banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p><div id="eva-index" class="eva-card" hidden></div><div id="symptom-index"></div>';
   document.querySelector('.wrap').prepend(banner);
   const text = (msg) => { $('pl-text').textContent = msg; };
 
@@ -72,12 +72,17 @@
     const d = e.detail;
     post('/api/live', { exercise_id: exerciseId, source, ended: d.endReason }).catch(() => {});
     try {
-      await post('/api/sessions', {
+      const res = await post('/api/sessions', {
         exercise_id: exerciseId, mode: 'monitored', source: d.source === 'camera' ? 'camera' : 'demo',
         started_at: startedAt || d.endedAt, ended_at: d.endedAt, end_reason: d.endReason, reps_done: d.reps.length,
         baseline: d.baseline || undefined, reps: d.reps, events: d.events, symptom_report_ids: symptomIds,
       });
       text(`Sesión guardada y enviada a tu fisioterapeuta (${d.reps.length} repeticiones). Puedes volver a tu plan.`);
+      // Dolor al terminar (EVA 0-10, ADR-025): opcional, le llega al fisioterapeuta.
+      const exercise = window.AxonCatalog && AxonCatalog.get(exerciseId);
+      if (window.AxonPainScale && res && res.session_id) {
+        AxonPainScale.render($('eva-index'), { sessionId: res.session_id, exerciseName: exercise ? exercise.name : null });
+      }
     } catch (err) {
       text(`No se pudo guardar la sesión: ${err.message}`);
     }

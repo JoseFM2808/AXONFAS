@@ -35,6 +35,7 @@ def facts(session: dict) -> dict:
         "compensaciones": {EVENT.get(k, k): v for k, v in count.items()},
         "rom_medio_grados": session.get("rom_mean"),
         "dolor_reportado": bool(session.get("pain_reported")),
+        "dolor_al_terminar_eva": session.get("pain_score"),          # 0-10 que marcó el paciente (ADR-025); None sin dato
         "ajustes_del_agente": [d.get("proposal") for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
         "lo_que_dijo_el_paciente": session.get("utterances") or [],
         # Sin horas: añadirían cifras citables a I-6. Los textos son lo que escribió el paciente.
@@ -49,6 +50,8 @@ def template(f: dict) -> dict:
     s = ("Refiere: " + "; ".join(f["lo_que_dijo_el_paciente"])) if f["lo_que_dijo_el_paciente"] else "Sin comentarios del paciente."
     if f["dolor_reportado"]:
         s += " Reportó dolor."
+    if f.get("dolor_al_terminar_eva") is not None:
+        s += f" Dolor al terminar (EVA): {f['dolor_al_terminar_eva']}/10."
     if f["molestias"]:
         items = []
         for m in f["molestias"]:

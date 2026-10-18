@@ -255,10 +255,11 @@
       const plan = ctx.plan || [];
       const blocked = plan.filter((p) => !fit(p.exercise_id, profile).ok);
       blocked.forEach((p) => push(`talk-${p.exercise_id}`, 'safety', `"${exName(p.exercise_id)}" ${fit(p.exercise_id, profile).blocks.join(' y ')}, y en tu perfil indicaste que no puedes: coméntaselo a tu fisioterapeuta antes de hacerlo.`));
-      const pending = plan.filter((p) => (p.done_7d || 0) < p.per_week && fit(p.exercise_id, profile).ok)
+      // Con la agenda del día (care-plan.js, ADR-025) cada ejercicio trae `due`: solo se sugiere lo que toca hoy.
+      const pending = plan.filter((p) => (p.done_7d || 0) < p.per_week && p.due !== false && fit(p.exercise_id, profile).ok)
         .sort((a, b) => (a.done_7d / a.per_week) - (b.done_7d / b.per_week));
       if (pending.length) push('next', 'plan', `Hoy te conviene "${exName(pending[0].exercise_id)}": llevas ${pending[0].done_7d || 0} de ${pending[0].per_week} esta semana.`);
-      else if (plan.length) push('done', 'plan', '¡Cumpliste todo tu plan de esta semana! Descansar también es parte del tratamiento.');
+      else if (plan.length && plan.every((p) => (p.done_7d || 0) >= p.per_week)) push('done', 'plan', '¡Cumpliste todo tu plan de esta semana! Descansar también es parte del tratamiento.');
       const limited = plan.find((p) => NEEDS[p.exercise_id] && NEEDS[p.exercise_id].floor && fit(p.exercise_id, profile).ok);
       if (limited) push('camera', 'camera', `"${exName(limited.exercise_id)}" se hace en el suelo: pon la cámara a la altura del suelo y de lado para que te vea entero.`);
     }

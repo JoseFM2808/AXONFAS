@@ -67,6 +67,7 @@ erDiagram
         int sets
         int reps
         jsonb safety_envelope
+        jsonb range_goal
     }
     SESSION {
         uuid id PK
@@ -77,6 +78,7 @@ erDiagram
         timestamptz ended_at
         jsonb baseline
         text end_reason
+        smallint pain_score
     }
     REP_METRIC {
         uuid id PK
@@ -186,8 +188,8 @@ del repo y de Drive. Solo datos sintéticos o del equipo con consentimiento (ADR
 | `patient` | `PATIENT` | Agrega `invite_code` (6 caracteres, un solo uso) y `joined_at`; `consent_given` lo marca el propio paciente al afiliarse y vuelve a 0 con un código nuevo (TD-85). `profile` (JSON, ADR-017): `{limitations: [no_floor, no_kneel, no_standing, balance, walking_aid, arm_limited, no_band, low_vision, hearing], pain_areas: [knee, hip, back, neck, shoulder], note (≤ 200), updated_at}`; solo opciones cerradas; dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan la columna al arrancar |
 | `token` | — | Tokens bearer (`role` = `therapist`, `patient`, `admin` o `user` para una cuenta de Google que todavía elige rol). Las bases anteriores se migran solas al arrancar. No existe en Producción (TD-41). Un código de afiliación nuevo borra los tokens del paciente |
 | `app_user` | — | Cuentas de Google (ADR-019): `google_sub` (único), `email`, `name`, `role` (`admin`, `therapist`, `patient`, `pending`), `therapist_id` o `patient_id` vinculados, `disabled`, `created_at`, `last_login_at`. Datos personales de quien entra (equipo y jueces): solo en la base de Staging, fuera del repo; el paciente sigue con seudónimo |
-| `plan_exercise` | `CARE_PLAN` + `PLAN_EXERCISE` | El plan se aplana por paciente: `exercise_id` del catálogo, `sets`, `reps`, `hold_seconds`, `per_week`, `safety_envelope` (JSON `{trunk_margin, valgus_margin, max_reps, rom_min?, rom_max?}` solo en monitoreados; `rom_min` y `rom_max` van juntos, entre 10 y 140, con `rom_min < rom_max`. Para el agente, `safety.agent_envelope` copia solo esas claves numéricas y agrega `pain_stop: true`; sin `rom_min`/`rom_max` el agente no puede ajustar el rango. `trunk_margin` es un margen sobre la línea base, no el `max_trunk_flex` absoluto del modelo PostgreSQL), `notes`, `active`, `rest_min_seconds` y `rest_max_seconds` (descanso recomendado, opcionales; si viene uno solo, el otro toma el mismo valor; las bases anteriores ganan las columnas al arrancar, ADR-022) |
-| `session` | `SESSION` + `REP_METRIC` | `mode` (`monitored`/`guided`), `source` (`camera`/`demo`/`guided`), `reps_done`; las métricas por repetición van como JSON en `reps`: en sentarse y pararse monitoreado, `kneeRom`, `peakTrunk`, `peakValgusL/R`, `romReached`, `lowConfidenceRatio` y `calibration`; en el conteo con cámara de la galería (TD-49), `peak` (recorrido máximo desde la posición inicial, en la unidad de la medida), `holdSec`, `holdOk`, `seconds` y `side` (`L`, `R`, `+`, `-`). Se guardan solo esos campos y con tipos válidos; el resto se descarta |
+| `plan_exercise` | `CARE_PLAN` + `PLAN_EXERCISE` | El plan se aplana por paciente: `exercise_id` del catálogo, `sets`, `reps`, `hold_seconds`, `per_week`, `safety_envelope` (JSON `{trunk_margin, valgus_margin, max_reps, rom_min?, rom_max?}` solo en monitoreados; `rom_min` y `rom_max` van juntos, entre 10 y 140, con `rom_min < rom_max`. Para el agente, `safety.agent_envelope` copia solo esas claves numéricas y agrega `pain_stop: true`; sin `rom_min`/`rom_max` el agente no puede ajustar el rango. `trunk_margin` es un margen sobre la línea base, no el `max_trunk_flex` absoluto del modelo PostgreSQL), `notes`, `active`, `rest_min_seconds` y `rest_max_seconds` (descanso recomendado, opcionales; si viene uno solo, el otro toma el mismo valor; las bases anteriores ganan las columnas al arrancar, ADR-022) y `range_goal` (JSON `{target, limit, unit}`, opcional, ADR-025: meta de recorrido de un ejercicio de la galería que la cámara mide, en la unidad de su medida en `tracker.js` (°, cm o %); `limit` va más allá de `target` en el sentido del esfuerzo; límites de forma 1–180°, 0,5–50 cm y 1–200 %; nunca en sentarse y pararse ni en los manuales; no es parte del sobre) |
+| `session` | `SESSION` + `REP_METRIC` | `mode` (`monitored`/`guided`), `source` (`camera`/`demo`/`guided`), `reps_done`; las métricas por repetición van como JSON en `reps`: en sentarse y pararse monitoreado, `kneeRom`, `peakTrunk`, `peakValgusL/R`, `romReached`, `lowConfidenceRatio` y `calibration`; en el conteo con cámara de la galería (TD-49), `peak` (recorrido máximo desde la posición inicial, en la unidad de la medida), `holdSec`, `holdOk`, `seconds`, `side` (`L`, `R`, `+`, `-`) y `overLimit` (pasó el límite de la meta del plan, ADR-025). Se guardan solo esos campos y con tipos válidos; el resto se descarta. `pain_score` (0–10, CHECK) y `pain_scored_at`: dolor al terminar que marca el paciente (EVA, ADR-025), una vez por sesión; dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan las columnas al arrancar |
 | `compensation_event` | `COMPENSATION_EVENT` | Agrega `side`, `value`, `peak` y `threshold`; `rep` es el índice de la repetición |
 | `clinical_report` | `CLINICAL_REPORT` | Una por sesión (`session_id` UNIQUE). `soap_draft` es JSON `{S, O, A, P}`; agrega `facts` (JSON con los datos que la nota puede citar, de `soap.facts`), `source` (`template` o `llm`) y `created_at`. `reviewed_by` y `reviewed_at` van juntos (CHECK): sin ellos es borrador. No guarda `fhir_bundle`: la Observation se genera al pedirla. Las bases anteriores ganan la tabla al arrancar (`CREATE TABLE IF NOT EXISTS`) |
 | `symptom_report` | `SYMPTOM_REPORT` (nueva; parte de lo que hoy sería `VOICE_TURN`) | Molestias que avisa el paciente: `patient_id`, `session_id` (se une al guardar la sesión, por id), `exercise_id`, `reported_at`, `kind`, `category` (`red_flag`, `pain`, `cramp`, `fatigue`, `stiffness`, `other`), `text` (≤ 200), `action`, `adjustment` (JSON `{param, old, new}` solo con `demand_lowered`) y `source` (`patient_form` o `voice_turn`). Dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan la tabla al arrancar |
@@ -210,6 +212,10 @@ Reglas que aplica la API:
   activo (409). Su decisión es determinista y nunca sale del sobre.
 - `symptom_report_ids` de otro paciente o ya unidos a una sesión se ignoran sin error.
 - Un código de afiliación nuevo pone `consent_given = 0` (TD-85).
+- La EVA de una sesión la marca solo su paciente (404 para otra sesión) y una sola vez (409 la segunda); tiene que ser
+  un entero de 0 a 10.
+- `GET /api/me` trae por ejercicio del plan `history`: las horas de fin de las sesiones completadas de los últimos 14
+  días, para que `care-plan.js` calcule el día en la hora local.
 
 ## Almacenamiento en el navegador
 

@@ -78,8 +78,16 @@
 
   function doseText(item) {
     return `${plural(item.sets, 'serie', 'series')} de ${item.reps}${item.hold_seconds ? ` · sostener ${item.hold_seconds} s` : ''} · `
-      + `descanso ${restShort(item.rest)} · `
-      + `${plural(item.per_week, 'vez', 'veces')} por semana · esta semana: ${item.done_7d} de ${item.per_week}`;
+      + `descanso ${restShort(item.rest)} · ${plural(item.per_week, 'vez', 'veces')} por semana`;
+  }
+
+  /** Dolor al terminar (EVA 0-10, ADR-025): se pide después de guardar la sesión; es opcional. */
+  function askPain(sessionId, ex) {
+    if (!window.AxonPainScale || !sessionId) return;
+    const card = $('eva-card');
+    AxonPainScale.render(card, { sessionId, exerciseName: ex.name, onDone: () => { state.painFor = null; } });
+    state.painFor = sessionId;
+    card.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   /** Descanso recomendado (ADR-022): cuenta regresiva que se puede saltar o alargar; nunca bloquea nada. */
@@ -100,9 +108,6 @@
     const me = state.me;
     const profile = me.patient.profile;
     if (!S) return;
-    S.renderList($('tips'), S.forUser({ page: 'patient', profile, plan: me.plan }), {
-      title: 'Sugerencias para ti',
-      note: 'Consejos de uso calculados con reglas a partir de tu plan y tu perfil. Lo que sea de salud, consúltalo con tu fisioterapeuta.' });
     $('profile-card').open = S.profileEmpty(profile);
     S.renderProfileForm($('profile-form'), profile, async (next) => {
       const res = await A.call('patient', 'PUT', '/api/me/profile', next);
@@ -111,52 +116,87 @@
     }, { who: 'patient' });
   }
 
+  /** Plan con lo de esta semana según la agenda (lunes a domingo) para las sugerencias de uso. */
+  function planForTips(day) {
+    const by = Object.fromEntries(day.all.map((x) => [x.exercise_id, x]));
+    return state.me.plan.map((item) => {
+      const x = by[item.exercise_id];
+      return x ? Object.assign({}, item, { done_7d: x.weekDone, due: x.status === 'today' }) : item;
+    });
+  }
+
   function renderPlan(keepForm = false) {
     const me = state.me;
+    const day = window.AxonCarePlan ? AxonCarePlan.agenda(me.plan) : { all: [], today: me.plan.map((item) => ({ item })), rest: [], pending: 0 };
     $('hello').textContent = `Hola, ${me.patient.alias}`;
     $('therapist').textContent = `Tu fisioterapeuta: ${me.therapist.name}. Toca "Cómo se hace" para ver los pasos.`;
     if (window.AxonSymptom) AxonSymptom.render($('symptom-plan'), { inSession: false });      // fuera de sesión: solo se registra
     if (!keepForm) renderHelp();
-    else if (S) S.renderList($('tips'), S.forUser({ page: 'patient', profile: me.patient.profile, plan: me.plan }), {
+    if (S) S.renderList($('tips'), S.forUser({ page: 'patient', profile: me.patient.profile, plan: planForTips(day) }), {
       title: 'Sugerencias para ti',
       note: 'Consejos de uso calculados con reglas a partir de tu plan y tu perfil. Lo que sea de salud, consúltalo con tu fisioterapeuta.' });
     const grid = $('plan-grid');
+    const restGrid = $('rest-grid');
     grid.innerHTML = '';
+    restGrid.innerHTML = '';
+    $('rest-plan').hidden = true;
     if (!me.plan.length) {
-      const p = document.createElement('p');
-      p.className = 'muted';
-      p.textContent = 'Tu fisioterapeuta todavía no te asignó ejercicios. Esta página se actualiza sola cuando lo haga.';
-      grid.appendChild(p);
+      $('today-note').textContent = 'Tu fisioterapeuta todavía no te asignó ejercicios. Esta página se actualiza sola cuando lo haga.';
       return;
     }
-    me.plan.forEach((item) => {
-      const ex = C.get(item.exercise_id);
-      if (!ex) return;
-      const actions = document.createElement('div');
-      actions.className = 'stack';
-      if (item.notes) {
-        const note = document.createElement('p');
-        note.className = 'notice';
-        note.textContent = `Nota de tu fisioterapeuta: ${item.notes}`;
-        actions.appendChild(note);
-      }
-      const start = document.createElement('a');
-      start.className = 'btn primary';
-      start.textContent = 'Empezar con la cámara';
-      start.href = ex.monitoring === 'auto' ? `index.html?plan=${encodeURIComponent(ex.id)}`      // con alertas
-        : `seguimiento.html?ex=${encodeURIComponent(ex.id)}&plan=1`;                                  // con conteo
-      actions.appendChild(start);
-      if (ex.monitoring !== 'auto') {
-        const guided = document.createElement('button');
-        guided.type = 'button';
-        guided.className = 'btn';
-        guided.textContent = 'Sin cámara (guiado)';
-        guided.addEventListener('click', () => startGuided(item, ex));
-        actions.appendChild(guided);
-      }
-      grid.appendChild(window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item), hold: item.hold_seconds,
-        profile: me.patient.profile, forPlan: true }));
-    });
+    // Plan de Cuidados del día (ADR-025): primero lo que toca hoy; el resto queda plegado y se puede hacer igual.
+    $('today-note').textContent = day.pending ? `${plural(day.pending, 'ejercicio pendiente', 'ejercicios pendientes')} hoy, según la frecuencia que fijó tu fisioterapeuta.`
+      : day.today.length ? '¡Listo por hoy! Ya hiciste lo que tocaba.'
+        : `Hoy es día de descanso: no te toca ningún ejercicio.${nextText(day)}`;
+    day.today.forEach((x) => { const card = planCard(x); if (card) grid.appendChild(card); });
+    if (day.rest.length) {
+      $('rest-summary').textContent = `El resto de tu plan esta semana (${day.rest.length})`;
+      day.rest.forEach((x) => { const card = planCard(x); if (card) restGrid.appendChild(card); });
+      $('rest-plan').hidden = false;
+    }
+  }
+
+  function nextText(day) {
+    const next = day.rest.filter((x) => x.status === 'rest').sort((a, b) => a.next - b.next)[0];
+    if (!next) return ' Cumpliste todo tu plan de esta semana.';
+    const ex = C.get(next.exercise_id);
+    return ` Lo próximo: "${ex ? ex.name : next.exercise_id}", ${AxonCarePlan.dayName(next.next)}.`;
+  }
+
+  function planCard(x) {
+    const item = x.item;
+    const ex = C.get(item.exercise_id);
+    if (!ex) return null;
+    const actions = document.createElement('div');
+    actions.className = 'stack';
+    if (x.status && window.AxonCarePlan) {
+      const tag = document.createElement('p');
+      tag.className = `today-status${x.status === 'done_today' || x.status === 'week_done' ? ' done' : ''}`;
+      tag.textContent = AxonCarePlan.statusText(x);
+      actions.appendChild(tag);
+    }
+    if (item.notes) {
+      const note = document.createElement('p');
+      note.className = 'notice';
+      note.textContent = `Nota de tu fisioterapeuta: ${item.notes}`;
+      actions.appendChild(note);
+    }
+    const start = document.createElement('a');
+    start.className = 'btn primary';
+    start.textContent = 'Empezar con la cámara';
+    start.href = ex.monitoring === 'auto' ? `index.html?plan=${encodeURIComponent(ex.id)}`      // con alertas
+      : `seguimiento.html?ex=${encodeURIComponent(ex.id)}&plan=1`;                                  // con conteo
+    actions.appendChild(start);
+    if (ex.monitoring !== 'auto') {
+      const guided = document.createElement('button');
+      guided.type = 'button';
+      guided.className = 'btn';
+      guided.textContent = 'Sin cámara (guiado)';
+      guided.addEventListener('click', () => startGuided(item, ex));
+      actions.appendChild(guided);
+    }
+    return window.AxonGallery.exerciseCard(ex, { extra: actions, doseText: doseText(item), hold: item.hold_seconds,
+      profile: state.me.patient.profile, forPlan: true });
   }
 
   // ------------------------------------------------------------------ guiado
@@ -216,8 +256,9 @@
     if (state.guide) { state.guide.stop(); state.guide = null; }
     publish({ ended: reason });
     state.guided = null;
+    let saved = null;
     try {
-      await A.call('patient', 'POST', '/api/sessions', { exercise_id: g.ex.id, mode: 'guided', source: 'guided',
+      saved = await A.call('patient', 'POST', '/api/sessions', { exercise_id: g.ex.id, mode: 'guided', source: 'guided',
         started_at: g.startedAt, ended_at: new Date().toISOString(), end_reason: reason, reps_done: g.setsDone * g.item.reps,
         symptom_report_ids: g.symptomIds });
       if (reason === 'pain_stop') speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
@@ -226,6 +267,7 @@
       $('g-status').textContent = `No se pudo guardar: ${err.message}`;
     }
     await boot();
+    if (saved) askPain(saved.session_id, g.ex);
   }
 
   $('g-set').addEventListener('click', () => {

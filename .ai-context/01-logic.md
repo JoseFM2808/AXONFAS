@@ -117,12 +117,13 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-9 | No se registra una sesión de un ejercicio que no esté en el plan activo del paciente; en los monitoreados, el sobre lo fija el fisioterapeuta y el paciente no lo puede cambiar | ADR-005, ADR-012 |
 | I-10 | Un fisioterapeuta solo ve y modifica a sus propios pacientes; a cualquier otro la API le responde "no existe" | ADR-012 |
 | I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
-| I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
+| I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse. Pasar el límite de la meta del plan solo marca la repetición | ADR-004, ADR-009, ADR-014, ADR-025 |
 | I-13 | Una sugerencia nunca cambia el plan por sí sola: el fisioterapeuta la revisa y guarda. Las del usuario nunca tocan la dosis, y la IA solo resume las que ya calcularon las reglas | ADR-005, ADR-017 |
 | I-14 | El rol de Administrador sale solo de `AXONFAS_ADMIN_EMAILS` y su vista no muestra datos clínicos; todo inicio de sesión con Google se verifica en el servidor (firma, emisor, destinatario, vigencia y correo verificado) | ADR-019 |
 | I-15 | La IA solo sale de infraestructura de AMD (Token Factory o el vLLM propio en una MI300X); sin proveedor configurado no hay IA y la interfaz lo dice | ADR-018 |
 | I-16 | Ante una molestia, el sistema solo baja la exigencia: si el agente no propone una baja válida, la aplica el motor de reglas dentro del sobre; sin límites, pausa. Toda molestia se registra y se avisa al fisioterapeuta | ADR-005, ADR-021 |
 | I-17 | Sin descargo aceptado y triaje vigente no hay rutinas de autogestión; una bandera roja las bloquea y recomienda urgencias o una consulta. El triaje es de reglas fijas: ningún LLM lo decide ni lo resume, y las respuestas no salen del navegador | ADR-023 |
+| I-18 | El dolor al terminar (EVA) lo marca solo el paciente, una vez por sesión. No detiene ni cambia el plan y ningún LLM decide con él; ante dolor agudo, mareo o pérdida de fuerza vale I-7 | ADR-025 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -264,6 +265,11 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
 - **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta
   o, sin plan, de la fuente. Al cerrar cada serie se anuncia un descanso; al llegar al total, la sesión termina como
   `completed`.
+- **Meta de recorrido del plan (ADR-025, TD-99):** en modo paciente, `tracker.withGoal` cambia el recorrido pedido
+  (`delta`, en repeticiones) o el valor a sostener (`threshold`, en sostenes) por el `range_goal.target` que fijó el
+  fisioterapeuta. El `limit` va más allá de la meta, en el sentido del esfuerzo. Pasarlo emite `over_limit` una vez por
+  repetición o sostén: la página dice "Hasta ahí basta" y la repetición cuenta igual, marcada con `overLimit`. No es una
+  alerta (I-12). Los manuales no llevan meta, y sentarse y pararse usa su sobre.
 
 ## Cuentas y seguimiento (ADR-012)
 
@@ -292,12 +298,35 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 | Rodilla (ROM) | Flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada |
 | Con cámara (TD-49) | Por ejercicio del plan, en las sesiones con conteo de cámara: recorrido medio por repetición (cuánto se alejó la medida de la posición inicial, en su unidad) y sostén medio, de la primera y la última sesión. El sostén solo se muestra si la dosis lo pide |
 | Detenciones por dolor | Sesiones con `end_reason = 'pain_stop'` en 30 días: bandera roja para el fisioterapeuta |
+| Sobre el límite (ADR-025) | En la última sesión con cámara, repeticiones que pasaron el `limit` de la meta del plan |
+| Dolor al terminar (ADR-025) | EVA 0–10 que marcó el paciente: la última, la serie y cuántas sesiones de 30 días llegaron a 7 o más (`PAIN_HIGH`, valor de partida, TD-104) |
+
+### Plan de Cuidados del día y dolor al terminar (ADR-025, TD-100)
+
+`care-plan.js` decide qué toca hoy, en la hora local del paciente, con reglas fijas y sin IA. Usa `per_week` y las
+sesiones completadas de los últimos 14 días (`history` de `GET /api/me`). Tests en `care-plan.test.cjs`.
+
+| Estado | Regla |
+|---|---|
+| Hecho hoy | Hay una sesión completada hoy |
+| Cumplido | Las completadas de esta semana (lunes a domingo) llegan a `per_week` |
+| Toca hoy | Pasaron al menos `floor(7 / per_week)` días desde la última (1 vez → 7, 2 → 3, 3 → 2, 4 a 7 → 1), o lo que falta ya no entra en los días que le quedan a la semana |
+| Descanso | Ninguna de las anteriores: vuelve a tocar al cumplirse la separación o el último día en que todavía entra lo que falta |
+
+- `paciente.html` muestra "Hoy toca" (lo pendiente y lo hecho hoy). El resto va plegado en "El resto de tu plan esta
+  semana" y se puede hacer igual: es una agenda, no un bloqueo. La galería abierta queda solo en la navegación.
+- La sugerencia "Hoy te conviene…" (`suggestions.js`) solo nombra lo que toca hoy.
+- Al guardar una sesión (vista guiada, `seguimiento.html` e `index.html?plan=`), `pain-scale.js` pregunta "¿Cuánto te
+  duele ahora?" con 11 opciones (0–10). Es opcional ("Ahora no") y se marca una vez por sesión.
+- Desde 7/10 el paciente lee un texto fijo: no repetir el ejercicio hoy y avisar al fisioterapeuta. No detiene nada ni
+  cambia el plan: ante dolor agudo, mareo o pérdida de fuerza siguen "Dolor: detener" y el formulario de molestias (I-7).
 
 ### Nota SOAP y export FHIR en Staging (TD-09, TD-10)
 
 1. En el historial de sesiones de `doctor.html`, el fisioterapeuta pulsa "Crear borrador".
 2. La API arma la entrada de `soap.draft` solo con datos guardados de la sesión: repeticiones, meta del plan vigente,
-   eventos, flexión media de rodilla (sin calibración), motivo de fin y dolor. Staging todavía no guarda
+   eventos, flexión media de rodilla (sin calibración), motivo de fin, dolor y el dolor al terminar (EVA, ADR-025).
+   Staging todavía no guarda
    `agent_decision` ni `voice_turn`: la nota los recibe vacíos (TD-61, TD-82).
 3. Sin GPU, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
 4. S y O no se editan. El fisioterapeuta completa A y P y firma: queda `reviewed_by` y `reviewed_at`, y la nota ya no

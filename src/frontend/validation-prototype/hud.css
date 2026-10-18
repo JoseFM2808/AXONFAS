@@ -1103,3 +1103,36 @@ td select { background: var(--surface-2); color: var(--ink); border: 1px solid v
 .triage-alert p { color: var(--ink); font-size: 0.95rem; line-height: 1.5; }
 .triage a { color: var(--tape); }
 .triage-tone { margin-bottom: 16px; }
+
+/* ==========================================================================
+   PLAN DEL DÍA Y DOLOR AL TERMINAR (care-plan.js, pain-scale.js · ADR-025)
+   ========================================================================== */
+.today-head { display: grid; gap: 4px; }
+.today-status { font: 700 0.8rem var(--font-display); color: var(--ink-secondary); letter-spacing: 0.02em; }
+.today-status.done { color: var(--safe); }
+.rest-plan > summary { font: 700 1rem var(--font-display); color: var(--ink); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.rest-plan[open] > summary { margin-bottom: 14px; }
+.eva-card { border-left: 4px solid var(--tape); }
+div.eva-card { padding-left: 14px; margin: 12px 0; }
+.eva-form, .eva-group { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.eva-group legend { font: 700 1.05rem var(--font-display); color: var(--ink); margin-bottom: 4px; }
+.eva-group legend:focus { outline: none; }
+.eva-group legend:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.eva-scale { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.9rem, 1fr)); gap: 6px; }
+.eva-option {
+  position: relative; display: grid; place-items: center; min-height: 48px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--surface-border); border-radius: 8px;
+}
+.eva-option input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.eva-num { font: 800 1.1rem var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.eva-option:has(input:checked) { background: var(--tape); border-color: var(--tape); box-shadow: var(--accent-glow); }
+.eva-option:has(input:checked) .eva-num { color: #030712; }
+.eva-option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.eva-ends { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-secondary); font-size: 0.82rem; }
+.eva-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.eva-actions .btn { min-height: 44px; }
+.eva-high { color: var(--alert-ink); font-weight: 700; }
+@media (forced-colors: active) {
+  .eva-option { border: 1px solid CanvasText; }
+  .eva-option:has(input:checked) { border: 3px solid Highlight; }
+}

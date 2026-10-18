@@ -462,6 +462,56 @@
     Con giros mayores a 45° el valgo sigue siendo poco confiable, y ADR-015 lo apaga desde 62°.
   - La validez contra un sistema con marcadores sigue pendiente (TD-16, TD-57).
 
+## ADR-025 · Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - El Nivel 2 del estudio de tele-rehabilitación es la terapia guiada por el plan del fisioterapeuta.
+  - Hasta hoy, el fisioterapeuta solo fijaba límites de movimiento en sentarse y pararse (sobre con `rom_min` y
+    `rom_max`, ADR-005 y ADR-021). En los 23 ejercicios de la galería, la cámara usaba el recorrido de `SPECS`, igual
+    para todos los pacientes (TD-99).
+  - El paciente veía todo su plan cada día, sin saber qué le tocaba hoy.
+  - El fisioterapeuta no sabía cómo terminaba cada sesión: solo veía las detenciones por dolor y las molestias que el
+    paciente reportaba (TD-100).
+- **Decisión:**
+  - **Meta de recorrido (TD-99):**
+    - Cada ejercicio de la galería que la cámara mide (modo de repeticiones o de sostén) puede llevar en el plan un
+      `range_goal = {target, limit, unit}`, en la unidad de su medida.
+    - En repeticiones, `target` reemplaza el recorrido pedido (`delta`). En sostenes, reemplaza el valor a sostener
+      (`threshold`).
+    - `limit` va más allá de la meta en el sentido del esfuerzo (más bajo en la postura en tándem).
+    - La API valida contra `SPECS` de `tracker.js`, leído por `load_tracking`, con límites de forma por unidad: 1–180°,
+      0,5–50 cm y 1–200 %.
+    - Rechaza la meta en sentarse y pararse (usa su sobre) y en los ejercicios manuales (la cámara no los ve).
+    - La meta no es el sobre: va en su propia columna y los guiados siguen sin sobre (I-9).
+    - `tracker.withGoal` la aplica solo en modo paciente.
+    - Pasar el límite no es una alerta (I-12): la repetición cuenta igual y queda marcada con `overLimit`. La pantalla y
+      la voz dicen "Hasta ahí basta", y el panel muestra cuántas pasaron el límite.
+  - **Plan de Cuidados del día (TD-100):**
+    - `care-plan.js` decide con reglas fijas, sin IA, qué toca hoy en la hora local del paciente. Usa `per_week` y las
+      sesiones completadas de los últimos 14 días (`history` en `GET /api/me`).
+    - La semana va de lunes a domingo. Hecho hoy → "hecho". Frecuencia cumplida → "cumplido".
+    - Si no, toca cuando pasaron `floor(7 / per_week)` días desde la última vez, o cuando lo que falta ya no entra en los
+      días que quedan de la semana. Si no toca, "descanso" con el día en que vuelve a tocar.
+    - `paciente.html` muestra primero "Hoy toca". El resto queda plegado y se puede hacer igual: es una agenda, no un
+      bloqueo.
+  - **Dolor al terminar (TD-100):**
+    - Después de guardar cada sesión (vista guiada, seguimiento con cámara y sentarse y pararse), el paciente puede
+      marcar una EVA de 0 a 10 (`pain-scale.js`). Es opcional.
+    - `PUT /api/sessions/{id}/pain` la guarda una sola vez en `session.pain_score` y avisa en vivo (`pain_scored`).
+    - El panel muestra el KPI "Dolor al terminar (EVA)", la columna en el historial y el aviso en vivo. La nota SOAP
+      (S) y la Observation FHIR la incluyen.
+    - Desde 7/10 (`PAIN_HIGH`), el panel lo marca como alto y el paciente recibe un texto fijo: no repetir hoy y avisar.
+      No detiene nada, no cambia el plan y el LLM no lo lee para decidir (I-1, I-13).
+- **Consecuencias:**
+  - El fisioterapeuta adapta el recorrido de la galería a cada paciente, igual que el sobre de sentarse y pararse.
+  - Las metas, la separación entre sesiones y el umbral de dolor alto son valores de partida, no clínicos: se validan
+    con fisioterapeutas (TD-104).
+  - La EVA es lo que el paciente marca al terminar; no reemplaza "Dolor: detener" ni el formulario de molestias, que
+    siguen siendo el camino ante dolor agudo, mareo o pérdida de fuerza (I-7).
+  - Una meta guardada en el plan solo cambia el seguimiento en modo paciente; la galería abierta sigue con `SPECS`.
+  - No amplía el alcance clínico de ADR-009: no agrega ejercicios ni compensaciones, y el seguimiento sigue sin alertar.
+
 ---
 
 ## Anexo · Modelo de negocio acordado (hipótesis a validar, no es un ADR)

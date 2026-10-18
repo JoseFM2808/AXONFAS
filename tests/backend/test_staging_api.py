@@ -10,10 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src" / "backend"))
-from staging_api import REST_DEFAULT_SECONDS, SYMPTOM_OPTIONS, StagingApi, Stream, compute_metrics, load_catalog  # noqa: E402
+from staging_api import (RANGE_GOAL_BOUNDS, REST_DEFAULT_SECONDS, SYMPTOM_OPTIONS, StagingApi, Stream,  # noqa: E402
+                         compute_metrics, load_catalog, load_tracking)
 from agents import coach  # noqa: E402
 
 CATALOG = load_catalog(ROOT / "src" / "frontend" / "validation-prototype" / "catalog.js")
+TRACKING = load_tracking(ROOT / "src" / "frontend" / "validation-prototype" / "tracker.js")
 
 
 class Client:
@@ -34,7 +36,8 @@ def iso(dt):
 
 class StagingApiTest(unittest.TestCase):
     def setUp(self):
-        self.api = StagingApi(":memory:", CATALOG)
+        self.api = StagingApi(":memory:", CATALOG, tracking=TRACKING)
+        self.addCleanup(self.api.db.close)
         status, body = Client(self.api).call("POST", "/api/therapists", {"name": "Lic. Demo"})
         self.assertEqual(status, 201)
         self.doctor = Client(self.api, body["token"])
@@ -543,6 +546,126 @@ class StagingApiTest(unittest.TestCase):
         self.assertEqual(status, 202)
         msg = q.get_nowait()
         self.assertEqual((msg["kind"], msg["muscle"], msg["from"]), ("highlight", "quadriceps", "Lic. Demo"))
+
+    # ------------------------------------------------------------------ Nivel 2: meta de recorrido (ADR-025, TD-99)
+    def test_seguimiento_leido_de_tracker_js_cubre_el_catalogo(self):
+        self.assertEqual(set(TRACKING), set(CATALOG))
+        self.assertEqual(TRACKING["half-squat"], {"metric": "kneeFlex", "mode": "reps", "dir": 1, "unit": "°"})
+        self.assertEqual(TRACKING["tandem-stance"]["dir"], -1)
+        self.assertEqual(TRACKING["abdominal-bracing"]["mode"], "manual")
+        self.assertTrue(all(t["unit"] in RANGE_GOAL_BOUNDS for t in TRACKING.values()))
+
+    def test_meta_de_recorrido_por_ejercicio_de_la_galeria(self):
+        def put(ex_id, goal, **extra):
+            return self.plan({"exercise_id": ex_id, "sets": 2, "reps": 8, "per_week": 3, "range_goal": goal, **extra})
+        status, body = put("half-squat", {"target": 25, "limit": 45.04})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["plan"][0]["range_goal"], {"target": 25.0, "limit": 45.0, "unit": "°"})
+        self.assertEqual(body["plan"][0]["safety_envelope"], {}, "la meta no es el sobre: los guiados siguen sin sobre (I-9)")
+        self.assertEqual(put("one-leg-stand", {"target": 3, "limit": 10})[1]["plan"][0]["range_goal"]["unit"], "cm")
+        self.assertEqual(put("tandem-stance", {"target": 40, "limit": 20})[0], 200, "con dir -1 el límite va por debajo")
+        self.assertIsNone(put("half-squat", None)[1]["plan"][0]["range_goal"], "sin meta, la de la galería")
+        for ex_id, goal in [("half-squat", {"target": 45, "limit": 25}), ("half-squat", {"target": 25, "limit": 25}),
+                            ("half-squat", {"target": 25}), ("half-squat", {"target": 0, "limit": 45}),
+                            ("half-squat", {"target": 25, "limit": 200}), ("half-squat", {"target": True, "limit": 45}),
+                            ("half-squat", {"target": "25", "limit": 45}), ("half-squat", [25, 45]),
+                            ("calf-raises", {"target": 3, "limit": 60}), ("tandem-stance", {"target": 40, "limit": 60}),
+                            ("abdominal-bracing", {"target": 5, "limit": 10}), ("sit-to-stand", {"target": 20, "limit": 40})]:
+            self.assertEqual(put(ex_id, goal)[0], 400, (ex_id, goal))
+        patient = Client(self.api, self.join()[1]["token"])
+        put("half-squat", {"target": 25, "limit": 45})
+        self.assertEqual(patient.call("GET", "/api/me")[1]["plan"][0]["range_goal"]["target"], 25.0, "el paciente la recibe")
+
+    def test_repeticion_sobre_el_limite_se_guarda_y_cuenta_en_el_panel(self):
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "half-squat", "sets": 1, "reps": 3, "per_week": 3, "range_goal": {"target": 25, "limit": 45}})
+        reps = [{"index": 1, "peak": 30.0, "seconds": 3}, {"index": 2, "peak": 52.0, "seconds": 3, "overLimit": True},
+                {"index": 3, "peak": 31.0, "seconds": 3, "overLimit": "si"}]
+        status, _ = self.session(patient, exercise_id="half-squat", mode="guided", source="camera", events=[], reps=reps, reps_done=3)
+        self.assertEqual(status, 201)
+        _, detail = self.doctor.call("GET", f"/api/patients/{self.patient_id}")
+        self.assertEqual(detail["sessions"][0]["reps"][1]["overLimit"], True)
+        self.assertNotIn("overLimit", detail["sessions"][0]["reps"][2], "solo vale un booleano")
+        self.assertEqual(detail["metrics"]["per_exercise"][0]["camera_last"]["over_limit"], 1)
+
+    def test_base_anterior_a_la_meta_y_al_dolor_se_migra(self):
+        import sqlite3
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "old.sqlite3"
+            old = sqlite3.connect(path)
+            old.executescript("""
+              CREATE TABLE plan_exercise (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, exercise_id TEXT NOT NULL,
+                sets INTEGER NOT NULL, reps INTEGER NOT NULL, hold_seconds INTEGER NOT NULL, per_week INTEGER NOT NULL,
+                safety_envelope TEXT NOT NULL, notes TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+                rest_min_seconds INTEGER, rest_max_seconds INTEGER);
+              CREATE TABLE session (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, exercise_id TEXT NOT NULL,
+                mode TEXT NOT NULL, source TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT NOT NULL,
+                end_reason TEXT NOT NULL, reps_done INTEGER NOT NULL, baseline TEXT, reps TEXT, pain_reported INTEGER NOT NULL DEFAULT 0);
+              INSERT INTO plan_exercise VALUES (1, 1, 'calf-raises', 2, 10, 0, 6, '{}', NULL, 1, '2026-10-01T00:00:00+00:00', NULL, NULL);
+              INSERT INTO session VALUES (1, 1, 'calf-raises', 'guided', 'guided', '2026-10-01T00:00:00+00:00',
+                '2026-10-01T00:05:00+00:00', 'completed', 20, NULL, '[]', 0);
+            """)
+            old.commit()
+            old.close()
+            api = StagingApi(path, CATALOG, tracking=TRACKING)
+            try:
+                self.assertIsNone(api._plan(1)[0]["range_goal"])
+                self.assertIsNone(api._sessions(1)[0]["pain_score"])
+                with self.assertRaises(sqlite3.IntegrityError):
+                    api.db.execute("UPDATE session SET pain_score = 11 WHERE id = 1")
+            finally:
+                api.db.close()
+
+    # ------------------------------------------------------------------ Nivel 2: plan del día y EVA (ADR-025, TD-100)
+    def test_el_paciente_recibe_el_historial_para_la_agenda_del_dia(self):
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "calf-raises", "sets": 2, "reps": 10, "per_week": 3})
+        now = datetime.now(timezone.utc)
+        for days, reason in ((1, "completed"), (3, "completed"), (2, "user_quit"), (20, "completed")):
+            self.session(patient, exercise_id="calf-raises", mode="guided", source="guided", events=[], reps=[],
+                         end_reason=reason, started_at=iso(now - timedelta(days=days, minutes=5)), ended_at=iso(now - timedelta(days=days)))
+        item = patient.call("GET", "/api/me")[1]["plan"][0]
+        self.assertEqual(len(item["history"]), 2, "solo las completadas de los últimos 14 días")
+        self.assertLess(item["history"][0], item["history"][1], "en orden")
+        self.assertEqual(item["done_7d"], 2)
+
+    def test_dolor_al_terminar_se_guarda_una_vez_y_llega_al_panel(self):
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "sit-to-stand", "sets": 1, "reps": 10, "per_week": 3})
+        session_id = self.session(patient)[1]["session_id"]
+        q = self.api.hub.subscribe(("therapist", self.patient_id))
+        for bad in (-1, 11, 3.5, "4", True, None):
+            self.assertEqual(patient.call("PUT", f"/api/sessions/{session_id}/pain", {"score": bad})[0], 400, bad)
+        status, body = patient.call("PUT", f"/api/sessions/{session_id}/pain", {"score": 8})
+        self.assertEqual(status, 200)
+        self.assertEqual((body["pain_score"], body["high"]), (8, True))
+        self.assertIn("avísale a tu fisioterapeuta", body["message"])
+        msg = q.get_nowait()
+        self.assertEqual((msg["kind"], msg["session_id"], msg["score"], msg["high"]), ("pain_scored", session_id, 8, True))
+        self.assertEqual(patient.call("PUT", f"/api/sessions/{session_id}/pain", {"score": 2})[0], 409, "una vez por sesión")
+        self.assertEqual(self.doctor.call("PUT", f"/api/sessions/{session_id}/pain", {"score": 2})[0], 403, "solo el paciente")
+        _, detail = self.doctor.call("GET", f"/api/patients/{self.patient_id}")
+        self.assertEqual(detail["sessions"][0]["pain_score"], 8)
+        m = detail["metrics"]
+        self.assertEqual((m["pain_last"]["score"], m["pain_high_30d"], len(m["pain_series"])), (8, 1, 1))
+        report = self.doctor.call("POST", f"/api/sessions/{session_id}/report")[1]["report"]
+        self.assertEqual(report["facts"]["dolor_al_terminar_eva"], 8)
+        self.assertIn("Dolor al terminar (EVA): 8/10.", report["soap"]["S"])
+        obs = self.doctor.call("GET", f"/api/sessions/{session_id}/fhir")[1]
+        self.assertIn({"valueInteger": 8}, [{k: v for k, v in c.items() if k == "valueInteger"} for c in obs["component"]])
+
+    def test_dolor_solo_de_sesiones_propias(self):
+        patient = Client(self.api, self.join()[1]["token"])
+        self.plan({"exercise_id": "sit-to-stand", "sets": 1, "reps": 10, "per_week": 3})
+        session_id = self.session(patient)[1]["session_id"]
+        _, body = self.doctor.call("POST", "/api/patients", {"alias": "Paciente B"})
+        other = Client(self.api, Client(self.api).call("POST", "/api/join", {"code": body["patient"]["invite_code"], "consent": True})[1]["token"])
+        self.assertEqual(other.call("PUT", f"/api/sessions/{session_id}/pain", {"score": 3})[0], 404)
+        self.assertEqual(patient.call("PUT", "/api/sessions/9999/pain", {"score": 3})[0], 404)
+        status, body = patient.call("PUT", f"/api/sessions/{session_id}/pain", {"score": 0})
+        self.assertEqual((status, body["high"]), (200, False))
+        self.assertEqual(compute_metrics([], [], [])["pain_last"], None)
 
 
 if __name__ == "__main__":

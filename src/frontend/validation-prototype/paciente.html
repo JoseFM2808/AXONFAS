@@ -68,7 +68,22 @@
       <button class="btn" id="btn-forget" type="button">Olvidar este equipo</button>
     </div>
     <p class="notice">Si algo te duele, te mareas o pierdes fuerza de golpe, detente y avísale a tu fisioterapeuta.</p>
+    <section id="eva-card" class="panel-card eva-card" hidden aria-label="Dolor al terminar la sesión"></section>
     <div id="symptom-plan"></div>
+    <!-- Plan de Cuidados del día (ADR-025): lo que toca hoy primero; el resto de la semana, plegado -->
+    <section class="stack" aria-labelledby="today-title">
+      <div class="today-head">
+        <h2 id="today-title">Hoy toca</h2>
+        <p class="muted" id="today-note" role="status"></p>
+      </div>
+      <div class="card-grid" id="plan-grid"></div>
+    </section>
+    <details class="panel-card rest-plan" id="rest-plan" hidden>
+      <summary id="rest-summary">El resto de tu plan esta semana</summary>
+      <p class="muted" style="margin-bottom:14px;">Hoy no te tocan, pero si un día no pudiste, puedes hacerlos igual: la
+        sesión se guarda y tu fisioterapeuta la ve.</p>
+      <div class="card-grid" id="rest-grid"></div>
+    </details>
     <div id="tips" class="panel-card"></div>
     <details class="panel-card" id="profile-card">
       <summary class="profile-summary-title">Mi perfil: lo que no puedo hacer y dónde me duele</summary>
@@ -76,7 +91,6 @@
         te pasa; puedes cambiarlo cuando quieras.</p>
       <div id="profile-form"></div>
     </details>
-    <div class="card-grid" id="plan-grid"></div>
   </section>
 
   <!-- EJERCICIO GUIADO -->
@@ -121,6 +135,8 @@
 <script src="symptom-form.js"></script>
 <script src="rest-timer.js"></script>
 <script src="gallery.js"></script>
+<script src="care-plan.js"></script>
+<script src="pain-scale.js"></script>
 <script src="patient.js"></script>
 </body>
 </html>

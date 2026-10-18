@@ -52,6 +52,7 @@
     cam: null, lowStreak: 0, lastMap: 0,
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
     patient: null, item: null, symptomIds: [], lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
+    lastLimitSpoken: 0,
   };
 
   const cssCache = {};
@@ -102,7 +103,8 @@
   function setExercise(id) {
     stopCamera();
     st.ex = C.get(id) || C.get('half-squat');
-    st.spec = T.SPECS[st.ex.id];
+    // En modo paciente, la meta de recorrido y su límite son los del plan del fisioterapeuta (ADR-025).
+    st.spec = T.withGoal(T.SPECS[st.ex.id], st.item && st.item.exercise_id === st.ex.id ? st.item.range_goal : null);
     st.dose = st.item ? { sets: st.item.sets, reps: st.item.reps, hold: st.item.hold_seconds }
       : { sets: st.ex.dose.sets, reps: st.ex.dose.reps, hold: st.ex.dose.hold };
     st.tracker = null;
@@ -318,6 +320,13 @@
         break;
       }
       case 'hold_lost': showInfo('Dejé de verte: ese sostén no contó.', 2500); break;
+      case 'over_limit': {                                // dosis, no alerta (I-12): la repetición cuenta igual
+        const now = performance.now();
+        const unit = T.METRICS[st.spec.metric].unit;
+        showInfo(`Hasta ahí basta: tu fisioterapeuta fijó ${fmt(e.limit, unit)} como límite. No hace falta ir más allá.`, 3500);
+        if (now - st.lastLimitSpoken > 6000) { st.lastLimitSpoken = now; speak('Hasta ahí basta'); }
+        break;
+      }
       case 'partial': {
         const now = performance.now();
         showInfo('Un poco más: llega hasta llenar la barra.', 2200);
@@ -468,10 +477,10 @@
     if (st.spec.mode === 'reps') {
       setKpi('ro-rest', fmt(out ? out.rest : null, unit), out && out.phase === 'setup' ? 'quédate quieto…' : 'referencia de esta sesión');
       const sense = st.spec.dir === 0 ? 'hacia cualquier lado' : st.spec.dir > 0 ? 'más que la posición inicial' : 'menos que la posición inicial';
-      setKpi('ro-goal', fmt(st.spec.delta, unit), sense);
+      setKpi('ro-goal', fmt(st.spec.delta, unit), goalNote(sense, unit));
     } else if (st.spec.mode === 'hold') {
       setKpi('ro-rest', '—', 'no hace falta referencia');
-      setKpi('ro-goal', `${st.spec.dir >= 0 ? '≥' : '≤'} ${fmt(st.spec.threshold, unit)}`, 'mientras sostienes');
+      setKpi('ro-goal', `${st.spec.dir >= 0 ? '≥' : '≤'} ${fmt(st.spec.threshold, unit)}`, goalNote('mientras sostienes', unit));
     } else {
       setKpi('ro-rest', '—', 'no hace falta referencia');
       setKpi('ro-goal', 'Tú lo marcas', 'la cámara no ve este músculo');
@@ -480,6 +489,12 @@
     const left = out && out.holdMs != null && hold ? Math.max(0, hold - out.holdMs / 1000) : null;
     setKpi('ro-hold', hold ? (left != null ? `${left.toFixed(1)} s` : `${hold} s`) : 'No', hold ? (left != null ? 'quedan' : 'cada repetición') : 'este ejercicio no se sostiene');
     $('ro-hold').classList.toggle('on', left != null);
+  }
+
+  /** Debajo de la meta: si la fijó el fisioterapeuta, lo dice junto con el límite (ADR-025). */
+  function goalNote(sense, unit) {
+    if (st.spec.goalFrom !== 'plan') return sense;
+    return `de tu fisioterapeuta · límite ${fmt(st.spec.limit, unit)}`;
   }
 
   function renderReps() {
@@ -625,16 +640,18 @@
     st.saved = true;
     A.call('patient', 'POST', '/api/live', { exercise_id: st.ex.id, source: 'camera', ended: reason }).catch(() => {});
     try {
-      await A.call('patient', 'POST', '/api/sessions', {
+      const res = await A.call('patient', 'POST', '/api/sessions', {
         exercise_id: st.ex.id, mode: 'guided', source: 'camera', started_at: st.startedAt || new Date().toISOString(),
         ended_at: new Date().toISOString(), end_reason: reason, reps_done: reps, symptom_report_ids: st.symptomIds,
         // Por repetición (TD-49): recorrido máximo desde la posición inicial, sostén, duración y lado. Nunca video.
         reps: st.tracker.reps.slice(0, 100).map((r) => ({
           index: r.index, side: r.side || undefined, peak: r.peak ?? undefined, holdSec: r.holdSec ?? undefined,
-          holdOk: r.holdOk ?? undefined, seconds: r.seconds,
+          holdOk: r.holdOk ?? undefined, seconds: r.seconds, overLimit: r.overLimit || undefined,
         })),
       });
       $('patient-text').textContent = `Sesión guardada y enviada a tu fisioterapeuta (${plural(reps, 'repetición', 'repeticiones')}). Puedes volver a tu plan.`;
+      // Dolor al terminar (EVA 0-10, ADR-025): opcional, le llega al fisioterapeuta.
+      if (window.AxonPainScale && res && res.session_id) AxonPainScale.render($('eva-track'), { sessionId: res.session_id, exerciseName: st.ex.name });
     } catch (err) {
       $('patient-text').textContent = `No se pudo guardar la sesión: ${err.message}`;
     }

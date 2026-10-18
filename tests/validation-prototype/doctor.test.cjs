@@ -15,12 +15,14 @@ test('el editor del plan tiene el rango de rodilla opcional del sobre (ADR-021)'
 
 const html = fs.readFileSync(path.join(SRC, 'doctor.html'), 'utf8');
 
-test('la nota SOAP tiene su sección accesible y la tabla de sesiones 7 columnas (TD-09)', () => {
+test('la nota SOAP tiene su sección accesible y la tabla de sesiones 8 columnas (TD-09, ADR-025)', () => {
   assert.match(html, /<section[^>]*id="soap-card"[^>]*aria-labelledby="soap-title"/);
   assert.match(html, /id="soap-status"[^>]*role="status"|role="status"[^>]*id="soap-status"/);
   assert.match(html, /<button[^>]*id="soap-approve"[^>]*>\s*\S[^<]*<\/button>/);
   const sessions = html.match(/<thead><tr>((?:<th>[^<]*<\/th>)+)<\/tr><\/thead>\s*<tbody id="p-sessions">/);
-  assert.equal(sessions[1].match(/<th>/g).length, 7);
+  assert.equal(sessions[1].match(/<th>/g).length, 8);
+  assert.ok(sessions[1].includes('Dolor (EVA)'));
+  assert.ok(js.includes('td.colSpan = 8'), 'la fila vacía ocupa las 8 columnas');
 });
 
 test('la nota dice que es borrador y no menciona la IA si no la redactó el LLM (I-8, TD-34)', () => {
@@ -68,4 +70,19 @@ test('el panel muestra y anuncia las molestias del paciente (ADR-021)', () => {
 
 test('el aviso de alarma no repite "señal de alarma" dos veces', () => {
   assert.ok(!js.includes('`Señal de alarma: ${what}'));
+});
+
+test('el editor del plan tiene la meta de recorrido y su límite para la galería (ADR-025, TD-99)', () => {
+  assert.ok(js.includes("'goal_target'") && js.includes("'goal_limit'"));
+  assert.ok(js.includes('item.range_goal = { target: Number(goalTarget), limit: Number(goalLimit) }'));
+  assert.ok(js.includes('o deja los dos vacíos'));
+  assert.ok(js.includes("spec.mode !== 'manual'"), 'los ejercicios que la cámara no ve no llevan meta');
+  assert.ok(js.includes('no es una alerta'), 'el texto deja claro que el límite no es una alerta (I-12)');
+});
+
+test('el panel muestra el dolor al terminar y lo recibe en vivo (ADR-025, TD-100)', () => {
+  assert.ok(js.includes("kpi('Dolor al terminar (EVA)'"));
+  assert.ok(js.includes("msg.kind === 'pain_scored'"));
+  assert.ok(js.includes('s.pain_score'));
+  assert.ok(js.includes('sobre el límite'));
 });
