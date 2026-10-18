@@ -114,6 +114,6 @@ IA mientras no lo use (TD-34).
 
 Si cambia alguna pestaña, regenera el panel y vuelve a publicar
 `src/frontend/context-panel/dist/axonfas-panel.html` en la **misma** URL de artifact, sin crear uno nuevo:
-https://claude.ai/artifact/9mXdndf1iqyp85yJuHf7Kv
+https://claude.ai/artifact/XYUbAqAN8gkWQwGuABqyvv
 
 Los comandos de build, tests y benchmark se añaden aquí cuando exista el código.
