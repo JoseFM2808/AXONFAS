@@ -294,7 +294,7 @@
   - Los valores 10° y × 0,7 son de partida, no clínicos (TD-87). Las palabras y categorías se validan con
     fisioterapeutas (TD-80).
   - La molestia es un dato de salud: solo Staging, seudónimo y consentimiento (ADR-010).
-  - Invariante I-14 en [01](01-logic.md).
+  - Invariante I-16 en [01](01-logic.md).
 
 ## ADR-022 · Descanso entre series como recomendación del fisioterapeuta, no como límite — Aceptada
 
