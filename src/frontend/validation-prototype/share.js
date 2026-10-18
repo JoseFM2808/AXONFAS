@@ -13,36 +13,40 @@
     camera: $('share-camera-note'), plain: $('share-plain'), local: $('share-local'),
   };
   if (!ui.button || !ui.dialog) return;
+  const { t } = AxonI18n;   // textos en i18n/common.js (ADR-030)
 
   function renderQr(url) {
     if (typeof window.qrcode !== 'function') {
-      ui.qr.innerHTML = '<p class="share-qr-missing">No se pudo cargar el generador de QR. Escribe la dirección de abajo.</p>';
+      const p = document.createElement('p');
+      p.className = 'share-qr-missing';
+      p.textContent = t('share.qrMissing');
+      ui.qr.replaceChildren(p);
       return;
     }
     const qr = window.qrcode(0, 'M');
     qr.addData(url);
     qr.make();
-    ui.qr.innerHTML = qr.createSvgTag(6, 2);
+    ui.qr.innerHTML = qr.createSvgTag(6, 2);           // SVG del generador, sin texto de la interfaz
     const svg = ui.qr.querySelector('svg');
     if (svg) {
       svg.removeAttribute('width');
       svg.removeAttribute('height');
       svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', `Código QR de ${url}`);
+      svg.setAttribute('aria-label', t('share.qrLabel', { url }));
     }
   }
 
   async function copyUrl(url) {
     try {
       await navigator.clipboard.writeText(url);
-      ui.copyStatus.textContent = 'Dirección copiada.';
+      ui.copyStatus.textContent = t('share.copied');
     } catch {
       const range = document.createRange();
       range.selectNodeContents(ui.url);
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
-      ui.copyStatus.textContent = 'Seleccionada: cópiala con Ctrl+C.';
+      ui.copyStatus.textContent = t('share.selected');
     }
   }
 

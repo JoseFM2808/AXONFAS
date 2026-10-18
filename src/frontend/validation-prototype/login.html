@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Entrar</title>
+<title data-i18n="login.title">AXONFAS · Entrar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -11,21 +11,21 @@
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon" aria-hidden="true">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Entrar</span></h1>
-      <p>Staging: solo datos de prueba. No es un dispositivo médico.</p>
+      <h1>AXONFAS <span data-i18n="login.h1">· Entrar</span></h1>
+      <p data-i18n="login.tagline">Staging: solo datos de prueba. No es un dispositivo médico.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="login.html" aria-current="page">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" aria-current="page" data-i18n="nav.login">Entrar</a>
   </nav>
 </header>
 
@@ -33,49 +33,55 @@
 <main id="main" tabindex="-1" class="auth-wrap">
   <!-- 1 · INICIAR SESIÓN -->
   <section class="panel-card auth-card" id="signin" aria-labelledby="signin-title">
-    <h2 id="signin-title">Iniciar sesión</h2>
-    <p class="muted">Entra con tu cuenta de Google. Solo guardamos tu correo y tu nombre para identificarte; tus datos de
+    <h2 id="signin-title" data-i18n="login.signin.h2">Iniciar sesión</h2>
+    <p class="muted" data-i18n="login.signin.lead">Entra con tu cuenta de Google. Solo guardamos tu correo y tu nombre para identificarte; tus datos de
       salud se ven con un seudónimo.</p>
     <div id="google-area" class="auth-google" aria-live="polite"></div>
     <p class="status-line" id="signin-status" role="status"></p>
     <div id="demo-area" hidden>
       <hr class="auth-sep">
-      <p class="muted">¿Solo quieres probar? Usa una cuenta de demostración, sin contraseña ni datos reales:</p>
+      <p class="muted" data-i18n="login.demo.lead">¿Solo quieres probar? Usa una cuenta de demostración, sin contraseña ni datos reales:</p>
       <div class="chips">
-        <a class="btn" href="doctor.html">Demo: fisioterapeuta</a>
-        <a class="btn" href="paciente.html">Demo: paciente con código</a>
+        <a class="btn" href="doctor.html" data-i18n="login.demo.therapist">Demo: fisioterapeuta</a>
+        <a class="btn" href="paciente.html" data-i18n="login.demo.patient">Demo: paciente con código</a>
       </div>
+    </div>
+    <hr class="auth-sep">
+    <div class="guest-entry">
+      <p class="muted" data-i18n="login.guest.lead">¿Solo quieres mirar? Entra como invitado, sin registro: explora la galería, el demo y un panel clínico de
+        muestra con datos sintéticos. Para hacer tu rutina completa o guardar tu progreso te pediremos crear una cuenta.</p>
+      <button class="btn" id="as-guest" type="button" data-i18n="login.guest.btn">Ingresar como invitado</button>
     </div>
   </section>
 
   <!-- 2 · ELEGIR ROL (cuenta nueva) -->
   <section class="panel-card auth-card" id="choose" hidden aria-labelledby="choose-title">
-    <h2 id="choose-title">¿Cómo vas a usar AXONFAS?</h2>
+    <h2 id="choose-title" data-i18n="login.choose.h2">¿Cómo vas a usar AXONFAS?</h2>
     <p class="muted" id="choose-hello"></p>
     <div class="auth-roles">
       <form class="auth-role" id="as-therapist">
-        <h3>Soy fisioterapeuta</h3>
-        <p class="muted">Afilias pacientes con un código, armas su plan y ves sus sesiones.</p>
+        <h3 data-i18n="login.choose.therapist.h3">Soy fisioterapeuta</h3>
+        <p class="muted" data-i18n="login.choose.therapist.lead">Afilias pacientes con un código, armas su plan y ves sus sesiones.</p>
         <div class="field">
-          <label for="t-name">Nombre que verán tus pacientes</label>
+          <label for="t-name" data-i18n="login.choose.therapist.name">Nombre que verán tus pacientes</label>
           <input id="t-name" type="text" maxlength="80" autocomplete="name">
         </div>
-        <button class="btn primary" type="submit">Entrar como fisioterapeuta</button>
+        <button class="btn primary" type="submit" data-i18n="login.choose.therapist.submit">Entrar como fisioterapeuta</button>
       </form>
       <form class="auth-role" id="as-patient">
-        <h3>Soy paciente</h3>
-        <p class="muted">Tu fisioterapeuta te da un código de 6 caracteres.</p>
+        <h3 data-i18n="login.choose.patient.h3">Soy paciente</h3>
+        <p class="muted" data-i18n="login.choose.patient.lead">Tu fisioterapeuta te da un código de 6 caracteres.</p>
         <div class="field">
-          <label for="p-code">Código de afiliación</label>
+          <label for="p-code" data-i18n="login.choose.patient.code">Código de afiliación</label>
           <input id="p-code" type="text" maxlength="12" required autocomplete="off" class="code-input">
         </div>
         <label class="check" style="align-items:flex-start;">
           <input type="checkbox" id="p-consent" required>
-          <span>Entiendo que es un <strong>prototipo de prueba</strong>, no un dispositivo médico, y acepto que mis
+          <span data-i18n="login.choose.patient.consent">Entiendo que es un <strong data-i18n-slot="proto" data-i18n="login.choose.patient.proto">prototipo de prueba</strong>, no un dispositivo médico, y acepto que mis
             repeticiones, ángulos y alertas se compartan con mi fisioterapeuta. El video de mi cámara nunca sale de mi
             equipo.</span>
         </label>
-        <button class="btn primary" type="submit">Entrar como paciente</button>
+        <button class="btn primary" type="submit" data-i18n="login.choose.patient.submit">Entrar como paciente</button>
       </form>
     </div>
     <p class="status-line" id="choose-status" role="status"></p>
@@ -83,21 +89,30 @@
 
   <!-- 3 · YA CON SESIÓN -->
   <section class="panel-card auth-card" id="signed" hidden aria-labelledby="signed-title">
-    <h2 id="signed-title">Ya iniciaste sesión</h2>
+    <h2 id="signed-title" data-i18n="login.signed.h2">Ya iniciaste sesión</h2>
     <p id="signed-text"></p>
     <div class="chips">
-      <a class="btn primary" id="signed-go" href="#">Ir a mi página</a>
-      <button class="btn" id="signed-out" type="button">Cerrar sesión</button>
+      <a class="btn primary" id="signed-go" href="#" data-i18n="login.signed.go">Ir a mi página</a>
+      <button class="btn" id="signed-out" type="button" data-i18n="common.logout">Cerrar sesión</button>
     </div>
   </section>
 </main>
 
-  <footer>
+  <footer data-i18n="login.footer">
     AXONFAS · Staging con datos de prueba (ADR-010). El inicio de sesión usa Google Identity Services; el servidor verifica
     cada token con las claves públicas de Google.
   </footer>
 </div>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
 <script src="login.js"></script>

@@ -6,7 +6,8 @@
  * Reglas fijas, sin IA (I-17). Las respuestas no salen del navegador y no se guardan: solo queda el resultado
  * (`clear` o `blocked`), su vencimiento y el tono, en localStorage (`axonfas.triage`).
  * Exentos: el modo paciente (`?plan=` con cuenta de paciente: su fisioterapeuta ya lo evaluó, Nivel 2) y las cuentas de
- * fisioterapeuta y Administrador. Una página entra al triaje con <script src="triage.js" data-gate="self-care">.
+ * fisioterapeuta y Administrador. Una página entera entra al triaje con <script src="triage.js" data-gate="self-care">;
+ * una página abierta (el Prototipo) lo pide al encender la cámara con `AxonTriage.ensure()` (ADR-028).
  * Funciones puras en Node y navegador; la pantalla, solo en el navegador. Valores de partida, a validar (TD-98).
  */
 (function (root, factory) {
@@ -22,43 +23,47 @@
   const BLOCK_HOURS = 24;            // con una bandera roja, no se puede volver a responder antes de esto
   const HOUR = 3600 * 1000;
 
+  // Textos en el idioma de la interfaz (ADR-030), leídos al cargar (cambiar de idioma recarga la página). El inglés dice
+  // exactamente lo mismo que el español: lo revisa triage.test.cjs. Los ids y lo que se guarda no se traducen.
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');
+  const t = I18N.t;
+  const tn = I18N.tn;
+
   const DISCLAIMER = [
-    'AXONFAS es material educativo y de bienestar: no diagnostica, no trata enfermedades y no es un dispositivo médico.',
-    'No reemplaza la evaluación de un médico o un fisioterapeuta.',
-    'Si tienes un síntoma agudo (dolor fuerte, mareo o pérdida de fuerza), detente y busca atención presencial.',
-    'Lo que mide la cámara es una estimación con valores de partida, no una medición clínica.',
-    'El video de tu cámara no sale de este equipo, y tus respuestas a este cuestionario tampoco.',
+    t('triage.disclaimer.1'),
+    t('triage.disclaimer.2'),
+    t('triage.disclaimer.3'),
+    t('triage.disclaimer.4'),
+    t('triage.disclaimer.5'),
   ];
-  const DISCLAIMER_ACCEPT = 'Leí y entiendo que AXONFAS no reemplaza a un profesional de la salud.';
+  const DISCLAIMER_ACCEPT = t('triage.accept');
 
   // Banderas rojas: las seis del estudio de tele-rehabilitación (TD-95) y dos de las guías habituales de fisioterapia
   // (infección y déficit neurológico que avanza). Cualquiera bloquea.
   const RED_FLAGS = [
-    { id: 'sphincter', text: '¿Desde hace poco se te escapa la orina o las heces, o te cuesta orinar?', source: 'study' },
-    { id: 'saddle', text: '¿Sientes adormecida la zona entre las piernas, los glúteos o los genitales?', source: 'study' },
-    { id: 'cancer', text: '¿Tienes o tuviste cáncer?', source: 'study' },
-    { id: 'weight_loss', text: '¿Bajaste de peso sin proponértelo en los últimos meses?', source: 'study' },
-    { id: 'trauma', text: '¿Tuviste hace poco una caída fuerte, un accidente o un golpe importante en la zona que te molesta?', source: 'study' },
-    { id: 'night_pain', text: '¿Tienes un dolor que no te deja dormir y no mejora con el reposo ni al cambiar de posición?', source: 'study' },
-    { id: 'fever', text: '¿Tienes fiebre o escalofríos junto con el dolor?', source: 'guideline' },
-    { id: 'neuro', text: '¿Sientes debilidad, hormigueo o adormecimiento en las piernas o los brazos que va en aumento?', source: 'guideline' },
+    { id: 'sphincter', text: t('triage.red.sphincter'), source: 'study' },
+    { id: 'saddle', text: t('triage.red.saddle'), source: 'study' },
+    { id: 'cancer', text: t('triage.red.cancer'), source: 'study' },
+    { id: 'weight_loss', text: t('triage.red.weight_loss'), source: 'study' },
+    { id: 'trauma', text: t('triage.red.trauma'), source: 'study' },
+    { id: 'night_pain', text: t('triage.red.night_pain'), source: 'study' },
+    { id: 'fever', text: t('triage.red.fever'), source: 'guideline' },
+    { id: 'neuro', text: t('triage.red.neuro'), source: 'guideline' },
   ];
   // Banderas amarillas (psicosociales): opcionales y nunca bloquean.
   const YELLOW_FLAGS = [
-    { id: 'fear', text: '¿Te da miedo moverte porque crees que te vas a lastimar más?' },
-    { id: 'catastrophizing', text: '¿Sientes que tu dolor nunca va a mejorar?' },
-    { id: 'avoidance', text: '¿Dejaste de hacer cosas del día a día por miedo al dolor?' },
+    { id: 'fear', text: t('triage.yellow.fear') },
+    { id: 'catastrophizing', text: t('triage.yellow.catastrophizing') },
+    { id: 'avoidance', text: t('triage.yellow.avoidance') },
   ];
 
+  // Urgencias: SAMU (106) en Perú o el número de emergencias del país, en los dos idiomas.
   const MESSAGES = {
-    blockedTitle: 'Por ahora, no hagas estos ejercicios por tu cuenta',
-    blocked: 'Marcaste una señal que un profesional tiene que revisar antes de que hagas ejercicio por tu cuenta. '
-      + 'Si empezó hace poco o es intensa, ve a emergencias o llama al 106 (SAMU, Perú) o al número de emergencias de '
-      + 'tu país. Si no, pide una cita con un médico o un fisioterapeuta.',
-    blockedPatient: 'Si tu fisioterapeuta te dio un código de AXONFAS, entra como paciente: ahí tu plan lo decide tu fisioterapeuta.',
-    clear: 'Gracias. Ya puedes usar las rutinas. Si algo te duele o te mareas, detente.',
-    gentle: 'Gracias por contarlo. Moverte con cuidado y a tu ritmo es seguro y ayuda a mejorar; aquí vamos paso a paso. '
-      + 'Si algo te duele o te mareas, detente.',
+    blockedTitle: t('triage.msg.blockedTitle'),
+    blocked: t('triage.msg.blocked'),
+    blockedPatient: t('triage.msg.blockedPatient'),
+    clear: t('triage.msg.clear'),
+    gentle: t('triage.msg.gentle'),
   };
 
   /**
@@ -136,7 +141,7 @@
     }
 
     function disclaimer() {
-      const intro = node('p', 'page-lede', 'Antes de usar las rutinas por tu cuenta, lee esto y responde unas preguntas. Toma menos de un minuto.');
+      const intro = node('p', 'page-lede', t('triage.intro'));
       const list = node('ul', 'triage-list');
       DISCLAIMER.forEach((t) => list.appendChild(node('li', null, t)));
       const label = node('label', 'check');
@@ -144,12 +149,12 @@
       box.type = 'checkbox';
       box.id = `triage-accept-${n}`;
       label.append(box, node('span', null, DISCLAIMER_ACCEPT));
-      const go = node('button', 'btn primary', 'Continuar');
+      const go = node('button', 'btn primary', t('triage.continue'));
       go.type = 'button';
       go.disabled = true;
       box.addEventListener('change', () => { go.disabled = !box.checked; });
       go.addEventListener('click', () => { if (box.checked) questions(); });
-      screen('Antes de empezar', intro, list, label, go);
+      screen(t('triage.before.title'), intro, list, label, go);
     }
 
     function group(flag, required) {
@@ -158,7 +163,7 @@
       const legend = node('legend', null, flag.text);
       fs.appendChild(legend);
       const row = node('div', 'triage-yn');
-      [['yes', 'Sí'], ['no', 'No']].forEach(([value, text]) => {
+      [['yes', t('triage.yes')], ['no', t('triage.no')]].forEach(([value, text]) => {
         const label = node('label', 'check');
         const radio = doc.createElement('input');
         radio.type = 'radio';
@@ -177,14 +182,14 @@
     function questions() {
       const form = node('form', 'profile-form');
       form.noValidate = true;
-      form.appendChild(node('p', 'muted', 'Las preguntas marcadas como obligatorias necesitan respuesta. Nadie más ve lo que respondes.'));
-      form.appendChild(node('h3', 'triage-sub', 'Señales de alarma (obligatorias)'));
+      form.appendChild(node('p', 'muted', t('triage.q.note')));
+      form.appendChild(node('h3', 'triage-sub', t('triage.q.red')));
       RED_FLAGS.forEach((f) => form.appendChild(group(f, true)));
-      form.appendChild(node('h3', 'triage-sub', 'Cómo te sientes con el dolor (opcional)'));
+      form.appendChild(node('h3', 'triage-sub', t('triage.q.yellow')));
       YELLOW_FLAGS.forEach((f) => form.appendChild(group(f, false)));
       const status = node('p', 'triage-status');
       status.setAttribute('role', 'status');
-      const send = node('button', 'btn primary', 'Ver resultado');
+      const send = node('button', 'btn primary', t('triage.q.send'));
       send.type = 'submit';
       form.append(status, send);
       form.addEventListener('submit', (ev) => {
@@ -192,7 +197,7 @@
         const res = evaluate(answers);
         if (res.status === 'incomplete') {
           res.missing.forEach((id) => { const fs = form.querySelector(`[data-flag="${id}"]`); if (fs) fs.classList.add('missing'); });
-          status.textContent = `Falta responder ${res.missing.length === 1 ? '1 pregunta' : `${res.missing.length} preguntas`} de señales de alarma.`;
+          status.textContent = tn('triage.q.missing', res.missing.length);
           const first = form.querySelector('.triage-q.missing input');
           if (first) first.focus();
           return;
@@ -200,23 +205,23 @@
         if (res.status === 'blocked') confirmRed(res);
         else finish(res);
       });
-      screen('Unas preguntas sobre tu salud', form);
+      screen(t('triage.q.title'), form);
     }
 
     /** Con una bandera roja, se pide confirmar: un toque equivocado no debe bloquear, ni pasar de largo. */
     function confirmRed(res) {
-      const p = node('p', 'page-lede', 'Marcaste que sí en:');
+      const p = node('p', 'page-lede', t('triage.confirm.lede'));
       const list = node('ul', 'triage-list');
       res.red.forEach((id) => list.appendChild(node('li', null, RED_FLAGS.find((f) => f.id === id).text)));
-      const ok = node('button', 'btn danger', 'Sí, es correcto');
+      const ok = node('button', 'btn danger', t('triage.confirm.ok'));
       ok.type = 'button';
       ok.addEventListener('click', () => finish(res));
-      const back = node('button', 'btn', 'Corregir mis respuestas');
+      const back = node('button', 'btn', t('triage.confirm.fix'));
       back.type = 'button';
       back.addEventListener('click', questions);
       const row = node('div', 'triage-actions');
       row.append(ok, back);
-      screen('¿Es correcto?', p, list, row);
+      screen(t('triage.confirm.title'), p, list, row);
     }
 
     function finish(res) {
@@ -231,15 +236,22 @@
       alert.setAttribute('role', 'alert');
       alert.append(node('p', null, MESSAGES.blocked));
       const patient = node('p', null, `${MESSAGES.blockedPatient} `);
-      const link = node('a', null, 'Entrar como paciente');
+      const link = node('a', null, t('triage.blocked.asPatient'));
       link.href = 'paciente.html';
       patient.appendChild(link);
       const rec = load();
       const until = rec && rec.until ? new Date(rec.until) : null;
       const when = until && Number.isFinite(until.getTime())
-        ? `En este equipo podrás volver a responder desde el ${until.toLocaleString('es-PE', { dateStyle: 'long', timeStyle: 'short' })}.`.replace(/\.\.$/, '.')
-        : 'En este equipo podrás volver a responder mañana.';
-      screen(MESSAGES.blockedTitle, alert, patient, node('p', 'muted', when));
+        ? t('triage.blocked.until', { date: until.toLocaleString(I18N.locale(), { dateStyle: 'long', timeStyle: 'short' }) }).replace(/\.\.$/, '.')
+        : t('triage.blocked.tomorrow');
+      const extra = [];
+      if (opts.onBack) {                                     // puerta "camera" (ADR-028): se puede volver al demo sin cámara
+        const back = node('button', 'btn', opts.backText || t('triage.back'));
+        back.type = 'button';
+        back.addEventListener('click', opts.onBack);
+        extra.push(back);
+      }
+      screen(MESSAGES.blockedTitle, alert, patient, node('p', 'muted', when), ...extra);
     }
 
     if (gateState(load()) === 'blocked') blocked();
@@ -256,8 +268,14 @@
     const rec = load();
     const state = gateState(rec);
     if (state === 'clear') { toneNote(doc, rec); return 'clear'; }
+    showGate(doc, {});
+    return state;
+  }
+
+  /** Oculta el contenido de `.wrap` y muestra el triaje en su lugar. opts: { onClear, onBlocked, onBack, backText }. */
+  function showGate(doc, opts) {
     const wrap = doc.querySelector('.wrap');
-    if (!wrap) return state;
+    if (!wrap) return;
     const hidden = Array.from(wrap.children).filter((el) => !el.hidden);
     hidden.forEach((el) => { el.hidden = true; });
     const host = doc.createElement('main');
@@ -267,15 +285,34 @@
     const skip = doc.querySelector('.skip-link');
     const skipHref = skip && skip.getAttribute('href');
     if (skip) skip.setAttribute('href', '#triage');
+    const restore = () => {
+      host.remove();
+      hidden.forEach((el) => { el.hidden = false; });
+      if (skip && skipHref) skip.setAttribute('href', skipHref);
+    };
     mount(host, {
       onClear(next) {
-        host.remove();
-        hidden.forEach((el) => { el.hidden = false; });
-        if (skip && skipHref) skip.setAttribute('href', skipHref);
+        restore();
         toneNote(doc, next, true);
+        if (opts.onClear) opts.onClear(next);
       },
+      onBlocked: opts.onBlocked,
+      onBack: opts.onBack ? () => { restore(); opts.onBack(); } : null,
+      backText: opts.backText,
     });
-    return state;
+  }
+
+  /**
+   * Puerta en el momento de hacer ejercicio (ADR-028): la página queda abierta (la demo sintética, la galería) y el
+   * triaje se pide al encender la cámara. Promesa: true si se puede seguir; false si hay una bandera roja o la persona
+   * vuelve atrás. Exentos y triaje vigente pasan sin mostrar nada.
+   */
+  function ensure(doc = root.document, { backText = t('triage.backNoCamera') } = {}) {
+    if (exempt({ search: root.location ? root.location.search : '', hasAccount })) return Promise.resolve(true);
+    if (gateState(load()) === 'clear') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      showGate(doc, { onClear: () => resolve(true), onBlocked: () => resolve(false), onBack: () => resolve(false), backText });
+    });
   }
 
   /** Mensaje al pasar el triaje; con banderas amarillas, el tono cuidadoso se mantiene mientras el triaje esté vigente. */
@@ -301,6 +338,6 @@
 
   return {
     VERSION, STORE_KEY, CLEAR_DAYS, BLOCK_HOURS, DISCLAIMER, DISCLAIMER_ACCEPT, RED_FLAGS, YELLOW_FLAGS, MESSAGES,
-    evaluate, record, gateState, exempt, mount, gate, tone, load, save,
+    evaluate, record, gateState, exempt, mount, gate, ensure, tone, load, save,
   };
 }));

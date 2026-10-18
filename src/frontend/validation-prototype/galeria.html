@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Galería de ejercicios</title>
+<title data-i18n="gallery.title">AXONFAS · Galería de ejercicios</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -11,45 +11,45 @@
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Galería de ejercicios</span></h1>
-      <p>Prototipo sin conexión: material educativo con fuentes citadas.</p>
+      <h1>AXONFAS <span data-i18n="gallery.h1">· Galería de ejercicios</span></h1>
+      <p data-i18n="gallery.tagline">Prototipo: material educativo con fuentes citadas.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html" aria-current="page">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="login.html">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" aria-current="page" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" data-i18n="nav.login">Entrar</a>
   </nav>
 </header>
 
 <div class="wrap">
 <main id="main" tabindex="-1">
-  <h2 class="page-title">Ejercicios por temática de salud</h2>
-  <p class="page-lede">Cada ejercicio viene de un programa público (AAOS, NHS o CDC STEADI), con la dosis que indica esa
+  <h2 class="page-title" data-i18n="gallery.page.title">Ejercicios por temática de salud</h2>
+  <p class="page-lede" data-i18n="gallery.page.lede">Cada ejercicio viene de un programa público (AAOS, NHS o CDC STEADI), con la dosis que indica esa
     fuente, los músculos y huesos que trabaja y sus precauciones. Tu fisioterapeuta decide cuáles hacer y cuánto.</p>
-  <p class="notice" style="margin-bottom:18px;">Material educativo, no es una prescripción. Con <strong>Seguir con la
+  <p class="notice" style="margin-bottom:18px;" data-i18n="gallery.notice">Material educativo, no es una prescripción. Con <strong data-i18n-slot="track" data-i18n="gallery.notice.track">Seguir con la
     cámara</strong> ves tu esqueleto, el ángulo que importa en cada ejercicio, los músculos que trabaja y el conteo de
-    repeticiones o del tiempo sostenido (valores de partida, no clínicos). Solo <strong>Sentarse y pararse</strong> avisa
+    repeticiones o del tiempo sostenido (valores de partida, no clínicos). Solo <strong data-i18n-slot="sts" data-i18n="gallery.notice.sts">Sentarse y pararse</strong> avisa
     además de compensaciones, en el Prototipo.</p>
 
   <div id="tips" class="panel-card" style="margin-bottom:16px;"></div>
 
   <div class="row-between" style="margin-bottom:16px;">
-    <div class="chips" id="themes" role="group" aria-label="Temática"></div>
-    <input class="search" id="search" type="search" placeholder="Buscar por nombre o músculo" aria-label="Buscar ejercicio" style="max-width:20rem;">
+    <div class="chips" id="themes" role="group" aria-label="Temática" data-i18n-aria-label="gallery.themes.label"></div>
+    <input class="search" id="search" type="search" placeholder="Buscar por nombre o músculo" aria-label="Buscar ejercicio" data-i18n-placeholder="gallery.search.placeholder" data-i18n-aria-label="gallery.search.label" style="max-width:20rem;">
   </div>
   <p class="muted" id="count" aria-live="polite" style="margin-bottom:12px;"></p>
   <div class="card-grid" id="grid"></div>
 </main>
 
-  <footer>
+  <footer data-i18n="gallery.footer">
     Fuentes: AAOS OrthoInfo (programas de acondicionamiento de rodilla, cadera, columna y hombro), NHS WWL Teaching
     Hospitals (cuello y espalda alta, nivel 1) y CDC STEADI (pruebas de levantarse de la silla y de equilibrio). Las
     descripciones son del equipo de AXONFAS. Mapa muscular: react-body-highlighter (licencia MIT). El mapa muestra
@@ -57,6 +57,15 @@
   </footer>
 </div>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>
@@ -64,7 +73,7 @@
 <script src="guide-figure.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
-<script src="triage.js" data-gate="self-care"></script>
+<script src="auth-wall.js"></script>
 <script src="suggestions.js"></script>
 <script src="gallery.js"></script>
 </body>

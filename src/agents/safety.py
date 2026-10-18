@@ -27,7 +27,7 @@ PARAMS = {
 }
 
 # Frases de alarma (sin tildes, en minúsculas). Ante la duda, detener: un falso positivo solo corta una sesión. Por eso la
-# negación no se usa aquí ("no me caí" también detiene) y las frases discutibles quedan para después (TD-112).
+# negación no se usa aquí ("no me caí" también detiene) y las frases discutibles quedan para después (TD-127).
 RED_FLAGS = [
     r"dolor (muy )?(agudo|fuerte|intenso|insoportable|punzante|terrible|horrible)",
     r"me duele (much[io]simo|demasiado|horrible|un monton|mucho)",
@@ -48,24 +48,54 @@ RED_FLAGS = [
     r"palpitacion|taquicardia|el corazon (me )?(late|va) (muy )?(rapido|fuerte|raro)",
     r"(cara|boca) (torcida|chueca|dormida)|no puedo hablar|se me traba la lengua",
     # "me cayó bien" (frase hecha) también detiene: falso positivo conocido que se deja así a propósito hasta la
-    # revisión con fisioterapeutas (TD-112). No aflojar este patrón sin esa revisión.
+    # revisión con fisioterapeutas (TD-127). No aflojar este patrón sin esa revisión.
     r"\bme (cai|caigo|cayo)\b|me fui al (piso|suelo)",
     r"\bsangr(o|a|ando|ado|e)\b|sangrado|hemorragia",
     r"se me hinch\w*( \w+){0,3} (de golpe|de repente|mucho)|hinchazon (subita|repentina)",
     r"sudor frio",
     r"\bduele (muchisimo|demasiado|horrible|un monton)\b",
+    # Inglés (ADR-030): la interfaz también está en inglés y el texto libre tiene que detener igual (I-7, I-22).
+    r"\b(severe|sharp|intense|unbearable|stabbing|terrible|horrible|excruciating|acute) pain|pain is (severe|unbearable|terrible|horrible)",
+    r"\bit hurts (so much|a lot|really bad|too much|badly|terribly)|\bhurts (really |so )?bad",
+    r"\bdizz(y|iness)\b|\blight ?headed|\bvertigo\b|(room|everything) is spinning",
+    r"\b(lost|losing|lose) (my |all )?(the )?strength|\bloss of strength|\bweakness\b|\b(i feel|i am|i[’']m|feeling) (very |really |so )?weak\b",
+    r"\bnumb(ness)?\b|\btingl(e|ing)\b|pins and needles|\b(can[’']?t|cannot) feel (my|the) |\bwent numb",
+    r"\b(knee|leg) (gave way|gave out|buckled)",
+    r"\b(can[’']?t|cannot) (move|hold|lift) (my|the) ",
+    r"\bfaint|\bpass(ed|ing)? out\b|\bblack(ed|ing)? out\b",
+    r"\bchest pain|pain in (my|the) chest|my chest hurts",
+    r"\b(can[’']?t|cannot) breathe|\bshort(ness)? of breath|\bout of breath",
+    r"something (snapped|popped|broke|tore)|i heard a (crack|pop|snap)",
+    # Inglés, equivalentes de las alarmas nuevas en español (merge con ADR-030): mismo criterio, ante la duda detener.
+    r"\bcan[’']?t catch my breath|\b(hard|struggling) to breathe",
+    r"\bchest (pressure|tightness)|(pressure|tightness) in (my|the) chest|\bmy chest (feels )?tight",
+    r"\b(severe|bad|terrible|intense|splitting|worst) headache|\bmy head hurts (so much|a lot|really bad)",
+    r"\bblurr(y|ed) vision|\bdouble vision|\bseeing double|\bmy vision (went|is going) (dark|black|blurry)",
+    r"\bpalpitation|\bmy heart is (racing|pounding)|\bracing heart|\bheart is beating (so |very |really )?(fast|hard)",
+    r"\bface (is )?droop|\bmouth is crooked|\bslurred speech|\bslurring|\b(can[’']?t|cannot) speak",
+    r"\bi (fell|fall)\b|\bi[’']?ve fallen|\bfell (down|over)\b|\bhad a fall",
+    r"\bbleed(ing)?\b|\bblood\b",
+    r"\bswell(ed|ing) up (suddenly|all of a sudden)|\bsudden swelling",
+    r"\bcold sweat",
+    r"\bi felt a (crack|pop|snap)",
 ]
 
 
 # Palabras de molestia (sin tildes). Con una de ellas en lo que dijo el paciente, el agente solo puede bajar la exigencia
 # (ADR-021). No son alarmas: no detienen la sesión; solo cierran la puerta a subir la carga.
 DISCOMFORT = [r"molest", r"duel", r"dolor", r"pinchaz", r"punzad", r"tiron", r"ardor", r"calambre", r"cansa(d|ncio)", r"fatig",
-              r"agotad", r"me cuesta", r"no aguanto", r"rigid", r"incomod"]
+              r"agotad", r"me cuesta", r"no aguanto", r"rigid", r"incomod",
+              # Inglés (ADR-030)
+              r"\bsore", r"\bach(e|ing)", r"\bhurt", r"\bpain", r"\bpinch", r"\bburn", r"\bcramp", r"\btired",
+              r"\bexhaust", r"\bstiff", r"\buncomfortable|\bdiscomfort"]
 # Categoría del registro de molestia según la palabra (mismas claves que DISCOMFORT).
 DISCOMFORT_CATEGORY = {r"molest": "pain", r"duel": "pain", r"dolor": "pain", r"pinchaz": "pain", r"punzad": "pain",
                        r"tiron": "pain", r"ardor": "pain", r"calambre": "cramp", r"cansa(d|ncio)": "fatigue",
                        r"fatig": "fatigue", r"agotad": "fatigue", r"me cuesta": "fatigue", r"no aguanto": "fatigue",
-                       r"rigid": "stiffness", r"incomod": "other"}
+                       r"rigid": "stiffness", r"incomod": "other",
+                       r"\bsore": "pain", r"\bach(e|ing)": "pain", r"\bhurt": "pain", r"\bpain": "pain", r"\bpinch": "pain",
+                       r"\bburn": "pain", r"\bcramp": "cramp", r"\btired": "fatigue", r"\bexhaust": "fatigue",
+                       r"\bstiff": "stiffness", r"\buncomfortable|\bdiscomfort": "other"}
 # Valores de partida, no clínicos (TD-87): cuánto baja la reducción determinista.
 ROM_STEP_DEG = 10
 REPS_FACTOR = 0.7
@@ -99,13 +129,13 @@ def discomfort(text: str | None) -> str | None:
 
 
 # Palabras que niegan una molestia dentro de la misma frase ("no me duele", "sin dolor", "ya no duele", "nada de dolor").
-NEGATORS = {"no", "sin", "ningun", "ninguna"}
+NEGATORS = {"no", "sin", "ningun", "ninguna", "not", "without", "never", "don't", "doesn't", "isn't", "don’t", "doesn’t", "isn’t"}
 
 
 def _negated(t: str, start: int) -> bool:
     """¿La palabra de molestia que empieza en `start` está negada en las 3 palabras anteriores de su misma frase?"""
     clause = re.split(r"[,.;:!?]", t[:start])[-1]
-    words = re.findall(r"\w+", clause)[-3:]
+    words = re.findall(r"[\w'’]+", clause)[-3:]
     return any(w in NEGATORS for w in words) or "nada de" in " ".join(words)
 
 
@@ -165,7 +195,7 @@ def symptom_action(decision: dict) -> tuple[str, dict | None]:
 
 def symptom_record(text: str | None, decision: dict) -> dict | None:
     """Registro de la molestia de un turno de voz, o None si el paciente no se quejó. Staging lo guarda con source
-    'voice_turn' (ADR-025)."""
+    'voice_turn' (ADR-033)."""
     found = classify_symptom(text)
     if not found:
         return None
@@ -208,11 +238,11 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
              discomfort_reported: bool = False) -> dict:
     """Decisión del motor de reglas sobre una propuesta del agente, con la forma de `agent_decision`.
 
-    - Forma inválida, parámetro desconocido, parámetro que la pantalla no puede aplicar (`allowed`, ADR-025) o `old` que
+    - Forma inválida, parámetro desconocido, parámetro que la pantalla no puede aplicar (`allowed`, ADR-033) o `old` que
       no coincide con el valor actual → `rejected`.
     - Valor nuevo fuera del sobre → `escalated_to_therapist` (se pausa el ejercicio).
     - Dentro del sobre → `applied`, salvo que el paciente se haya quejado (`utterance` con palabra de molestia, o
-      `discomfort_reported` cuando el turno viene del formulario «Tengo una molestia», ADR-025) y la propuesta suba la
+      `discomfort_reported` cuando el turno viene del formulario «Tengo una molestia», ADR-033) y la propuesta suba la
       exigencia: entonces `escalated_to_therapist` (ADR-021). El valor cabe en el sobre, así que `within_envelope` sigue en True.
     """
     decision = {"proposal": proposal, "within_envelope": False, "outcome": "rejected", "note": ""}

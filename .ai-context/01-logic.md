@@ -4,7 +4,7 @@
 > Estado de implementación: hay código en Staging. Existen el prototipo de validación del navegador (secciones al
 > final), la API de Staging con cuentas, nota SOAP y export FHIR, y los agentes con sus reglas deterministas, probados
 > sin GPU. El paciente ya puede avisar de una molestia sin GPU (ADR-021) y ver el descanso recomendado (ADR-022).
-> El agente clínico de AMD ya responde en el flujo del paciente con texto (ADR-025), y lo que se le envía va sin datos personales (ADR-026). Falta lo que corre en la GPU (TD-04) y la voz en el turno (TD-105).
+> El agente clínico de AMD ya responde en el flujo del paciente con texto (ADR-033), y lo que se le envía va sin datos personales (ADR-034). Falta lo que corre en la GPU (TD-04) y la voz en el turno (TD-120).
 
 ## Idea central
 
@@ -84,16 +84,16 @@ sequenceDiagram
 
 | Paso | Quién | Regla |
 |---|---|---|
-| 1. Alarma | `safety.red_flag` (determinista) | Dolor agudo, fuerte, intenso, punzante o "me duele mucho"; mareo; pérdida de fuerza (también "pérdida de fuerza súbita"), sentirse débil o debilidad; pierna dormida, adormecida, entumecida u hormigueo; "se me dobló la rodilla"; "no puedo mover la pierna"; desmayo, dolor de pecho, falta de aire, "algo se rompió". Desde el 2026-10-18 también: "me mareé" y "mareos"; "me falta el aire" o "no me entra el aire"; presión u opresión en el pecho; dolor de cabeza fuerte o intenso; ver borroso, doble o nublado; palpitaciones o "el corazón me late muy rápido"; cara o boca torcida, "no puedo hablar"; "me caí", "me caigo" o "me fui al piso"; sangrado; hinchazón de golpe; sudor frío; "sentí un crack"; "duele muchísimo". La negación no se usa en las alarmas ("no me caí" o "no me mareo" también detienen). Las discutibles quedan en TD-112. Si aparece, la sesión termina con `pain_stop` y **no se consulta al LLM** (I-7). Ante la duda, detener: un falso positivo solo corta la sesión |
+| 1. Alarma | `safety.red_flag` (determinista) | Dolor agudo, fuerte, intenso, punzante o "me duele mucho"; mareo; pérdida de fuerza (también "pérdida de fuerza súbita"), sentirse débil o debilidad; pierna dormida, adormecida, entumecida u hormigueo; "se me dobló la rodilla"; "no puedo mover la pierna"; desmayo, dolor de pecho, falta de aire, "algo se rompió". Desde el 2026-10-18 también: "me mareé" y "mareos"; "me falta el aire" o "no me entra el aire"; presión u opresión en el pecho; dolor de cabeza fuerte o intenso; ver borroso, doble o nublado; palpitaciones o "el corazón me late muy rápido"; cara o boca torcida, "no puedo hablar"; "me caí", "me caigo" o "me fui al piso"; sangrado; hinchazón de golpe; sudor frío; "sentí un crack"; "duele muchísimo". La negación no se usa en las alarmas ("no me caí" o "no me mareo" también detienen). Las discutibles quedan en TD-127. Si aparece, la sesión termina con `pain_stop` y **no se consulta al LLM** (I-7). Ante la duda, detener: un falso positivo solo corta la sesión. Cada alarma nueva tiene su equivalente en inglés (falls, chest pressure, shortness of breath, blurred or double vision, palpitations, facial droop, bleeding, sudden swelling, cold sweat, "I felt a pop"); "I don't feel dizzy" también detiene (I-22, TD-134) |
 | 2. Propuesta | `clinical.propose` (LLM, JSON) | Un solo ajuste de `rom_target`, `reps` o `rest_seconds`, o ninguno. Respuesta rota o sin LLM = sin cambio (`rejected`). **Con molestia** (ADR-021), si el LLM no propone una baja válida, la propone el motor de reglas (`safety.reduce_demand`) y la decisión lleva `source: "rules"`, con lo que dijo el LLM en `llm_outcome` y `llm_proposal`; si no hay nada que bajar, `paused: true`. Las demás decisiones llevan `source: "llm"` |
 | 3. Validación | `safety.validate` (determinista) | `old` igual al valor actual, motivo no vacío, valor numérico. Cada parámetro necesita su límite del fisioterapeuta: `rom_target` exige `rom_min` y `rom_max` (con `rom_min < rom_max`) y `reps` exige `max_reps`; si falta → `rejected` (I-3). `rest_seconds` solo tiene los límites fijos 10–180. Dentro del sobre → `applied`; fuera → `escalated_to_therapist` y se pausa el ejercicio. **Regla de dirección (ADR-021):** si el paciente acaba de decir una molestia (`DISCOMFORT`: molestia, duele, dolor, pinchazo, punzada, tirón, ardor, calambre, cansado, fatiga, agotado, "me cuesta", "no aguanto", rígido, incómodo), solo se acepta bajar la exigencia; subirla → `escalated_to_therapist` con `within_envelope = true` (I-16). El sobre de Staging se traduce con `safety.agent_envelope` |
 | 4. Frase | `coach.reply` (LLM opcional) | Dice lo que decidió el motor. Si el LLM agrega un número que no está en la decisión (en cifras o en letras, como "veinte"), pasa de 30 palabras o devuelve JSON, se usa la plantilla |
-| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras (en cifras o en letras) que no están en los datos; la fecha no cuenta como dato citable (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8). En Staging la genera y la firma el fisioterapeuta desde el panel (sección "Cuentas y seguimiento") |
-| 6. Molestia | `safety.classify_symptom` y `safety.symptom_record` (deterministas) | Clasifica lo que dijo el paciente: `red_flag` (gana siempre) o `discomfort` con categoría `pain`, `cramp`, `fatigue`, `stiffness` u `other`. El turno devuelve `symptom` = `{kind, category, text (≤ 200), action, adjustment}`, con `action` `session_stopped`, `demand_lowered` o `paused`. Staging lo guarda con `source = 'voice_turn'` desde el turno de texto (ADR-025, TD-88). Una palabra de molestia negada en su frase ("no me duele", "sin dolor") no cuenta para la **categoría** (si todas están negadas, `other`); nunca cambia la acción, la alarma ni `discomfort()`, que sigue cerrando la puerta a subir la exigencia |
+| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras (en cifras o en letras) que no están en los datos; la fecha no cuenta como dato citable (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8). En Staging la genera y la firma el fisioterapeuta desde el panel (sección "Cuentas y seguimiento"), en el idioma de su interfaz (TD-116) |
+| 6. Molestia | `safety.classify_symptom` y `safety.symptom_record` (deterministas) | Clasifica lo que dijo el paciente: `red_flag` (gana siempre) o `discomfort` con categoría `pain`, `cramp`, `fatigue`, `stiffness` u `other`. El turno devuelve `symptom` = `{kind, category, text (≤ 200), action, adjustment}`, con `action` `session_stopped`, `demand_lowered` o `paused`. Staging lo guarda con `source = 'voice_turn'` desde el turno de texto (ADR-033, TD-88). Una palabra de molestia negada en su frase ("no me duele", "sin dolor") no cuenta para la **categoría** (si todas están negadas, `other`); nunca cambia la acción, la alarma ni `discomfort()`, que sigue cerrando la puerta a subir la exigencia |
 
 Sin propuesta (`action: none`) no se guarda `agent_decision`. La alarma no es una decisión del agente: es un fin de sesión.
 
-En el turno de texto del paciente (ADR-025), `clinical.propose` y `safety.validate` reciben además
+En el turno de texto del paciente (ADR-033), `clinical.propose` y `safety.validate` reciben además
 `discomfort_reported=True` (todo turno del formulario es una molestia declarada) y `allowed` (los parámetros que la
 pantalla aplica: `rom_target` y `reps`). Un parámetro fuera de `allowed`, o sin valor actual en pantalla, se rechaza y
 pone la baja el motor de reglas. `turn.run_text_turn` corre los pasos con tiempo límite; `clinical.rules_only` da la misma
@@ -126,14 +126,19 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-9 | No se registra una sesión de un ejercicio que no esté en el plan activo del paciente; en los monitoreados, el sobre lo fija el fisioterapeuta y el paciente no lo puede cambiar | ADR-005, ADR-012 |
 | I-10 | Un fisioterapeuta solo ve y modifica a sus propios pacientes; a cualquier otro la API le responde "no existe" | ADR-012 |
 | I-11 | El canal en vivo lleva ángulos o la medida del ejercicio, el avance, la fase, las repeticiones, los eventos y hasta 15 puntos 2D; nunca video ni imágenes | ADR-003, ADR-013, ADR-014 |
-| I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse | ADR-004, ADR-009, ADR-014 |
+| I-12 | El seguimiento de la galería solo cuenta: no emite alertas de compensación. Las alertas son solo del motor de reglas de sentarse y pararse. Pasar el límite de la meta del plan solo marca la repetición | ADR-004, ADR-009, ADR-014, ADR-025 |
 | I-13 | Una sugerencia nunca cambia el plan por sí sola: el fisioterapeuta la revisa y guarda. Las del usuario nunca tocan la dosis, y la IA solo resume las que ya calcularon las reglas | ADR-005, ADR-017 |
 | I-14 | El rol de Administrador sale solo de `AXONFAS_ADMIN_EMAILS` y su vista no muestra datos clínicos; todo inicio de sesión con Google se verifica en el servidor (firma, emisor, destinatario, vigencia y correo verificado) | ADR-019 |
 | I-15 | La IA solo sale de infraestructura de AMD (Token Factory o el vLLM propio en una MI300X); sin proveedor configurado no hay IA y la interfaz lo dice | ADR-018 |
 | I-16 | Ante una molestia, el sistema solo baja la exigencia: si el agente no propone una baja válida, la aplica el motor de reglas dentro del sobre; sin límites, pausa. Toda molestia se registra y se avisa al fisioterapeuta | ADR-005, ADR-021 |
 | I-17 | Sin descargo aceptado y triaje vigente no hay rutinas de autogestión; una bandera roja las bloquea y recomienda urgencias o una consulta. El triaje es de reglas fijas: ningún LLM lo decide ni lo resume, y las respuestas no salen del navegador | ADR-023 |
-| I-18 | Un turno del paciente se decide primero con reglas: la alarma nunca espera al LLM ni lo crea. El agente solo propone bajar la exigencia, dentro del sobre y solo en parámetros que la pantalla aplica. Sin respuesta a tiempo, deciden las reglas. La pantalla dice qué modelo de AMD respondió o que respondieron las reglas | ADR-025 |
-| I-19 | Ningún texto libre del paciente o del perfil llega a un LLM sin pasar por `privacy.redact`. Las reglas de seguridad leen el original; lo que se guarda es lo mismo que se envía | ADR-026 |
+| I-18 | El dolor al terminar (EVA) lo marca solo el paciente, una vez por sesión. No detiene ni cambia el plan y ningún LLM decide con él; ante dolor agudo, mareo o pérdida de fuerza vale I-7 | ADR-025 |
+| I-19 | La administración de una organización (Nivel 3) solo ve su plan, sus licencias y cuántos pacientes atiende cada profesional: nunca sesiones, notas, molestias ni alias de pacientes. La dirección FHIR de su historia clínica es https y nunca lleva credenciales | ADR-026 |
+| I-20 | Una sesión sin cámara la marca el servidor (`no_camera`, por `source = 'guided'`) y no lleva métricas cinemáticas ni eventos. El panel, la nota SOAP y FHIR lo dicen siempre con el mismo texto | ADR-029 |
+| I-21 | El invitado solo mira (la única excepción es pedir el resumen con IA del paciente de muestra, que no guarda nada y tiene un tope por hora): lo permanente o clínico responde `auth_required` y pide una cuenta. La demo pública guarda solo números anónimos que nadie más que el Administrador lee | ADR-028, ADR-031 |
+| I-22 | Los textos de seguridad (descargo, banderas rojas, urgencias, alertas y dolor) dicen lo mismo en todos los idiomas, y las urgencias citan el SAMU (106) y el número de emergencias del país. El idioma se decide en el navegador: nunca se manda la IP ni otro dato a un tercero para saber la región | ADR-030, ADR-003 |
+| I-23 | Un turno del paciente se decide primero con reglas: la alarma nunca espera al LLM ni lo crea. El agente solo propone bajar la exigencia, dentro del sobre y solo en parámetros que la pantalla aplica. Sin respuesta a tiempo, deciden las reglas. La pantalla dice qué modelo de AMD respondió o que respondieron las reglas | ADR-033 |
+| I-24 | Ningún texto libre del paciente o del perfil llega a un LLM sin pasar por `privacy.redact`. Las reglas de seguridad leen el original; lo que se guarda es lo mismo que se envía | ADR-034 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -144,10 +149,10 @@ sepa cuándo una persona debe revisar o tomar el caso. Así responde el diseño 
 | Lo que pide el brief | Cómo lo resuelve AXONFAS | Origen |
 |---|---|---|
 | Sin diagnóstico ni tratamiento autónomo | El plan lo prescribe el fisioterapeuta; el agente solo ajusta dentro de su sobre; el reporte es borrador hasta que lo firma | ADR-005, ADR-008 |
-| Respuestas incorrectas o sin soporte | El agente solo propone en JSON y el motor de reglas valida; en el turno del paciente solo puede bajar la exigencia y, si no responde a tiempo, deciden las reglas; la nota SOAP solo usa campos de la BD | I-2, I-6, I-18 |
-| Información sensible | El video no sale de casa; pacientes con seudónimo; en Staging solo datos sintéticos; antes de cualquier LLM se ocultan correos, teléfonos, documentos, direcciones y nombres, y se guarda lo mismo que se envía | ADR-003, ADR-010, ADR-026, I-19 |
+| Respuestas incorrectas o sin soporte | El agente solo propone en JSON y el motor de reglas valida; en el turno del paciente solo puede bajar la exigencia y, si no responde a tiempo, deciden las reglas; la nota SOAP solo usa campos de la BD | I-2, I-6, I-23 |
+| Información sensible | El video no sale de casa; pacientes con seudónimo; en Staging solo datos sintéticos; antes de cualquier LLM se ocultan correos, teléfonos, documentos, direcciones y nombres, y se guarda lo mismo que se envía | ADR-003, ADR-010, ADR-034, I-24 |
 | Resultados inciertos | **Hecho en el prototipo; falta validarlo con fisioterapeutas (TD-06).** Se muestra la confianza de la pose; los frames poco confiables no se evalúan, se avisa y la repetición queda marcada; la preparación de la cámara no alerta lo que no se ve bien desde la vista real | TD-25, ADR-015 |
-| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio; ante una molestia solo se baja la exigencia, con reglas y dentro del sobre, y se avisa al fisioterapeuta; sin plan del fisioterapeuta, un triaje de banderas rojas bloquea las rutinas y deriva a urgencias o a una consulta | I-1, I-7, I-16, I-17, I-18 |
+| Decisiones de alto riesgo | Alertas deterministas fuera del LLM; dolor agudo, mareo o pérdida de fuerza detienen la sesión; un cambio fuera del sobre pausa el ejercicio; ante una molestia solo se baja la exigencia, con reglas y dentro del sobre, y se avisa al fisioterapeuta; sin plan del fisioterapeuta, un triaje de banderas rojas bloquea las rutinas y deriva a urgencias o a una consulta | I-1, I-7, I-16, I-17, I-23 |
 | Revisión humana | `outcome = 'escalated_to_therapist'` marca el caso para el terapeuta. Cada molestia le llega en vivo al panel, cuenta en "Molestias 30 días" y genera una sugerencia que él revisa (I-13). En Staging, el fisioterapeuta revisa, completa y firma la nota SOAP en el panel; sin firma es borrador y la Observation sale `preliminary` | ADR-005, ADR-021, TD-09 |
 
 ## Prototipo de validación (TD-28)
@@ -193,8 +198,9 @@ afuera"), para que el paciente se corrija sin mirar la pantalla.
 
 AXONFAS se organiza en tres niveles, según el estudio de tele-rehabilitación del 2026-10-17: **Nivel 1**, autogestión
 preventiva con triaje; **Nivel 2**, tele-rehabilitación guiada por el plan del fisioterapeuta (lo que ya hace ADR-012);
-**Nivel 3**, empresa B2B (TD-102). El Nivel 1 cubre las rutinas que alguien usa sin un plan: la galería, el seguimiento
-libre y el Prototipo sin `?plan=`.
+**Nivel 3**, empresa B2B (TD-102). El Nivel 1 cubre las rutinas que alguien hace sin un plan: el seguimiento libre (la
+página entera) y la cámara del Prototipo sin `?plan=` (se pide al encenderla, `AxonTriage.ensure()`). La galería y el demo
+sintético se exploran sin triaje: no son ejercicio (ADR-028).
 
 | Paso | Regla (`triage.js`) | Valor de partida (TD-98) |
 |---|---|---|
@@ -208,6 +214,95 @@ libre y el Prototipo sin `?plan=`.
 Son reglas fijas y sin IA (I-17). Las respuestas no salen del navegador ni se guardan; solo queda el resultado, su
 vencimiento y el tono (03 · `axonfas.triage`). Es una puerta del lado del cliente: sirve para orientar y proteger a quien
 la usa, no como control de acceso. Esa parte vendrá con las cuentas reales (TD-41).
+
+## Gemelo digital del Prototipo (TD-101)
+
+Con la cámara, el video y el esqueleto se ven en espejo (clase `.mirror` de `pose-camera.js`): la persona se ve como
+frente a un espejo. `twin.js` dibuja el esqueleto con los colores de los tokens y, mientras dura una alerta del motor,
+pinta en `--alert` los segmentos que compensan y agrega una guía de corrección en `--safe`:
+
+| Alerta | Línea objetivo (punteada) | Flecha |
+|---|---|---|
+| Valgo de rodilla (izquierda o derecha) | De la cadera al tobillo de ese lado | De la rodilla al punto de esa línea a su misma altura |
+| Flexión de tronco | El mismo tronco, vertical desde el centro de la cadera | Del centro de los hombros a ese punto |
+
+Solo dibuja: la alerta sale del motor de reglas (I-1). No escribe texto en el canvas, porque el espejo lo invertiría.
+
+## Invitado, muro de autenticación y demo pública (ADR-028)
+
+Para que los jueces vean la IA de AMD sin crear cuenta, el invitado puede pedir el resumen con IA del paciente de muestra
+(perfil sintético: rodilla con dolor y equilibrio). Es la única escritura permitida al invitado: no guarda nada, solo
+vale sobre la muestra y tiene un tope de 60 por hora para todos los invitados juntos (ADR-031).
+
+| Pieza | Regla | Valor de partida (TD-113) |
+|---|---|---|
+| Invitado | `POST /api/auth/guest` da un token `guest` sin registro ni datos personales. Con él, `doctor.html` lee un consultorio de muestra compartido (un paciente con seudónimo, su plan y tres sesiones sintéticas: monitoreada con dos alertas, con cámara y sin cámara) | — |
+| Muro diferido | Toda ruta que guarda o cambia algo, o que es de otro rol, responde 401 con `code: 'auth_required'`; `api-client.js` emite `axon:auth-required` y `auth-wall.js` abre el diálogo "Crea tu cuenta para seguir" (se cierra con "Seguir explorando"). Sin cuenta, el seguimiento libre es una vista previa de una serie | 1 serie |
+| Demo pública | El demo del Prototipo queda abierto. Al terminar, si la casilla "Compartir resultados anónimos" sigue marcada, manda solo números (`demo-telemetry.js` → `POST /api/demo/runs`): fuente, repeticiones, calibración, alertas por tipo, repeticiones mal vistas, duración y motivo de fin. Solo el Administrador los ve | 500 por hora |
+| Triaje | Se pide donde se hace ejercicio: el seguimiento libre y la cámara del Prototipo. La galería y el demo sintético no lo piden | — |
+
+Con una cuenta de verdad, el modo invitado termina y `login.html?next=` vuelve a la página que pidió la cuenta (solo un nombre
+de página local).
+
+## Tutorial y rutina sin cámara (ADR-029)
+
+| Paso | Regla (`practice.js`, `seguimiento.js`) |
+|---|---|
+| Tutorial (shadowing) | La primera vez que se usa la cámara con un ejercicio en ese equipo, va antes "Mira y sigue": la guía animada en grande para hacer el movimiento junto con ella. No se cuenta nada ni se usa la cámara. "Ver y practicar" lo repite cuando se quiera |
+| Sin cámara | Si el permiso se niega, no hay cámara o falla el modelo, la página ofrece seguir sin cámara en vez de bloquearse; también se elige con "Hacer sin cámara". La guía queda en grande marcando el ritmo, un botón grande «Hecha» suma cada repetición (con deshacer) y el descanso entre series se propone igual |
+| Registro | En modo paciente se guarda con `mode: 'guided'`, `source: 'guided'` y el motivo (`declined`, `denied` o `unavailable`); el servidor pone `no_camera = 1` (I-20). Las sesiones guiadas anteriores quedan con `guided_view` |
+| Reporte | El panel muestra "Sin cámara" en la lista y, en la nota, el aviso destacado: "Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales." La O de la nota SOAP dice lo mismo en lugar de "Compensaciones: ninguna", y la Observation FHIR lleva `camera-used: false` |
+
+## Nivel 3: organizaciones y licencias (ADR-026)
+
+Una organización (clínica u hospital) contrata un plan con un cupo de licencias de profesional. El Administrador
+maestro la crea con un correo de administración; esa cuenta de Google entra a `empresa.html`.
+
+| Regla (`organizations.py`) | Valor de partida (TD-105) |
+|---|---|
+| Planes: "Clínica pequeña" y "Red hospitalaria", sin precio (el modelo de negocio se valida, 04 · Anexo) | 5 y 50 licencias; cupo de 30 y 40 pacientes por licencia |
+| Cada profesional invitado por correo ocupa una licencia activa; no se invita si no quedan libres | — |
+| Un correo tiene a lo sumo una licencia activa en todo el sistema; una licencia liberada se puede volver a invitar | — |
+| Al entrar con Google con ese correo y ser fisioterapeuta, la licencia se vincula a su cuenta | — |
+| Liberar una licencia no toca al fisioterapeuta ni a sus pacientes: la organización deja de contarlo | — |
+| La dirección FHIR de la historia clínica: https, sin usuario, clave, consulta ni fragmento; nunca credenciales. En Staging solo se guarda: no se envía nada (TD-20) | — |
+| Con licencia activa, la nota SOAP como documento FHIR lleva a la organización como custodio (TD-103) | — |
+
+El panel de empresa solo muestra conteos (I-19). La administración de una organización tiene prioridad sobre otro rol
+de la misma cuenta de Google, salvo el Administrador maestro: quien dirige la clínica y además atiende usa otra cuenta.
+
+## Idioma de la interfaz (ADR-030)
+
+| Paso | Regla (`i18n.js`) |
+|---|---|
+| Elección manual | Si `axonfas.lang` (03) tiene un idioma activo, gana siempre. Se pone con el selector ES / EN de la cabecera, que recarga la página |
+| Navegador | El primer idioma de `navigator.languages` que tengamos: `es-*` → español, `en-*` → inglés. Si declara idiomas pero ninguno es nuestro (p. ej. `fr-FR`, `pt-BR`), inglés |
+| Zona horaria | Solo si el navegador no declara idiomas: una zona de habla hispana (`America/Lima`, `Europe/Madrid`…) → español; otra → inglés |
+| Sin señales | Español, el idioma base. También en Node (tests) |
+| Qué cambia | El texto (`data-i18n` y `t()`), `<html lang>`, la voz (`es-PE` o `en-US`), las fechas y los números (`es-PE` o `en-US`) y el catálogo (`i18n/catalog.en.js`). Lo que falta en un idioma cae al español |
+| Qué no cambia | Ids, códigos y valores que se guardan; las fuentes citadas; lo que escribió una persona (nombres, seudónimos, notas, lo que dijo el paciente) |
+
+### Lo que escribe el servidor (TD-116, ADR-032)
+
+`api-client.js` manda el idioma de la interfaz en `Accept-Language` y la API redacta en él todo lo que escribe:
+
+| Qué | Regla |
+|---|---|
+| Idioma de la petición | `messages.lang_of`: el primer idioma que tengamos según el peso `q`; sin cabecera o sin ninguno nuestro, español (el idioma base; así siguen los tests y `curl`) |
+| Errores y mensajes | El código escribe en español y `messages.tr` traduce a la salida con la tabla `EN` (plantillas con `{dato}`; un dato que es a su vez un mensaje conocido, como el motivo de Google o de la IA, también se traduce). Abarca `data.error`, los mensajes al paciente de la EVA y de las molestias (misma fuerza que en español, I-22), el motivo sin IA, el de un resumen rechazado y la etiqueta del plan de la organización. Un test exige traducción para todo `ApiError`, `OrgError` y `AuthError` |
+| Muro del invitado | Un 401 `auth_required` trae `reason`, la frase que completa "Para {reason} hace falta una cuenta" según la ruta (`WALL_REASONS`: "afiliar a un paciente", "crear o firmar una nota SOAP", "guardar tu progreso"…; lo demás, "guardar cambios") |
+| Nota SOAP | `soap.draft(llm, sesión, lang)`: la plantilla y la petición al LLM en ese idioma. Las cifras y lo que escribió el paciente son los mismos datos (I-6); las claves de `facts` no cambian. Se guarda con su `lang` y con la entrada de `soap.facts` (`input`) |
+| Nota en otro idioma | Un borrador sin firmar hecho solo con la plantilla se vuelve a redactar en el idioma de quien lo abre, desde la entrada guardada (mismos datos; no se guarda). Lo que redactó la IA queda en su idioma y lo firmado no cambia (I-8). Al firmar se guarda lo que se veía, en ese idioma. El panel avisa si la nota está en otro idioma y la marca con `lang` para el lector de pantalla |
+| FHIR | Textos legibles (`display`, `text`, títulos, unidades escritas) en el idioma de la nota (o en el de quien pide, si todavía no hay nota) y `language` en el recurso. Los códigos (propios, LOINC, UCUM) nunca cambian |
+| Resumen con IA | Se pide en el idioma de la interfaz. Las sugerencias llegan escritas en ese idioma, así que la revisión de nombres usa el catálogo en español y en inglés (`catalog.js` e `i18n/catalog.en.js`): un ejercicio que no viene al caso se rechaza en cualquiera de los dos |
+| Consultorio de muestra | Lo comparten invitados en los dos idiomas: "Muestra para invitados · Guest sample (datos sintéticos · synthetic data)" y "Paciente de muestra · Sample patient". Las muestras creadas antes se ponen al día al usarlas |
+
+Lo que escribió una persona (nombre y nota del fisioterapeuta, seudónimos, lo que dijo el paciente) no se traduce.
+
+Las frases de alarma y de molestia del texto libre (`safety.py`) están en los dos idiomas: "I feel dizzy" o "sharp pain" detienen la sesión igual que "me mareo" o "dolor agudo" (I-7, I-22).
+
+Nunca se consulta la IP. Para saber la región eso exigiría mandarla a un tercero (ADR-003, TD-14), y la IP dice dónde está
+la persona, no qué idioma lee.
 
 ## Galería de ejercicios (ADR-011)
 
@@ -275,6 +370,11 @@ números son valores de partida, no clínicos (TD-48). Código y valores por eje
 - **Series:** meta por serie = repeticiones de la dosis (×2 si es por lado). La dosis sale del plan del fisioterapeuta
   o, sin plan, de la fuente. Al cerrar cada serie se anuncia un descanso; al llegar al total, la sesión termina como
   `completed`.
+- **Meta de recorrido del plan (ADR-025, TD-99):** en modo paciente, `tracker.withGoal` cambia el recorrido pedido
+  (`delta`, en repeticiones) o el valor a sostener (`threshold`, en sostenes) por el `range_goal.target` que fijó el
+  fisioterapeuta. El `limit` va más allá de la meta, en el sentido del esfuerzo. Pasarlo emite `over_limit` una vez por
+  repetición o sostén: la página dice "Hasta ahí basta" y la repetición cuenta igual, marcada con `overLimit`. No es una
+  alerta (I-12). Los manuales no llevan meta, y sentarse y pararse usa su sobre.
 
 ## Cuentas y seguimiento (ADR-012)
 
@@ -303,15 +403,38 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 | Rodilla (ROM) | Flexión media de rodilla en las repeticiones de ejercicio, primera y última sesión monitoreada |
 | Con cámara (TD-49) | Por ejercicio del plan, en las sesiones con conteo de cámara: recorrido medio por repetición (cuánto se alejó la medida de la posición inicial, en su unidad) y sostén medio, de la primera y la última sesión. El sostén solo se muestra si la dosis lo pide |
 | Detenciones por dolor | Sesiones con `end_reason = 'pain_stop'` en 30 días: bandera roja para el fisioterapeuta |
+| Sobre el límite (ADR-025) | En la última sesión con cámara, repeticiones que pasaron el `limit` de la meta del plan |
+| Dolor al terminar (ADR-025) | EVA 0–10 que marcó el paciente: la última, la serie y cuántas sesiones de 30 días llegaron a 7 o más (`PAIN_HIGH`, valor de partida, TD-104) |
+
+### Plan de Cuidados del día y dolor al terminar (ADR-025, TD-100)
+
+`care-plan.js` decide qué toca hoy, en la hora local del paciente, con reglas fijas y sin IA. Usa `per_week` y las
+sesiones completadas de los últimos 14 días (`history` de `GET /api/me`). Tests en `care-plan.test.cjs`.
+
+| Estado | Regla |
+|---|---|
+| Hecho hoy | Hay una sesión completada hoy |
+| Cumplido | Las completadas de esta semana (lunes a domingo) llegan a `per_week` |
+| Toca hoy | Pasaron al menos `floor(7 / per_week)` días desde la última (1 vez → 7, 2 → 3, 3 → 2, 4 a 7 → 1), o lo que falta ya no entra en los días que le quedan a la semana |
+| Descanso | Ninguna de las anteriores: vuelve a tocar al cumplirse la separación o el último día en que todavía entra lo que falta |
+
+- `paciente.html` muestra "Hoy toca" (lo pendiente y lo hecho hoy). El resto va plegado en "El resto de tu plan esta
+  semana" y se puede hacer igual: es una agenda, no un bloqueo. La galería abierta queda solo en la navegación.
+- La sugerencia "Hoy te conviene…" (`suggestions.js`) solo nombra lo que toca hoy.
+- Al guardar una sesión (vista guiada, `seguimiento.html` e `index.html?plan=`), `pain-scale.js` pregunta "¿Cuánto te
+  duele ahora?" con 11 opciones (0–10). Es opcional ("Ahora no") y se marca una vez por sesión.
+- Desde 7/10 el paciente lee un texto fijo: no repetir el ejercicio hoy y avisar al fisioterapeuta. No detiene nada ni
+  cambia el plan: ante dolor agudo, mareo o pérdida de fuerza siguen "Dolor: detener" y el formulario de molestias (I-7).
 
 ### Nota SOAP y export FHIR en Staging (TD-09, TD-10)
 
 1. En el historial de sesiones de `doctor.html`, el fisioterapeuta pulsa "Crear borrador".
 2. La API arma la entrada de `soap.draft` solo con datos guardados de la sesión: repeticiones, meta del plan vigente,
-   eventos, flexión media de rodilla (sin calibración), motivo de fin y dolor. También las decisiones aplicadas de
-   `agent_decision`, con quién las propuso (“agente clínico” o “motor de reglas”), y las frases de `voice_turn` de la
-   sesión que no estén ya como molestia (ADR-025, TD-82). El motivo del LLM no entra en la nota (I-6).
-3. Sin GPU, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
+   eventos, flexión media de rodilla (sin calibración), motivo de fin, dolor y el dolor al terminar (EVA, ADR-025).
+   También las decisiones aplicadas de `agent_decision`, con quién las propuso (“agente clínico” o “motor de reglas”), y
+   las frases de `voice_turn` de la sesión que no estén ya como molestia (ADR-033, TD-82). El motivo del LLM no entra en
+   la nota (I-6).
+3. Sin IA configurada, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
 4. S y O no se editan. El fisioterapeuta completa A y P y firma: queda `reviewed_by` y `reviewed_at`, y la nota ya no
    cambia (una segunda firma da 409).
 5. "Descargar Observation FHIR (JSON)" baja la `Observation` R4 de la sesión: `preliminary` mientras es borrador y
@@ -348,7 +471,7 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
   tras una pausa por molestia. Puede saltarla o sumar 30 s. Nunca bloquea: "Terminé la serie" y empezar la siguiente
   serie la cierran.
 
-### Turno de texto del paciente con el agente clínico (ADR-025)
+### Turno de texto del paciente con el agente clínico (ADR-033)
 
 1. Durante una sesión, si el paciente escribe una frase en “Tengo una molestia”, el formulario la manda a
    `POST /api/me/turn`. Sin texto, o fuera de sesión, sigue `POST /api/me/discomfort`.
@@ -360,7 +483,7 @@ Indicadores, descriptivos y no clínicos, calculados en `compute_metrics`:
 4. Si el ejercicio tiene sobre, la IA de AMD está disponible y hay cupo, el agente clínico propone una baja con
    `current` = `rom_target` y `reps` de la pantalla (acotados por el servidor) y `rest_seconds` = `rest.min` del plan.
    `safety.validate` la revisa. Si no es una baja válida, o no llega en 12 s, pone la baja el motor de reglas. Antes,
-   el texto pasa por `privacy.redact` (ADR-026).
+   el texto pasa por `privacy.redact` (ADR-034).
 5. En guiados y seguimiento no hay sobre: no se consulta al agente clínico y deciden las reglas (pausa y descanso).
 6. El agente conversacional redacta la frase solo si el clínico tardó 6 s o menos, con hasta 5 s propios; el turno
    dura como mucho 18 s en el servidor. Si la frase trae cifras de más o nombra un medicamento o un diagnóstico, se usa
@@ -403,6 +526,8 @@ ejercicios ajenos a los datos.
 | Fisioterapeuta | Cuenta de Google nueva que elige "Soy fisioterapeuta", o una cuenta que el Administrador deja como fisioterapeuta; también la cuenta de demostración | `doctor.html` |
 | Paciente | Cuenta de Google nueva con el código de su fisioterapeuta y el consentimiento; también el código sin cuenta (demostración) | `paciente.html` |
 | Pendiente | Cuenta de Google nueva que todavía no eligió | `login.html` para elegir |
+| Invitado | "Ingresar como invitado" en `login.html`, sin registro (ADR-028) | Galería, demo y `doctor.html` con el consultorio de muestra (datos sintéticos, solo lectura; puede pedir el resumen con IA de la muestra, ADR-031). Lo permanente abre el muro (I-21) |
+| Empresa (Nivel 3) | Correo de administración de una organización que creó el Administrador (ADR-026) | `empresa.html`: plan, licencias, pacientes por profesional y dirección FHIR. Sin datos clínicos (I-19) |
 
 Una cuenta desactivada no puede entrar y pierde sus tokens. Con `AXONFAS_DEMO_ACCOUNTS=0` solo se entra con Google.
 

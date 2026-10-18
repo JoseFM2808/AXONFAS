@@ -3,6 +3,10 @@
 Las sugerencias las calculan reglas deterministas (suggestions.js). El LLM solo puede resumirlas en un párrafo para el
 fisioterapeuta, priorizando lo urgente. Se descarta su texto si trae números que no están en los datos, si nombra un
 ejercicio que no está ni en el plan ni en las sugerencias, o si pasa de 90 palabras. Nunca aplica nada.
+
+Idioma (ADR-030, TD-116): el resumen sale en el idioma de la interfaz ('es' o 'en'). La revisión de nombres recibe los
+ejercicios en los dos idiomas (catalog.js y i18n/catalog.en.js), porque las sugerencias llegan escritas en el idioma de
+quien las pidió. Los motivos de rechazo salen en español y la API los traduce (messages.py).
 """
 from __future__ import annotations
 
@@ -13,18 +17,19 @@ from .llm import LLMError
 from .safety import normalize
 
 SYSTEM = """Eres el asistente de AXONFAS para fisioterapeutas. Te doy el perfil de un paciente y las sugerencias que ya
-calcularon las reglas del sistema. Escribe en español un resumen de 2 a 4 frases (máximo 90 palabras) que diga qué
+calcularon las reglas del sistema. Escribe en {lang} un resumen de 2 a 4 frases (máximo 90 palabras) que diga qué
 revisar primero y por qué. No agregues sugerencias nuevas, no diagnostiques, no uses números que no estén en los datos y
 no nombres ejercicios que no aparezcan en los datos. Responde solo con el resumen."""
+LANG_NAME = {"es": "español", "en": "inglés"}
 
 
-def summarize(llm, profile: dict | None, suggestions: list[dict], exercise_names: list[str]) -> dict:
+def summarize(llm, profile: dict | None, suggestions: list[dict], exercise_names: list[str], lang: str = "es") -> dict:
     """{text, source: 'llm'} si el LLM cumple las reglas; si no, {text: None, source: 'rejected' | 'unavailable', reason}."""
     data = {"perfil": profile or {}, "sugerencias": [{k: s.get(k) for k in ("title", "detail", "because", "priority")} for s in suggestions[:12]],
             "ejercicios": exercise_names}
     raw = json.dumps(data, ensure_ascii=False)
     try:
-        out = llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": raw}], max_tokens=200, temperature=0.2)
+        out = llm.chat([{"role": "system", "content": SYSTEM.format(lang=LANG_NAME.get(lang, "español"))}, {"role": "user", "content": raw}], max_tokens=200, temperature=0.2)
     except LLMError as err:
         return {"text": None, "source": "unavailable", "reason": str(err)}
     text = (out.get("text") or "").strip()

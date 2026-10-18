@@ -2,10 +2,10 @@
 
 - `staging_api.py`: API de Staging local (cuentas de demostración, planes, sesiones, indicadores y canal en vivo;
   ADR-012/013). La sirve `src/frontend/validation-prototype/serve.py`. Incluye el turno de texto del paciente
-  (`POST /api/me/turn`, ADR-025), que guarda `voice_turn` y `agent_decision`; el cupo y el tiempo están en las
+  (`POST /api/me/turn`, ADR-033), que guarda `voice_turn` y `agent_decision`; el cupo y el tiempo están en las
   constantes `TURN_*` de `StagingApi` (12 s el clínico, 5 s el conversacional, 18 s en total), que se ajustan con
   `AXONFAS_TURN_CLINICAL_S`, `AXONFAS_TURN_COACH_S` y `AXONFAS_TURN_BUDGET_S`. El texto libre pasa por
-  `agents/privacy.py` antes de cualquier LLM (ADR-026). Tests sin red en `tests/backend/test_patient_turn.py`, con un servidor de
+  `agents/privacy.py` antes de cualquier LLM (ADR-034). Tests sin red en `tests/backend/test_patient_turn.py`, con un servidor de
   mentira con la forma de Token Factory (`tests/backend/fake_tokenfactory.py`).
 - `gpu/`: lo que corre en el droplet 1× MI300X (ADR-006, ADR-016).
   - `bootstrap.sh`: prepara el contenedor `rocm` de la imagen vLLM Quick Start y arranca vLLM (8000) y la voz (8001),

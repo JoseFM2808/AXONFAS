@@ -1,4 +1,4 @@
-"""AXONFAS · filtro determinista de datos personales antes de cualquier LLM (ADR-026, I-19).
+"""AXONFAS · filtro determinista de datos personales antes de cualquier LLM (ADR-034, I-24).
 
 El texto libre del paciente (o del perfil) puede traer un correo, un teléfono, un documento, una dirección o su nombre.
 Antes de llegar al agente clínico, al conversacional, al resumen o a la nota SOAP, `redact()` los cambia por marcadores
@@ -6,7 +6,7 @@ Antes de llegar al agente clínico, al conversacional, al resumen o a la nota SO
 
 Orden: las reglas de seguridad (alarma y clasificación) leen el texto ORIGINAL; el filtro corre después y lo que se
 guarda y se envía es el texto filtrado. Un falso positivo solo oculta texto: nunca decide nada. No detecta nombres sin
-disparador ("me llamo", "mi nombre es", "soy <Nombre>") ni datos escritos con letras (TD-117).
+disparador ("me llamo", "mi nombre es", "soy <Nombre>") ni datos escritos con letras (TD-132).
 """
 from __future__ import annotations
 
@@ -15,23 +15,33 @@ import re
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 URL = re.compile(r"https?://\S+|www\.\S+", re.I)
 # Documento con su disparador (DNI 45678912, pasaporte AB123456): exige al menos un dígito para no tragarse palabras.
-DOCUMENT = re.compile(r"\b(?:dni|ruc|ce|pasaporte|documento|carn[eé]t?)\s*(?:n[°º.]?\s*)?(?=[\w-]*\d)[\w-]{5,}\b", re.I)
+DOCUMENT = re.compile(r"\b(?:dni|ruc|ce|pasaporte|documento|carn[eé]t?|ssn|social security(?: number)?|passport(?: number)?|"
+                      r"id number|driver[’']?s licen[cs]e)\s*(?:n[°º.]?\s*)?(?=[\w-]*\d)[\w-]{5,}\b", re.I)
 # Dígitos sueltos o separados por espacios o guiones (+51 987 654 321): se decide abajo si es teléfono o documento.
 DIGITS = re.compile(r"(?<![\w])\+?\d[\d\s-]{5,}\d(?!\d)")
 LONG_NUMBER = re.compile(r"(?<!\d)\d{6,}(?!\d)")
 ADDRESS = re.compile(r"\b(?:calle|av\.?|avenida|jr\.?|jir[oó]n|psje\.?|pasaje|mz\.?|manzana|lote|lt\.?|urb\.?|urbanizaci[oó]n|"
-                     r"direcci[oó]n)\s+[^\d,.;]{1,40}?\d{1,5}\b"
+                     r"direcci[oó]n|street|st\.|avenue|ave\.|road|rd\.|apt\.?|apartment|suite|blvd\.?)\s+[^\d,.;]{1,40}?\d{1,5}\b"
                      # Un número seguido de una unidad del ejercicio no es el de una dirección ("la calle me caí 2 veces").
                      r"(?!\s*(?:veces|vez|series?|repeticiones|reps|grados|°|minutos?|min\b|segundos?|seg\b|d[ií]as?|semanas?|"
-                     r"meses|horas?|ejercicios?|kilos?|kg\b|pasos|metros|cuadras?|cm\b|%))", re.I)
+                     r"meses|horas?|ejercicios?|kilos?|kg\b|pasos|metros|cuadras?|cm\b|%|"
+                     r"times|reps|repetitions|sets|degrees|minutes?|mins?|seconds?|secs?|days?|weeks?|months?|hours?|steps|meters|lbs?))", re.I)
+# Inglés (ADR-030): "Baker Street 221" (nombre de calle con mayúscula y el número después). El número antes de la calle
+# ("221 Baker Street") no se oculta: se acepta por ahora (TD-136).
+ADDRESS_EN = re.compile(r"\b(?:[A-Z][\w']+\s+){1,3}(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.?)\s*\d{1,5}\b")
 # Fechas (18-10-2026, 18 10 2026): dato clínico ("desde el..."), no un teléfono.
 DATE = re.compile(r"\d{1,2}[\s-]\d{1,2}[\s-](?:\d{2}|\d{4})")
-NAME_TRIGGER = re.compile(r"\b(me llamo|mi nombre es|mi apellido es)\s+(\w+)(\s+\w+)?(\s+\w+)?", re.I)
+NAME_TRIGGER = re.compile(r"\b(me llamo|mi nombre es|mi apellido es|my name is|my (?:last|sur)name is)\s+(\w+)(\s+\w+)?(\s+\w+)?", re.I)
 SOY_NAME = re.compile(r"\b([Ss]oy)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?")
+# "I'm John Smith" / "I am John": solo con mayúscula en el texto original ("I'm tired" no se toca).
+IM_NAME = re.compile(r"\b(I[’']m|Im|I am)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?")
 # Palabras que cortan un nombre: "me llamo Ana y me mareo" oculta solo "Ana".
 STOP = {"y", "e", "o", "u", "que", "pero", "me", "mi", "tengo", "estoy", "porque", "con", "de", "la", "el", "los", "las", "un",
         "una", "no", "si", "se", "es", "soy", "siento", "tambien", "también", "ya", "desde", "cuando", "hoy", "ayer", "en", "al",
-        "del", "por", "para", "pero", "aunque", "mientras", "como", "le", "lo", "te", "mucho", "muy", "poco", "algo"}
+        "del", "por", "para", "pero", "aunque", "mientras", "como", "le", "lo", "te", "mucho", "muy", "poco", "algo",
+        # inglés
+        "and", "but", "i", "my", "have", "am", "is", "it", "the", "a", "an", "with", "because", "so", "very", "now", "when",
+        "since", "today", "hurts"}
 
 
 def redact(text: str) -> tuple[str, int]:
@@ -92,6 +102,8 @@ def redact(text: str) -> tuple[str, int]:
     text = DIGITS.sub(digits, text)
     text = sub(LONG_NUMBER, "[documento]", text)
     text = sub(ADDRESS, "[dirección]", text)
+    text = sub(ADDRESS_EN, "[dirección]", text)
     text = NAME_TRIGGER.sub(name, text)
     text = SOY_NAME.sub(soy, text)
+    text = IM_NAME.sub(soy, text)
     return text, count

@@ -17,7 +17,32 @@ PARAM_TEXT = {"rom_target": "baja solo hasta {new} grados", "reps": "hagamos {ne
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
 # Medicamentos y diagnósticos: la frase de AXONFAS no receta ni diagnostica. Lista cerrada sobre el texto sin tildes (ADR-004).
 MEDICAL = re.compile(r"ibuprofeno|paracetamol|naproxeno|diclofenaco|aspirina|analgesic|antiinflamatori|pastilla|medicament|crema|pomada|"
-                     r"infiltracion|diagnostic|tendinitis|desgarro|fractura|esguince|hernia|artrosis|artritis|menisco|ligamento roto|lesion")
+                     r"infiltracion|diagnostic|tendinitis|desgarro|fractura|esguince|hernia|artrosis|artritis|menisco|ligamento roto|lesion|"
+                     # Inglés (ADR-030): la frase en inglés tampoco receta ni diagnostica.
+                     r"ibuprofen|acetaminophen|naproxen|diclofenac|aspirin|painkiller|anti-?inflammator|\bpills?\b|medication|medicine|"
+                     r"ointment|\bcream\b|injection|diagnos|tendonitis|fracture|sprain|arthritis|arthrosis|meniscus|torn ligament|"
+                     r"\binjur(y|ies)\b")
+# Cifras escritas con letras en inglés: el filtro de cifras (I-6) solo las reconoce en español, así que en inglés la frase
+# que las traiga vuelve a la plantilla (conservador a propósito; TD-135).
+EN_NUM = re.compile(r"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|"
+                    r"seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b")
+REPLY_LANG = {"es": "español", "en": "inglés"}
+# Palabras de enlace de cada idioma: la frase del LLM tiene que estar en el idioma de la interfaz (I-22). Si trae más
+# palabras del otro idioma que del pedido, vuelve la plantilla traducida (conservador a propósito).
+LANG_WORDS = {
+    "es": re.compile(r"\b(el|la|los|las|de|del|que|y|en|un|una|tu|te|si|no|para|con|por|mas|hasta|hagamos|baja|descansa)\b"),
+    "en": re.compile(r"\b(the|a|an|of|and|to|in|your|you|if|we|for|with|let's|lets|more|until|rest|lower|stop)\b"),
+}
+
+
+def in_language(text: str, lang: str) -> bool:
+    """¿La frase está en `lang`? Cuenta palabras de enlace de cada idioma sobre el texto sin tildes."""
+    t = normalize(text)
+    own = len(LANG_WORDS.get(lang, LANG_WORDS["es"]).findall(t))
+    other = sum(len(rx.findall(t)) for code, rx in LANG_WORDS.items() if code != lang)
+    if lang == "en" and re.search(r"[ñ¿¡]", text.lower()):
+        return False
+    return own > other
 
 
 def template(decision: dict) -> str:
@@ -104,13 +129,14 @@ def numbers(text: str) -> set[str]:
     return out | _word_numbers(text or "")
 
 
-def reply(llm, utterance: str, decision: dict) -> dict:
-    """Frase para el paciente (≤ 30 palabras). Con alarma o sin LLM, la plantilla fija."""
-    base = template(decision)
+def reply(llm, utterance: str, decision: dict, lang: str = "es", translate=None) -> dict:
+    """Frase para el paciente (≤ 30 palabras) en `lang`. Con alarma o sin LLM, la plantilla fija. `translate` pasa la
+    plantilla (escrita en español) al idioma de la interfaz (messages.tr en el servidor; ADR-032, I-22)."""
+    base = translate(template(decision)) if translate else template(decision)
     if decision.get("red_flag") or llm is None:
         return {"text": base, "source": "template", "llm_ms": None}
     messages = [
-        {"role": "system", "content": "Eres la voz de AXONFAS. Reescribe el mensaje en español, cálido y claro, en una "
+        {"role": "system", "content": f"Eres la voz de AXONFAS. Reescribe el mensaje en {REPLY_LANG.get(lang, 'español')}, cálido y claro, en una "
                                       "o dos frases y máximo 30 palabras. No agregues información, consejos médicos "
                                       "ni números nuevos. Responde solo con la frase."},
         {"role": "user", "content": f"El paciente dijo: «{utterance}». Mensaje a reescribir: «{base}»"},
@@ -121,5 +147,6 @@ def reply(llm, utterance: str, decision: dict) -> dict:
         return {"text": base, "source": "template", "llm_ms": None}
     text = (out["text"] or "").strip().strip("«»\"")
     ok = (bool(text) and not text.startswith("{") and len(text.split()) <= 30 and numbers(text) <= numbers(base)
-          and not MEDICAL.search(normalize(text)))
+          and not MEDICAL.search(normalize(text)) and not (lang == "en" and EN_NUM.search(normalize(text)))
+          and in_language(text, lang))
     return {"text": text if ok else base, "source": "llm" if ok else "template", "llm_ms": out["ms"]}

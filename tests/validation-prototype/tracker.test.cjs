@@ -241,3 +241,89 @@ test('la página de seguimiento sabe qué articulaciones resaltar en cada medida
   const src = require('node:fs').readFileSync(path.join(SRC, 'seguimiento.js'), 'utf8');
   for (const id of Object.keys(T.METRICS)) assert.ok(src.includes(`${id}: (`), `seguimiento.js no resalta '${id}'`);
 });
+
+// ------------------------------------------------------------------ meta de recorrido del plan (ADR-025, TD-99)
+test('la meta del plan reemplaza el recorrido de la galería y el límite solo marca la repetición', () => {
+  const base = T.SPECS['half-squat'];
+  const spec = T.withGoal(base, { target: 20, limit: 40 });
+  assert.equal(spec.delta, 20);
+  assert.equal(spec.limit, 40);
+  assert.equal(spec.galleryValue, base.delta);
+  assert.equal(base.limit, undefined, 'no toca el spec de la galería');
+  const tr = T.createTracker(spec, { sets: 1, reps: 2, hold: 0 });
+  // 1.ª: 30° (llega a la meta de 20°, no al límite); 2.ª: 50° (pasa el límite de 40°).
+  const rep = (deg) => [ramp('squat', 0, deg, 700), still({ squat: deg }, 200), ramp('squat', deg, 0, 700), still({}, 400)];
+  const r = run(tr, [still(), ...rep(30), ...rep(50)]);
+  assert.equal(types(r.events).filter((x) => x === 'rep').length, 2, 'con la meta del plan, 30° ya cuenta');
+  const over = r.events.filter((e) => e.type === 'over_limit');
+  assert.equal(over.length, 1, 'avisa una sola vez por repetición');
+  assert.equal(over[0].limit, 40);
+  assert.equal(tr.reps[0].overLimit, undefined);
+  assert.equal(tr.reps[1].overLimit, true, 'cuenta igual y queda marcada');
+  assert.equal(r.last.limit, 40);
+  assert.equal(r.last.overLimitReps, 1);
+  assert.ok(!types(r.events).some((x) => /alert|stop/.test(x)), 'pasar el límite no es una alerta (I-12)');
+});
+
+test('con la meta de la galería, 30° no llega y no hay límite', () => {
+  const tr = T.createTracker(T.SPECS['half-squat'], { sets: 1, reps: 1, hold: 0 });
+  const r = run(tr, [still(), ramp('squat', 0, 30, 700), still({ squat: 30 }, 200), ramp('squat', 30, 0, 700), still({}, 400)]);
+  assert.equal(types(r.events).filter((x) => x === 'rep').length, 0);
+  assert.equal(r.last.limit, null);
+});
+
+test('una meta inválida o de un ejercicio manual deja el spec de la galería', () => {
+  const sq = T.SPECS['half-squat'];
+  assert.equal(T.withGoal(sq, null), sq);
+  assert.equal(T.withGoal(sq, { target: 40, limit: 30 }), sq, 'el límite tiene que ir más allá de la meta');
+  assert.equal(T.withGoal(sq, { target: 'x', limit: 30 }), sq);
+  assert.equal(T.withGoal(T.SPECS['abdominal-bracing'], { target: 5, limit: 10 }), T.SPECS['abdominal-bracing']);
+  const tandem = T.SPECS['tandem-stance'];                 // sostén con dir -1: el límite va por debajo
+  assert.equal(T.withGoal(tandem, { target: 40, limit: 50 }), tandem);
+  assert.equal(T.withGoal(tandem, { target: 40, limit: 20 }).threshold, 40);
+});
+
+test('en un sostén, la meta del plan cambia el umbral y el límite se marca', () => {
+  const spec = T.withGoal(T.SPECS['one-leg-stand'], { target: 3, limit: 6 });
+  const tr = T.createTracker(spec, { sets: 1, reps: 2, hold: 1 });
+  const r = run(tr, [still({}, 300), still({ liftL: 4 }, 1300), still({}, 600), still({ liftL: 9 }, 1300), still({}, 300)]);
+  assert.equal(types(r.events).filter((x) => x === 'rep').length, 2, '4 cm ya sostiene con la meta de 3 cm');
+  assert.equal(r.events.filter((e) => e.type === 'over_limit').length, 1);
+  assert.deepEqual(tr.reps.map((x) => Boolean(x.overLimit)), [false, true]);
+});
+
+// ------------------------------------------------------------------ idioma de la interfaz (ADR-030)
+test('las medidas y las indicaciones de cámara se muestran traducidas sin tocar lo que lee el servidor', () => {
+  const pack = require(path.join(SRC, 'i18n', 'routine.js'));
+  const I = require(path.join(SRC, 'i18n.js'));
+  // El español del diccionario es el mismo literal de tracker.js (que siguen leyendo staging_api.py y el canal en vivo).
+  for (const [id, m] of Object.entries(T.METRICS)) {
+    assert.equal(pack.es[`tracker.metric.${id}`], m.label, `tracker.metric.${id}`);
+    assert.ok(pack.en[`tracker.metric.${id}`], `tracker.metric.${id} en inglés`);
+  }
+  for (const [id, spec] of Object.entries(T.SPECS)) {
+    assert.equal(pack.es[`tracker.camera.${id}`], spec.camera, `tracker.camera.${id}`);
+    assert.ok(pack.en[`tracker.camera.${id}`], `tracker.camera.${id} en inglés`);
+    assert.equal(pack.es[`tracker.note.${id}`], spec.note, `tracker.note.${id}`);
+    if (spec.note) assert.ok(pack.en[`tracker.note.${id}`], `tracker.note.${id} en inglés`);
+  }
+  assert.equal(T.metricLabel('kneeFlex'), 'Flexión de rodilla');
+  assert.equal(T.sideName('L'), 'izquierda');
+  I.use('en');
+  try {
+    assert.equal(T.metricLabel('kneeFlex'), 'Knee flexion');
+    assert.equal(T.cameraText('half-squat'), pack.en['tracker.camera.half-squat']);
+    assert.equal(T.noteText('pendulum'), pack.en['tracker.note.pendulum']);
+    assert.equal(T.noteText('half-squat'), '', 'sin nota cuando el seguimiento es bueno');
+    assert.deepEqual(['L', 'R', '+', '-', null].map(T.sideName), ['left', 'right', 'one side', 'other side', '—']);
+    assert.equal(T.METRICS.kneeFlex.label, 'Flexión de rodilla', 'el dato no cambia con el idioma');
+  } finally { I.use('es'); }
+});
+
+test('el formato que lee load_tracking (staging_api.py) sigue intacto', () => {
+  const src = require('node:fs').readFileSync(path.join(SRC, 'tracker.js'), 'utf8');
+  const units = [...src.matchAll(/(\w+): \{ label: '[^']+', unit: '([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(units.sort(), Object.keys(T.METRICS).sort());
+  const specs = [...src.matchAll(/'([a-z0-9-]+)': \{ metric: '(\w+)',(?: combine: '\w+',)? mode: '(reps|hold|manual)'(?:, dir: (-?\d+))?/g)].map((m) => m[1]);
+  assert.deepEqual(specs.sort(), Object.keys(T.SPECS).sort());
+});

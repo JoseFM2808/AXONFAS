@@ -54,8 +54,8 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 
 ### Estructura
 
-- Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `.gitignore`, `.gitattributes` y `vercel.json` (Vercel lo exige
-  en la raíz, ADR-020). Repo público:
+- Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `LICENSE` (MIT, la regla "MIT-compliant" de la entrega; aprobado
+  por el owner el 2026-10-18), `.gitignore`, `.gitattributes` y `vercel.json` (Vercel lo exige en la raíz, ADR-020). Repo público:
   https://github.com/JoseFM2808/AXONFAS (rama `main`); antes de cada push, revisar que no haya secretos ni datos personales.
   Carpetas raíz: `.ai-context/`, `docs/`, `data/`, `notebooks/`, `src/`, `tests/`, `config/` (estructura de
   `_Plantilla Proyecto IA`).

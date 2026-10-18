@@ -1,4 +1,4 @@
-"""Filtro determinista de datos personales antes de la IA (ADR-026, I-19). Sin red.
+"""Filtro determinista de datos personales antes de la IA (ADR-034, I-24). Sin red.
 
     py -m unittest discover -s tests/agents -v
 """
@@ -67,6 +67,29 @@ class PrivacyTest(unittest.TestCase):
         self.assertEqual(redact("me llamo Ana María Torres"), ("me llamo [nombre]", 1))
         self.assertEqual(redact("vivo en calle Lima 123, me duele"), ("vivo en [dirección], me duele", 1))
         self.assertEqual(redact("01 234 5678")[0], "[teléfono]")
+
+
+class EnglishPrivacyTest(unittest.TestCase):
+    CASES = [
+        ("my name is Ann and I feel dizzy", "my name is [nombre] and I feel dizzy", 1),
+        ("I'm John Smith, my knee hurts", "I'm [nombre], my knee hurts", 1),
+        ("I am Ann and my knee hurts", "I am [nombre] and my knee hurts", 1),
+        ("I'm tired", "I'm tired", 0),
+        ("Baker Street 221", "[dirección]", 1),
+        ("I live at 221 Baker Street", "I live at 221 Baker Street", 0),      # número antes de la calle: aceptado (TD-136)
+        ("I did 3 sets of 10", "I did 3 sets of 10", 0),
+        ("SSN 123-45-6789", "[documento]", 1),
+        ("email me at ann@x.com", "email me at [correo]", 1),
+    ]
+
+    def test_tabla_de_casos_en_ingles(self):
+        for text, expected, n in self.CASES:
+            self.assertEqual(redact(text), (expected, n), text)
+
+    def test_la_alarma_en_ingles_se_sigue_leyendo_del_original(self):
+        for text in ["my name is Ann and I feel dizzy", "I'm John Smith and I fell", "call 987654321, I can't breathe"]:
+            self.assertTrue(safety.red_flag(redact(text)[0]), text)
+            self.assertTrue(safety.red_flag(text), text)
 
 
 if __name__ == "__main__":

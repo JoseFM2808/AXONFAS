@@ -6,33 +6,40 @@
  * no es una medición (no hay electromiografía) ni un diagnóstico. Navegador y Node (solo las funciones puras).
  */
 (function (root, factory) {
-  const data = typeof module === 'object' && module.exports ? require('./body-map-data.js') : root.AxonBodyMapData;
-  const api = factory(data);
-  if (typeof module === 'object' && module.exports) module.exports = api;
+  const node = typeof module === 'object' && module.exports;
+  const data = node ? require('./body-map-data.js') : root.AxonBodyMapData;
+  const I18N = (root && root.AxonI18n) || (node ? require('./i18n.js') : null);
+  const api = factory(data, I18N);
+  if (node) module.exports = api;
   else root.AxonBodyMap = api;
-})(typeof self !== 'undefined' ? self : this, function (DATA) {
+})(typeof self !== 'undefined' ? self : this, function (DATA, I18N) {
   'use strict';
 
+  // Textos visibles en el idioma de la página (ADR-030); los ids de los músculos (claves de DATA) no cambian.
+  const t = I18N ? I18N.t : (k) => k;
   const NAMES = {
-    quadriceps: 'Cuádriceps', hamstring: 'Isquiotibiales', gluteal: 'Glúteos', calves: 'Gemelos',
-    'left-soleus': 'Sóleo', 'right-soleus': 'Sóleo', abductors: 'Abductores de cadera (glúteo medio)',
-    adductor: 'Aductores', abs: 'Abdominales', obliques: 'Oblicuos', 'lower-back': 'Zona lumbar (erectores)',
-    'upper-back': 'Espalda alta (romboides y dorsal)', trapezius: 'Trapecio', 'front-deltoids': 'Deltoides anterior',
-    'back-deltoids': 'Deltoides posterior', chest: 'Pectoral', biceps: 'Bíceps', triceps: 'Tríceps',
-    forearm: 'Antebrazo', neck: 'Cuello', head: 'Cabeza', knees: 'Rodillas',
+    quadriceps: t('bodymap.muscle.quadriceps'), hamstring: t('bodymap.muscle.hamstring'), gluteal: t('bodymap.muscle.gluteal'),
+    calves: t('bodymap.muscle.calves'), 'left-soleus': t('bodymap.muscle.soleus'), 'right-soleus': t('bodymap.muscle.soleus'),
+    abductors: t('bodymap.muscle.abductors'), adductor: t('bodymap.muscle.adductor'), abs: t('bodymap.muscle.abs'),
+    obliques: t('bodymap.muscle.obliques'), 'lower-back': t('bodymap.muscle.lower-back'), 'upper-back': t('bodymap.muscle.upper-back'),
+    trapezius: t('bodymap.muscle.trapezius'), 'front-deltoids': t('bodymap.muscle.front-deltoids'),
+    'back-deltoids': t('bodymap.muscle.back-deltoids'), chest: t('bodymap.muscle.chest'), biceps: t('bodymap.muscle.biceps'),
+    triceps: t('bodymap.muscle.triceps'), forearm: t('bodymap.muscle.forearm'), neck: t('bodymap.muscle.neck'),
+    head: t('bodymap.muscle.head'), knees: t('bodymap.muscle.knees'),
   };
   const NEUTRAL = new Set(['head', 'knees']);               // se dibujan como referencia, nunca se encienden
-  const VIEWS = { anterior: 'Frente', posterior: 'Espalda' };
+  const VIEWS = { anterior: t('bodymap.view.anterior'), posterior: t('bodymap.view.posterior') };
 
-  // Segmentos óseos del esqueleto en vivo (índices de MediaPipe Pose) con el hueso que representan.
+  // Segmentos óseos del esqueleto en vivo (índices de MediaPipe Pose) con el hueso que representan (nombre visible).
   const BONES = [
-    { a: 23, b: 25, name: 'Fémur' }, { a: 24, b: 26, name: 'Fémur' },
-    { a: 25, b: 27, name: 'Tibia y peroné' }, { a: 26, b: 28, name: 'Tibia y peroné' },
-    { a: 23, b: 24, name: 'Pelvis' }, { a: 11, b: 12, name: 'Clavículas y escápulas' },
-    { a: 'hipMid', b: 'shoulderMid', name: 'Columna' }, { a: 'shoulderMid', b: 0, name: 'Columna cervical' },
-    { a: 11, b: 13, name: 'Húmero' }, { a: 12, b: 14, name: 'Húmero' },
-    { a: 13, b: 15, name: 'Cúbito y radio' }, { a: 14, b: 16, name: 'Cúbito y radio' },
+    { a: 23, b: 25, name: t('bodymap.bone.femur') }, { a: 24, b: 26, name: t('bodymap.bone.femur') },
+    { a: 25, b: 27, name: t('bodymap.bone.tibia') }, { a: 26, b: 28, name: t('bodymap.bone.tibia') },
+    { a: 23, b: 24, name: t('bodymap.bone.pelvis') }, { a: 11, b: 12, name: t('bodymap.bone.shoulders') },
+    { a: 'hipMid', b: 'shoulderMid', name: t('bodymap.bone.spine') }, { a: 'shoulderMid', b: 0, name: t('bodymap.bone.cervical') },
+    { a: 11, b: 13, name: t('bodymap.bone.humerus') }, { a: 12, b: 14, name: t('bodymap.bone.humerus') },
+    { a: 13, b: 15, name: t('bodymap.bone.forearm') }, { a: 14, b: 16, name: t('bodymap.bone.forearm') },
   ];
+  const lower = (s) => s.toLowerCase();
 
   const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
 
@@ -81,7 +88,7 @@
     // Con clic (fisioterapeuta): un grupo de botones, uno por músculo, que se usan también con Tab y Enter.
     // Sin clic: una sola imagen con su nombre.
     svg.setAttribute('role', onClick ? 'group' : 'img');
-    svg.setAttribute('aria-label', `Mapa muscular: ${VIEWS[view].toLowerCase()}${onClick ? '. Elige un músculo para señalárselo al paciente' : ''}`);
+    svg.setAttribute('aria-label', t(onClick ? 'bodymap.aria.pick' : 'bodymap.aria', { view: lower(VIEWS[view]) }));
     Object.entries(DATA[view]).forEach(([muscle, polys]) => {
       const g = document.createElementNS(SVG_NS, 'g');
       g.dataset.muscle = muscle;
@@ -98,7 +105,7 @@
         g.style.cursor = 'pointer';
         g.setAttribute('role', 'button');
         g.setAttribute('tabindex', '0');
-        g.setAttribute('aria-label', `Señalar ${NAMES[muscle] || muscle}`);
+        g.setAttribute('aria-label', t('bodymap.point', { name: NAMES[muscle] || muscle }));
         g.addEventListener('click', () => onClick(muscle));
         g.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onClick(muscle); }
@@ -114,7 +121,7 @@
   /** Dibuja frente y espalda en `container`. Devuelve un objeto con update({ intensities, alerts }). */
   function render(container, options = {}) {
     const { views = ['anterior', 'posterior'], onMuscleClick = null, caption = null } = options;
-    container.innerHTML = '';
+    container.replaceChildren();
     container.classList.add('bodymap');
     const row = document.createElement('div');
     row.className = 'bodymap-row';

@@ -38,7 +38,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "backend"))
-from staging_api import StagingApi, Stream, load_catalog, load_names  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
+from staging_api import StagingApi, Stream, load_catalog, load_names, load_names_en, load_tracking  # noqa: E402  (API de Staging: cuentas, planes, en vivo)
 import settings  # noqa: E402  (variables de entorno y ~/.axonfas/axonfas.env, ADR-018/019/020)
 
 DEFAULT_DB = Path.home() / ".axonfas" / "staging.sqlite3"   # fuera del repo y de Drive (ADR-012)
@@ -99,7 +99,7 @@ class Handler(SimpleHTTPRequestHandler):
         if origin and origin in self.cors:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
-            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept-Language")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
             self.send_header("Access-Control-Max-Age", "600")
 
@@ -224,7 +224,8 @@ def main() -> int:
     args = ap.parse_args()
     env_file = settings.load_env_file()
     db = args.db or settings.get("AXONFAS_DB") or str(DEFAULT_DB)
-    Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"))
+    Handler.api = StagingApi(db, load_catalog(HERE / "catalog.js"), load_names(HERE / "catalog.js"), load_tracking(HERE / "tracker.js"),
+                             names_en=load_names_en(HERE / "i18n" / "catalog.en.js"))
     Handler.api.warm_ai()          # el estado de la IA queda tibio: el primer turno no espera la consulta al catálogo
     Handler.cors = settings.cors_origins()
     if args.cloud:

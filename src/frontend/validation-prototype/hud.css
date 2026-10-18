@@ -378,6 +378,15 @@ footer {
 .top-nav a[aria-current="page"] { color: #030712; background: var(--tape); box-shadow: var(--accent-glow); }
 a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--tape); outline-offset: 2px; }
 
+/* Selector de idioma de la cabecera (i18n.js, ADR-030): un botón por idioma; el activo lleva aria-pressed="true" */
+.lang-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--surface-border); border-radius: 999px; }
+.lang-btn {
+  font: 700 0.75rem var(--font-mono); letter-spacing: 0.06em; color: var(--ink-secondary);
+  background: transparent; border: 0; border-radius: 999px; min-width: 40px; min-height: 32px; padding: 4px 10px; cursor: pointer;
+}
+.lang-btn:hover { color: var(--tape); }
+.lang-btn[aria-pressed="true"] { color: #030712; background: var(--tape); }
+
 /* ==========================================================================
    FORMULARIOS Y AVISOS
    ========================================================================== */
@@ -518,6 +527,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   .header-badge { padding: 4px 10px; font-size: 0.65rem; }
   .top-nav { width: 100%; }
   .top-nav a { padding: 8px 10px; font-size: 0.75rem; }
+  .lang-switch { position: absolute; top: 10px; right: 12px; }   /* arriba a la derecha, junto a la marca */
+  .header-brand { padding-right: 96px; }
   .wrap { padding: 10px 12px 40px; }
   .panel-card { padding: 16px; }
   th, td { padding: 8px 10px; }
@@ -1103,3 +1114,78 @@ td select { background: var(--surface-2); color: var(--ink); border: 1px solid v
 .triage-alert p { color: var(--ink); font-size: 0.95rem; line-height: 1.5; }
 .triage a { color: var(--tape); }
 .triage-tone { margin-bottom: 16px; }
+
+/* ==========================================================================
+   PLAN DEL DÍA Y DOLOR AL TERMINAR (care-plan.js, pain-scale.js · ADR-025)
+   ========================================================================== */
+.today-head { display: grid; gap: 4px; }
+.today-status { font: 700 0.8rem var(--font-display); color: var(--ink-secondary); letter-spacing: 0.02em; }
+.today-status.done { color: var(--safe); }
+.rest-plan > summary { font: 700 1rem var(--font-display); color: var(--ink); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.rest-plan[open] > summary { margin-bottom: 14px; }
+.eva-card { border-left: 4px solid var(--tape); }
+div.eva-card { padding-left: 14px; margin: 12px 0; }
+.eva-form, .eva-group { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.eva-group legend { font: 700 1.05rem var(--font-display); color: var(--ink); margin-bottom: 4px; }
+.eva-group legend:focus { outline: none; }
+.eva-group legend:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.eva-scale { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.9rem, 1fr)); gap: 6px; }
+.eva-option {
+  position: relative; display: grid; place-items: center; min-height: 48px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--surface-border); border-radius: 8px;
+}
+.eva-option input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.eva-num { font: 800 1.1rem var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.eva-option:has(input:checked) { background: var(--tape); border-color: var(--tape); box-shadow: var(--accent-glow); }
+.eva-option:has(input:checked) .eva-num { color: #030712; }
+.eva-option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.eva-ends { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-secondary); font-size: 0.82rem; }
+.eva-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.eva-actions .btn { min-height: 44px; }
+.eva-high { color: var(--alert-ink); font-weight: 700; }
+@media (forced-colors: active) {
+  .eva-option { border: 1px solid CanvasText; }
+  .eva-option:has(input:checked) { border: 3px solid Highlight; }
+}
+
+/* ==========================================================================
+   PRÁCTICA DEL SEGUIMIENTO: TUTORIAL Y RUTINA SIN CÁMARA (practice.js · TD-109, TD-110)
+   ========================================================================== */
+.practice {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: center;
+  background: var(--stage); border: 1px solid var(--surface-border); border-radius: var(--radius); padding: 18px;
+}
+.practice-fig { min-width: 0; }
+.practice-panel { display: grid; gap: 12px; min-width: 0; }
+.practice-title { font: 900 clamp(1.2rem, 2.6vw, 1.6rem)/1.2 var(--font-display); color: var(--stage-ink); }
+.practice-title:focus { outline: none; }
+.practice-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.practice-text { color: var(--ink); font-size: 1rem; line-height: 1.5; }
+.practice-note { border-left: 3px solid var(--hold); background: var(--hold-soft); color: var(--ink-secondary);
+  padding: 8px 12px; border-radius: 4px; font-size: 0.88rem; }
+.practice-count { font: 800 clamp(1.1rem, 3vw, 1.6rem)/1.3 var(--font-mono); color: var(--tape); }
+.practice-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.practice-actions .btn { min-height: 44px; }
+.practice-actions .practice-done { min-height: 64px; min-width: 9rem; font-size: 1.15rem; }
+:fullscreen .practice { min-height: 70vh; }
+@media (max-width: 760px) {
+  .practice { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .practice-actions .btn { flex: 1 1 100%; }
+}
+
+/* ==========================================================================
+   INVITADO, MURO DE AUTENTICACIÓN Y DEMO PÚBLICA (auth-wall.js, demo-telemetry.js · ADR-028)
+   ========================================================================== */
+.guest-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 16px; }
+.guest-bar span { flex: 1 1 22rem; color: var(--ink); }
+.guest-bar .btn { min-height: 40px; }
+.wall-dialog { max-width: min(30rem, calc(100vw - 32px)); border: 1px solid var(--surface-border-bright); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); padding: 20px; }
+.wall-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.wall-dialog h2 { font: 800 1.15rem var(--font-display); margin-bottom: 8px; }
+.wall-dialog p { color: var(--ink-secondary); line-height: 1.5; margin-bottom: 14px; }
+.wall-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.wall-actions .btn { min-height: 44px; }
+.guest-entry { display: grid; gap: 10px; }
+.guest-entry .btn { justify-self: start; min-height: 44px; }
+.demo-share { margin-top: 10px; display: grid; gap: 4px; }

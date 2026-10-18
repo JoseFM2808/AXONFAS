@@ -21,23 +21,27 @@
       box.setAttribute('aria-live', 'polite');
       document.body.appendChild(box);
     }
+    const I18N = root.AxonI18n;   // textos en i18n/common.js (ADR-030)
+    const t = I18N.t;
     box.hidden = false;
     if (figure) { figure.stop(); figure = null; }
-    box.innerHTML = '';
+    box.replaceChildren();
     const head = document.createElement('div');
     head.className = 'row-between';
     const title = document.createElement('h3');
-    title.textContent = `${message.from || 'Tu fisioterapeuta'} te señala`;
+    title.textContent = t('teach.from', { from: message.from || t('teach.fromDefault') });
     const close = document.createElement('button');
     close.className = 'btn';
     close.type = 'button';
-    close.textContent = 'Cerrar';
+    close.textContent = t('teach.close');
     close.addEventListener('click', () => { box.hidden = true; if (figure) { figure.stop(); figure = null; } });
     head.append(title, close);
     const what = document.createElement('p');
     what.className = 'facts';
     const names = B.muscleNames(muscles).join(', ');
-    what.textContent = exercise ? `${exercise.name}: trabajas ${names}. Huesos: ${exercise.bones.join(', ')}.` : `Músculo: ${names}.`;
+    what.textContent = exercise
+      ? t('teach.exercise', { name: exercise.name, muscles: names, bones: exercise.bones.join(', ') })
+      : t('teach.muscle', { muscles: names });
     const map = document.createElement('div');
     box.append(head, what);
     if (exercise && root.AxonGuide && root.AxonGuide.GUIDES[exercise.id]) {
@@ -56,8 +60,12 @@
     B.render(map, { intensities, focus: message.muscle || null });
     if ('speechSynthesis' in root) {
       try {
-        const u = new SpeechSynthesisUtterance(exercise ? `${exercise.name}: trabajas ${names}` : `Músculo: ${names}`);
-        u.lang = 'es-PE';
+        const u = new SpeechSynthesisUtterance(exercise
+          ? t('teach.say.exercise', { name: exercise.name, muscles: names })
+          : t('teach.say.muscle', { muscles: names }));
+        u.lang = I18N.speechLang();
+        const v = I18N.voiceFor(root.speechSynthesis.getVoices());
+        if (v) u.voice = v;
         root.speechSynthesis.speak(u);
       } catch { /* sin voz */ }
     }

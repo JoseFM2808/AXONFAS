@@ -33,7 +33,7 @@ class OpenAICompatible:
         self.key = key if key is not None else os.environ.get("AXONFAS_LLM_KEY", "")
         self.model = model or os.environ.get("AXONFAS_LLM_MODEL", "axonfas-llm")
         self.timeout = timeout
-        if retries_429 is not None:                           # el turno del paciente no espera: 429 = sin respuesta (ADR-025)
+        if retries_429 is not None:                           # el turno del paciente no espera: 429 = sin respuesta (ADR-033)
             self.RETRIES_429 = retries_429
 
     def chat(self, messages: list[dict], *, json_mode: bool = False, max_tokens: int = 256, temperature: float = 0.2) -> dict:

@@ -178,11 +178,11 @@ class SlowLLM:
         return {"text": self.text, "ms": round(self.seconds * 1000), "completion_tokens": None, "prompt_tokens": None}
 
 
-SCREEN = {"rom_target", "reps"}          # lo que aplica index.html?plan= (ADR-025)
+SCREEN = {"rom_target", "reps"}          # lo que aplica index.html?plan= (ADR-033)
 
 
 class TextTurnTest(unittest.TestCase):
-    """Turno de texto del paciente (ADR-025): reglas primero, agente clínico con tiempo límite, siempre molestia declarada."""
+    """Turno de texto del paciente (ADR-033): reglas primero, agente clínico con tiempo límite, siempre molestia declarada."""
 
     def test_parametro_que_la_pantalla_no_aplica_se_rechaza(self):
         d = safety.validate(prop("rest_seconds", 60, 90), ENV, CUR, "me molesta", allowed=SCREEN)
@@ -199,7 +199,7 @@ class TextTurnTest(unittest.TestCase):
         self.assertEqual(safety.validate(up, env, CUR, "la rodilla no va bien")["outcome"], "applied")
 
     def test_en_el_turno_sin_valor_actual_no_se_ajusta(self):
-        # El LLM no puede inventar el 'old': en el turno, un parámetro sin valor en pantalla no se toca (auditoría ADR-025).
+        # El LLM no puede inventar el 'old': en el turno, un parámetro sin valor en pantalla no se toca (auditoría ADR-033).
         d = safety.validate(prop("reps", 7, 5), ENV, {"rom_target": 90}, "me molesta", allowed=SCREEN)
         self.assertEqual((d["outcome"], d["within_envelope"]), ("rejected", False))
         self.assertEqual(safety.validate(prop("reps", 7, 5), ENV, {"rom_target": 90}, "me molesta")["outcome"], "applied",
@@ -295,7 +295,7 @@ class TextTurnTest(unittest.TestCase):
 
 
 class TurnTimesTest(unittest.TestCase):
-    """El conversacional no se come al clínico: solo entra si el clínico fue rápido (ADR-025)."""
+    """El conversacional no se come al clínico: solo entra si el clínico fue rápido (ADR-033)."""
     OK = '{"action":"adjust","param":"rom_target","old":90,"new":70,"reason":"x"}'
 
     def run_turn_with(self, clinical, talker, **kw):
@@ -497,6 +497,52 @@ class AgentsTest(unittest.TestCase):
         invented = soap.draft(FakeLLM(default='{"A": "Mejoró un 35 %.", "P": "Subir a 15 repeticiones."}'), session)
         self.assertEqual(invented["source"], "template", "35 y 15 no están en los datos: I-6")
         self.assertEqual(soap.draft(None, session)["source"], "template")
+
+
+class EnglishReplyTest(unittest.TestCase):
+    """La frase del turno sale en el idioma de la interfaz (I-22, ADR-032) y sin cifras ni medicinas inventadas."""
+    DECISION = {"outcome": "applied", "proposal": prop("rom_target", 90, 70)}
+    TR = staticmethod(lambda s: "Understood. So it does not bother you, only go down to 70 degrees. If the pain increases, tap Pain and we stop."
+                      if "70" in s else s)
+
+    def test_cifra_en_letras_en_ingles_vuelve_a_la_plantilla(self):
+        said = coach.reply(FakeLLM(default="Only go down to seventy degrees."), "my knee hurts", self.DECISION, lang="en", translate=self.TR)
+        self.assertEqual(said["source"], "template")
+        self.assertTrue(said["text"].startswith("Understood."))
+
+    def test_frase_en_ingles_con_la_cifra_correcta_pasa(self):
+        llm = FakeLLM(default="Okay, only go down to 70 degrees.")
+        said = coach.reply(llm, "my knee hurts", self.DECISION, lang="en", translate=self.TR)
+        self.assertEqual((said["source"], said["text"]), ("llm", "Okay, only go down to 70 degrees."))
+        self.assertIn("inglés", llm.calls[0][0]["content"])
+
+    def test_frase_en_otro_idioma_vuelve_a_la_plantilla(self):
+        # Con la interfaz en inglés, una frase del LLM en español no llega al paciente, y al revés (I-22).
+        said = coach.reply(FakeLLM(default="Entendido, bajamos un poco la exigencia. Si duele más, toca Dolor y paramos."),
+                           "my knee hurts", self.DECISION, lang="en", translate=self.TR)
+        self.assertEqual(said["source"], "template")
+        self.assertTrue(said["text"].startswith("Understood."))
+        said = coach.reply(FakeLLM(default="Okay, let's only go down to 70 degrees and rest if you need it."),
+                           "me duele la rodilla", self.DECISION, lang="es")
+        self.assertEqual(said["source"], "template")
+        said = coach.reply(FakeLLM(default="Entendido: baja solo hasta 70 grados y avísame si duele."),
+                           "me duele la rodilla", self.DECISION, lang="es")
+        self.assertEqual(said["source"], "llm")
+
+    def test_vetos_de_medicinas_y_diagnosticos_en_ingles(self):
+        said = coach.reply(FakeLLM(default="Take an ibuprofen and only go down to 70 degrees."), "my knee hurts", self.DECISION,
+                           lang="en", translate=self.TR)
+        self.assertEqual(said["source"], "template")
+        bad = advisor.summarize(FakeLLM(default="It looks like tendonitis."), None,
+                                [{"title": "Review the plan", "detail": "Fits", "because": "profile", "priority": 1}], [], "en")
+        self.assertEqual((bad["source"], bad["text"]), ("rejected", None))
+
+    def test_turno_en_ingles_sin_llm_responde_en_ingles(self):
+        out = run_text_turn(None, None, "my knee hurts", DEMO_CTX, monitored=True, allowed=SCREEN, lang="en", translate=lambda s: "EN " + s)
+        self.assertTrue(out["reply"].startswith("EN "), out["reply"])
+        stop = run_text_turn(FakeLLM(default="{}"), FakeLLM(default="hi"), "I feel dizzy", DEMO_CTX, monitored=True, allowed=SCREEN,
+                             lang="en", translate=lambda s: "We are stopping the session.")
+        self.assertEqual((stop["decision"]["outcome"], stop["reply"]), ("session_stopped", "We are stopping the session."))
 
 
 if __name__ == "__main__":

@@ -10,28 +10,21 @@
  * conectada) solo puede redactar un resumen de estas sugerencias; no agrega otras (src/agents/advisor.py).
  */
 (function (root, factory) {
-  const api = factory(root.AxonCatalog || (typeof require === 'function' ? require('./catalog.js') : null));
+  const api = factory(root.AxonCatalog || (typeof require === 'function' ? require('./catalog.js') : null),
+    (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js'));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AxonSuggest = api;
-}(typeof self !== 'undefined' ? self : this, (C) => {
+}(typeof self !== 'undefined' ? self : this, (C, I18N) => {
   'use strict';
+  // Textos en el idioma de la interfaz (ADR-030). Los ids, kind, priority y action no se traducen: las reglas son las mismas
+  // en cualquier idioma y el sentido no cambia (las del fisioterapeuta son propuestas; las del usuario no tocan la dosis).
+  const t = I18N.t;
+  const tn = I18N.tn;
 
   // Limitaciones que el paciente (o su fisioterapeuta) marca en el perfil. Los ids los valida también la API.
-  const LIMITS = [
-    { id: 'no_floor', label: 'No puedo acostarme en el suelo ni levantarme de él', other: 'No puede acostarse en el suelo ni levantarse de él' },
-    { id: 'no_kneel', label: 'No puedo apoyarme en las rodillas', other: 'No puede apoyarse en las rodillas' },
-    { id: 'no_standing', label: 'No puedo estar mucho tiempo de pie, o uso silla de ruedas', other: 'No puede estar mucho tiempo de pie, o usa silla de ruedas' },
-    { id: 'balance', label: 'Me cuesta mantener el equilibrio o me he caído este año', other: 'Le cuesta mantener el equilibrio o se ha caído este año' },
-    { id: 'walking_aid', label: 'Uso bastón o andador', other: 'Usa bastón o andador' },
-    { id: 'arm_limited', label: 'Tengo limitado un brazo o un hombro', other: 'Tiene limitado un brazo o un hombro' },
-    { id: 'no_band', label: 'No tengo banda elástica', other: 'No tiene banda elástica' },
-    { id: 'low_vision', label: 'Veo poco: necesito letra grande o que me lean las indicaciones', other: 'Ve poco: necesita letra grande o que le lean las indicaciones' },
-    { id: 'hearing', label: 'Oigo poco: necesito todo por escrito', other: 'Oye poco: necesita todo por escrito' },
-  ];
-  const PAIN_AREAS = [
-    { id: 'knee', label: 'Rodilla' }, { id: 'hip', label: 'Cadera' }, { id: 'back', label: 'Espalda baja' },
-    { id: 'neck', label: 'Cuello' }, { id: 'shoulder', label: 'Hombro' },
-  ];
+  const limit = (id) => ({ id, get label() { return t(`suggest.limit.${id}`); }, get other() { return t(`suggest.limitOther.${id}`); } });
+  const LIMITS = ['no_floor', 'no_kneel', 'no_standing', 'balance', 'walking_aid', 'arm_limited', 'no_band', 'low_vision', 'hearing'].map(limit);
+  const PAIN_AREAS = ['knee', 'hip', 'back', 'neck', 'shoulder'].map((id) => ({ id, get label() { return t(`suggest.area.${id}`); } }));
 
   // Qué pide cada ejercicio del catálogo: postura, equilibrio (0 nada, 1 con apoyo, 2 alto, 3 muy alto), banda,
   // brazos y zonas que carga. Los tests exigen una entrada por ejercicio.
@@ -62,9 +55,10 @@
     'scapula-setting': { arm: true, areas: ['shoulder'] },
   };
 
-  const SYMPTOM_CATEGORY = { pain: 'dolor o molestia', cramp: 'calambre', fatigue: 'cansancio', stiffness: 'rigidez',
-    other: 'otra molestia', red_flag: 'señal de alarma' };
+  const SYMPTOM_CATEGORIES = ['pain', 'cramp', 'fatigue', 'stiffness', 'other', 'red_flag'];
+  const categoryName = (c) => t(`suggest.symptom.${SYMPTOM_CATEGORIES.includes(c) ? c : 'other'}`);
   const areaName = (id) => (PAIN_AREAS.find((a) => a.id === id) || { label: id }).label.toLowerCase();
+  const and = (list) => list.join(t('suggest.and'));
   const exName = (id) => { const e = C && C.get(id); return e ? e.name : id; };
   const has = (profile, id) => Boolean(profile && Array.isArray(profile.limitations) && profile.limitations.includes(id));
   const profileEmpty = (p) => !p || (!(p.limitations || []).length && !(p.pain_areas || []).length && !p.note);
@@ -74,19 +68,20 @@
     const n = NEEDS[exerciseId] || {};
     const blocks = [];
     const cautions = [];
-    if (n.floor && has(profile, 'no_floor')) blocks.push('se hace en el suelo');
-    if (n.kneel && has(profile, 'no_kneel')) blocks.push('se apoya en las rodillas');
-    if (n.stand && has(profile, 'no_standing')) blocks.push('se hace de pie');
-    if (n.band && has(profile, 'no_band')) blocks.push('necesita banda elástica');
+    if (n.floor && has(profile, 'no_floor')) blocks.push(t('suggest.block.floor'));
+    if (n.kneel && has(profile, 'no_kneel')) blocks.push(t('suggest.block.kneel'));
+    if (n.stand && has(profile, 'no_standing')) blocks.push(t('suggest.block.stand'));
+    if (n.band && has(profile, 'no_band')) blocks.push(t('suggest.block.band'));
     if ((n.balance || 0) >= 2 && (has(profile, 'balance') || has(profile, 'walking_aid'))) {
-      (n.balance >= 3 ? blocks : cautions).push('exige mucho equilibrio');
+      (n.balance >= 3 ? blocks : cautions).push(t('suggest.block.balance'));
     } else if ((n.balance || 0) >= 1 && (has(profile, 'balance') || has(profile, 'walking_aid'))) {
-      cautions.push('es de pie: con apoyo firme y alguien cerca');
+      cautions.push(t('suggest.caution.standing'));
     }
-    if (n.arm && has(profile, 'arm_limited')) cautions.push('usa un brazo o un hombro que tiene limitado');
+    if (n.arm && has(profile, 'arm_limited')) cautions.push(t('suggest.caution.arm'));
     const pain = (n.areas || []).filter((a) => profile && (profile.pain_areas || []).includes(a));
-    if (pain.length) cautions.push(`carga ${pain.map(areaName).join(' y ')}, donde refiere dolor`);
-    return { ok: blocks.length === 0, blocks, cautions };
+    if (pain.length) cautions.push(t('suggest.caution.pain', { areas: and(pain.map(areaName)) }));
+    // painful: carga una zona con dolor (decide "bajar la dosis" sin mirar el texto, que cambia con el idioma)
+    return { ok: blocks.length === 0, blocks, cautions, painful: pain.length > 0 };
   }
 
   /** Alternativas que encajan con el perfil, del mismo tema y que trabajan los mismos músculos, mejor primero. */
@@ -120,9 +115,8 @@
     const push = (s) => { if (!out.some((x) => x.id === s.id)) out.push(s); };
 
     if (profileEmpty(profile)) {
-      push({ id: 'profile-missing', kind: 'info', priority: 3, title: 'Perfil del paciente sin completar',
-        detail: 'Con sus limitaciones físicas y zonas con dolor, las sugerencias adaptan los ejercicios. Puede completarlo el paciente en su página o tú aquí.',
-        because: 'El perfil está vacío.' });
+      push({ id: 'profile-missing', kind: 'info', priority: 3, title: t('suggest.profileMissing.title'),
+        detail: t('suggest.profileMissing.detail'), because: t('suggest.profileMissing.because') });
     }
 
     // Molestias que el paciente reportó en los últimos 14 días (ADR-021): una propuesta por ejercicio, que el fisioterapeuta revisa.
@@ -130,21 +124,21 @@
     const symptomsBy = {};
     recentSymptoms.forEach((x) => { (symptomsBy[x.exercise_id || ''] = symptomsBy[x.exercise_id || ''] || []).push(x); });
     Object.entries(symptomsBy).forEach(([id, list]) => {
-      const cats = [...new Set(list.map((x) => SYMPTOM_CATEGORY[x.category] || 'otra molestia'))].join(', ');
+      const cats = [...new Set(list.map((x) => categoryName(x.category)))].join(', ');
       const stopped = list.filter((x) => x.action === 'session_stopped').length;
-      const because = `${list.length} molestia(s) en 14 días (${cats})${stopped ? `; ${stopped} detuvo la sesión` : ''}.`;
+      const because = tn('suggest.discomfort.because', list.length, { cats, stopped: stopped ? t('suggest.discomfort.stopped', { n: stopped }) : '' });
       const priority = list.length >= 2 || list.some((x) => x.kind === 'red_flag') ? 1 : 2;
       if (!id) {
-        push({ id: 'discomfort-general', kind: 'review', priority: 2, title: 'El paciente refirió molestias fuera de un ejercicio',
-          detail: 'Hablar con el paciente antes de subir la exigencia.', because });
+        push({ id: 'discomfort-general', kind: 'review', priority: 2, title: t('suggest.discomfort.general.title'),
+          detail: t('suggest.discomfort.general.detail'), because });
         return;
       }
       const item = plan.find((p) => p.exercise_id === id);
       const reps = item ? Math.max(1, Math.round(item.reps * 0.7)) : null;
       const lower = item && reps < item.reps;               // con 1 repetición no hay qué bajar: solo hablar con el paciente
-      push({ id: `discomfort-${id}`, kind: 'dose', priority, title: `Revisar ${exName(id)}: refirió molestias`,
-        detail: lower ? `Proponer ${reps} repeticiones en vez de ${item.reps}, o un rango menor, y hablar con el paciente.`
-          : item ? 'Hablar con el paciente y revisar la dosis o el ejercicio.' : 'Hablar con el paciente antes de volver a indicarlo.',
+      push({ id: `discomfort-${id}`, kind: 'dose', priority, title: t('suggest.discomfort.title', { name: exName(id) }),
+        detail: lower ? t('suggest.discomfort.lower', { reps, old: item.reps })
+          : item ? t('suggest.discomfort.review') : t('suggest.talkBefore'),
         because, action: lower ? { type: 'dose', exercise_id: id, field: 'reps', value: reps } : undefined });
     });
 
@@ -158,18 +152,17 @@
       if (!f.ok) {
         const alt = alternatives(item.exercise_id, profile, inPlan)[0];
         push({ id: `swap-${item.exercise_id}`, kind: 'swap', priority: 1,
-          title: alt ? `Cambiar ${name} por ${exName(alt)}` : `Quitar ${name} del plan`,
-          detail: alt ? `${exName(alt)} trabaja músculos parecidos y encaja con su perfil.`
-            : 'No hay en el catálogo una alternativa que encaje con su perfil y trabaje los mismos músculos.',
-          because: `${name} ${f.blocks.join(' y ')}, y el paciente indicó que no puede.`,
+          title: alt ? t('suggest.swap.title', { name, alt: exName(alt) }) : t('suggest.remove.title', { name }),
+          detail: alt ? t('suggest.swap.detail', { alt: exName(alt) }) : t('suggest.remove.detail'),
+          because: t('suggest.swap.because', { name, blocks: and(f.blocks) }),
           action: alt ? { type: 'swap', from: item.exercise_id, to: alt } : { type: 'remove', exercise_id: item.exercise_id } });
       } else if (f.cautions.length && !byExercise[item.exercise_id]) {
-        const painful = f.cautions.some((c) => c.includes('dolor'));
+        const painful = f.painful;
         push({ id: `caution-${item.exercise_id}`, kind: painful ? 'dose' : 'safety', priority: 2,
-          title: painful ? `Bajar la dosis de ${name}` : `Precaución en ${name}`,
-          detail: painful ? `Proponer ${Math.max(1, Math.round(item.reps * 0.7))} repeticiones en vez de ${item.reps} y revisar su respuesta.`
-            : 'Indicarle un apoyo firme (mesa o respaldo) y, las primeras veces, alguien cerca.',
-          because: `${name} ${f.cautions.join('; ')}.`,
+          title: painful ? t('suggest.caution.doseTitle', { name }) : t('suggest.caution.title', { name }),
+          detail: painful ? t('suggest.caution.doseDetail', { reps: Math.max(1, Math.round(item.reps * 0.7)), old: item.reps })
+            : t('suggest.caution.detail'),
+          because: t('suggest.caution.because', { name, cautions: f.cautions.join('; ') }),
           action: painful ? { type: 'dose', exercise_id: item.exercise_id, field: 'reps', value: Math.max(1, Math.round(item.reps * 0.7)) } : undefined });
       }
     });
@@ -177,10 +170,9 @@
     Object.entries(byExercise).forEach(([id, n]) => {
       const item = plan.find((p) => p.exercise_id === id);
       const extra = fit(id, profile).cautions;
-      push({ id: `pain-${id}`, kind: 'dose', priority: 1, title: `Revisar ${exName(id)}: se detuvo por dolor`,
-        detail: item ? `Proponer ${Math.max(1, Math.round(item.reps * 0.7))} repeticiones en vez de ${item.reps}, o un rango menor, y hablar con el paciente antes de la próxima sesión.`
-          : 'Hablar con el paciente antes de volver a indicarlo.',
-        because: `${n} sesión(es) de ${exName(id)} terminaron con "dolor: detener"${extra.length ? `; además ${extra.join('; ')}` : ''}.`,
+      push({ id: `pain-${id}`, kind: 'dose', priority: 1, title: t('suggest.pain.title', { name: exName(id) }),
+        detail: item ? t('suggest.pain.detail', { reps: Math.max(1, Math.round(item.reps * 0.7)), old: item.reps }) : t('suggest.talkBefore'),
+        because: tn('suggest.pain.because', n, { name: exName(id), extra: extra.length ? t('suggest.pain.extra', { list: extra.join('; ') }) : '' }),
         action: item ? { type: 'dose', exercise_id: id, field: 'reps', value: Math.max(1, Math.round(item.reps * 0.7)) } : undefined });
     });
 
@@ -190,53 +182,51 @@
         const weekOld = item && item.since && (now - Date.parse(item.since)) >= 7 * 864e5;   // recién indicado: todavía no se juzga
         if (item && weekOld && x.ratio != null && x.ratio < 0.5 && item.per_week > 2 && !out.some((o) => o.id === `swap-${x.exercise_id}`)) {
           const value = Math.max(2, Math.ceil(item.per_week / 2));
-          push({ id: `adherence-${x.exercise_id}`, kind: 'plan', priority: 2, title: `${exName(x.exercise_id)}: menos veces por semana`,
-            detail: `Proponer ${value} veces por semana en vez de ${item.per_week}: un plan que cumple es mejor que uno ideal que no.`,
-            because: `Hizo ${x.done_7d} de ${x.per_week} sesiones en los últimos 7 días.`,
+          push({ id: `adherence-${x.exercise_id}`, kind: 'plan', priority: 2, title: t('suggest.adherence.title', { name: exName(x.exercise_id) }),
+            detail: t('suggest.adherence.detail', { value, old: item.per_week }),
+            because: t('suggest.adherence.because', { done: x.done_7d, per: x.per_week }),
             action: { type: 'dose', exercise_id: x.exercise_id, field: 'per_week', value } });
         }
         const first = x.camera_first;
         const last = x.camera_last;
         if (first && last && x.camera_sessions >= 2 && first.peak && last.peak && last.peak < first.peak * 0.85) {
-          push({ id: `range-${x.exercise_id}`, kind: 'review', priority: 2, title: `${exName(x.exercise_id)}: el recorrido bajó`,
-            detail: 'Preguntar por dolor o cansancio y revisar la técnica antes de subir la exigencia.',
-            because: `Recorrido medio: ${first.peak} en la primera sesión con cámara y ${last.peak} en la última.` });
+          push({ id: `range-${x.exercise_id}`, kind: 'review', priority: 2, title: t('suggest.range.title', { name: exName(x.exercise_id) }),
+            detail: t('suggest.range.detail'),
+            because: t('suggest.range.because', { first: first.peak, last: last.peak }) });
         }
       });
     }
 
     const count = (type) => events.filter((e) => e.type === type).length;
-    const addFor = (type, ids, why) => {
+    const addFor = (type, ids) => {
       const n = count(type);
       if (n < 2) return;
       const pick = ids.filter((id) => !inPlan.includes(id) && fit(id, profile).ok);
       if (!pick.length) return;
-      push({ id: `add-${type}`, kind: 'exercise', priority: 2, title: `Agregar ${exName(pick[0])}`,
-        detail: why, because: `${n} alertas de ${type === 'knee_valgus' ? 'valgo de rodilla' : 'flexión de tronco'} en sus sesiones recientes.`,
+      push({ id: `add-${type}`, kind: 'exercise', priority: 2, title: t('suggest.add.title', { name: exName(pick[0]) }),
+        detail: t(`suggest.add.why.${type}`), because: t('suggest.add.because', { n, type: t(`suggest.add.type.${type}`) }),
         action: { type: 'add', exercise_ids: [pick[0]] } });
     };
-    addFor('knee_valgus', ['clamshell', 'hip-abduction', 'half-squat'],
-      'Fortalece el glúteo medio, que ayuda a que la rodilla no se vaya hacia adentro. Elegido entre los que encajan con su perfil.');
-    addFor('trunk_flexion', ['hip-bridge', 'abdominal-bracing', 'seated-trunk-rotation'],
-      'Trabaja glúteos y control del tronco, para pararse sin inclinarse tanto. Elegido entre los que encajan con su perfil.');
+    addFor('knee_valgus', ['clamshell', 'hip-abduction', 'half-squat']);           // glúteo medio: la rodilla no se va adentro
+    addFor('trunk_flexion', ['hip-bridge', 'abdominal-bracing', 'seated-trunk-rotation']);   // glúteos y control del tronco
 
     if (!plan.length && !profileEmpty(profile)) {
       const starters = ['sit-to-stand', 'leg-extension', 'calf-raises', 'chin-retraction', 'seated-trunk-rotation', 'hip-bridge', 'tandem-stance']
         .filter((id) => fit(id, profile).ok && !fit(id, profile).cautions.length).slice(0, 3);
       if (starters.length) {
-        push({ id: 'starter', kind: 'plan', priority: 2, title: 'Plan inicial que encaja con su perfil',
-          detail: starters.map(exName).join(', ') + '.', because: 'El plan está vacío y el perfil tiene limitaciones marcadas.',
+        push({ id: 'starter', kind: 'plan', priority: 2, title: t('suggest.starter.title'),
+          detail: starters.map(exName).join(', ') + '.', because: t('suggest.starter.because'),
           action: { type: 'add', exercise_ids: starters } });
       }
     }
     if (has(profile, 'low_vision') || has(profile, 'hearing')) {
-      push({ id: 'access', kind: 'access', priority: 3, title: 'Cómo darle las indicaciones',
-        detail: has(profile, 'low_vision') ? 'Prefiere voz y letra grande: recomiéndale activar la voz y usar pantalla completa.'
-          : 'Prefiere texto: los avisos de la sesión también aparecen escritos en grande.',
-        because: 'Lo indicó en su perfil.' });
+      push({ id: 'access', kind: 'access', priority: 3, title: t('suggest.access.title'),
+        detail: has(profile, 'low_vision') ? t('suggest.access.lowVision') : t('suggest.access.hearing'),
+        because: t('suggest.access.because') });
     }
     if (profile && profile.note) {
-      push({ id: 'note', kind: 'info', priority: 3, title: 'Nota del paciente', detail: `«${profile.note}»`, because: 'La escribió en su perfil.' });
+      push({ id: 'note', kind: 'info', priority: 3, title: t('suggest.note.title'), detail: t('suggest.note.detail', { note: profile.note }),
+        because: t('suggest.note.because') });
     }
     return out.sort((a, b) => a.priority - b.priority);
   }
@@ -251,42 +241,43 @@
     const out = [];
     const push = (id, kind, text) => out.push({ id, kind, text });
     if (ctx.page === 'patient') {
-      if (profileEmpty(profile)) push('profile', 'setup', 'Completa "Mi perfil" (tus limitaciones y dónde te duele): tu fisioterapeuta podrá adaptar tus ejercicios.');
+      if (profileEmpty(profile)) push('profile', 'setup', t('suggest.user.profile'));
       const plan = ctx.plan || [];
       const blocked = plan.filter((p) => !fit(p.exercise_id, profile).ok);
-      blocked.forEach((p) => push(`talk-${p.exercise_id}`, 'safety', `"${exName(p.exercise_id)}" ${fit(p.exercise_id, profile).blocks.join(' y ')}, y en tu perfil indicaste que no puedes: coméntaselo a tu fisioterapeuta antes de hacerlo.`));
-      const pending = plan.filter((p) => (p.done_7d || 0) < p.per_week && fit(p.exercise_id, profile).ok)
+      blocked.forEach((p) => push(`talk-${p.exercise_id}`, 'safety',
+        t('suggest.user.talk', { name: exName(p.exercise_id), blocks: and(fit(p.exercise_id, profile).blocks) })));
+      // Con la agenda del día (care-plan.js, ADR-025) cada ejercicio trae `due`: solo se sugiere lo que toca hoy.
+      const pending = plan.filter((p) => (p.done_7d || 0) < p.per_week && p.due !== false && fit(p.exercise_id, profile).ok)
         .sort((a, b) => (a.done_7d / a.per_week) - (b.done_7d / b.per_week));
-      if (pending.length) push('next', 'plan', `Hoy te conviene "${exName(pending[0].exercise_id)}": llevas ${pending[0].done_7d || 0} de ${pending[0].per_week} esta semana.`);
-      else if (plan.length) push('done', 'plan', '¡Cumpliste todo tu plan de esta semana! Descansar también es parte del tratamiento.');
+      if (pending.length) push('next', 'plan', t('suggest.user.next', { name: exName(pending[0].exercise_id), done: pending[0].done_7d || 0, per: pending[0].per_week }));
+      else if (plan.length && plan.every((p) => (p.done_7d || 0) >= p.per_week)) push('done', 'plan', t('suggest.user.done'));
       const limited = plan.find((p) => NEEDS[p.exercise_id] && NEEDS[p.exercise_id].floor && fit(p.exercise_id, profile).ok);
-      if (limited) push('camera', 'camera', `"${exName(limited.exercise_id)}" se hace en el suelo: pon la cámara a la altura del suelo y de lado para que te vea entero.`);
+      if (limited) push('camera', 'camera', t('suggest.user.floorCamera', { name: exName(limited.exercise_id) }));
     }
     if (ctx.page === 'gallery') {
-      push('hover', 'ui', 'Pasa el mouse o toca una figura para verla en movimiento.');
-      if (!profileEmpty(profile)) push('fit', 'ui', 'Marcamos los ejercicios que no encajan con lo que indicaste en tu perfil. Igual, tu fisioterapeuta decide.');
-      else if (ctx.signedIn) push('fit', 'setup', 'Si completas "Mi perfil", aquí te marcaremos los ejercicios que no encajan con tus limitaciones.');
+      push('hover', 'ui', t('suggest.user.hover'));
+      if (!profileEmpty(profile)) push('fit', 'ui', t('suggest.user.fit'));
+      else if (ctx.signedIn) push('fit', 'setup', t('suggest.user.fitSetup'));
     }
     if (ctx.page === 'session' && ctx.session) {
       const s = ctx.session;
-      if (s.partials >= 2) push('partials', 'technique', `${s.partials} repeticiones quedaron a medias: intenta llegar a llenar la barra. Si no llegas sin dolor, díselo a tu fisioterapeuta.`);
-      if (s.shortHolds >= 1) push('holds', 'technique', 'Algunos sostenes se cortaron antes de tiempo: mantén la posición hasta que la cuenta llegue a 0.');
-      if (s.lowConfidenceRatio > 0.2) push('light', 'camera', 'La cámara no te vio bien parte del tiempo: más luz, ropa que contraste con el fondo y todo el cuerpo a la vista.');
-      if (s.view && s.recommended && s.view !== s.recommended) push('view', 'camera', 'La próxima vez prueba con la cámara en la posición recomendada: se mide mejor.');
-      if (s.total && s.count >= s.total) push('well', 'plan', '¡Completaste la sesión! Tu fisioterapeuta ya tiene tus repeticiones.');
+      if (s.partials >= 2) push('partials', 'technique', t('suggest.user.partials', { n: s.partials }));
+      if (s.shortHolds >= 1) push('holds', 'technique', t('suggest.user.holds'));
+      if (s.lowConfidenceRatio > 0.2) push('light', 'camera', t('suggest.user.light'));
+      if (s.view && s.recommended && s.view !== s.recommended) push('view', 'camera', t('suggest.user.view'));
+      if (s.total && s.count >= s.total) push('well', 'plan', t('suggest.user.well'));
     }
-    if (has(profile, 'low_vision')) push('voice', 'access', 'Activa la voz y usa pantalla completa (⛶): las indicaciones se leen en voz alta y en grande.');
-    if (has(profile, 'hearing')) push('text', 'access', 'Todas las indicaciones aparecen escritas en grande sobre el video; puedes desactivar la voz.');
-    if (has(profile, 'balance') || has(profile, 'walking_aid')) push('support', 'safety', 'Haz los ejercicios de pie junto a una mesa o respaldo firme, y con alguien cerca las primeras veces.');
+    if (has(profile, 'low_vision')) push('voice', 'access', t('suggest.user.voice'));
+    if (has(profile, 'hearing')) push('text', 'access', t('suggest.user.text'));
+    if (has(profile, 'balance') || has(profile, 'walking_aid')) push('support', 'safety', t('suggest.user.support'));
     return out;
   }
 
   // ------------------------------------------------------------------ componentes (design system §6)
   let uid = 0;
   const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-  const KIND = { swap: 'Cambio de ejercicio', dose: 'Dosis', safety: 'Precaución', plan: 'Plan', exercise: 'Ejercicio nuevo',
-    review: 'Revisar', access: 'Accesibilidad', info: 'Dato', setup: 'Configura', ui: 'Uso', camera: 'Cámara',
-    technique: 'Técnica' };
+  const KINDS = ['swap', 'dose', 'safety', 'plan', 'exercise', 'review', 'access', 'info', 'setup', 'ui', 'camera', 'technique'];
+  const kindName = (k) => t(`suggest.kind.${KINDS.includes(k) ? k : 'default'}`);
 
   /**
    * Lista de sugerencias (.suggest). opts: { title, note, empty, actionLabel, onAction(item) }.
@@ -295,31 +286,32 @@
   function renderList(container, items, opts = {}) {
     if (!container || typeof document === 'undefined') return;
     const id = `suggest-${++uid}`;
-    container.innerHTML = '';
+    container.replaceChildren();
     const box = node('section', 'suggest');
     box.setAttribute('aria-labelledby', id);
-    const head = node('h2', 'suggest-title', opts.title || 'Sugerencias');
+    const head = node('h2', 'suggest-title', opts.title || t('suggest.list.title'));
     head.id = id;
     box.appendChild(head);
     if (opts.note) box.appendChild(node('p', 'suggest-note', opts.note));
     const live = node('div');
     live.setAttribute('aria-live', 'polite');
-    if (!items.length) live.appendChild(node('p', 'muted', opts.empty || 'Por ahora no hay sugerencias.'));
+    if (!items.length) live.appendChild(node('p', 'muted', opts.empty || t('suggest.list.empty')));
     else {
       const list = node('ul', 'suggest-list');
       items.forEach((s) => {
         const li = node('li', 'suggest-item');
         li.dataset.kind = s.kind;
         if (s.priority) li.dataset.priority = String(s.priority);
-        const top = node('p', 'suggest-kind', `${KIND[s.kind] || 'Sugerencia'}${s.priority === 1 ? ' · prioridad alta' : ''}`);
+        const top = node('p', 'suggest-kind', `${kindName(s.kind)}${s.priority === 1 ? t('suggest.list.highPriority') : ''}`);
         li.appendChild(top);
         if (s.title) li.appendChild(node('p', 'suggest-head', s.title));
         li.appendChild(node('p', 'suggest-text', s.detail || s.text));
-        if (s.because) li.appendChild(node('p', 'suggest-why', `Por qué: ${s.because}`));
+        if (s.because) li.appendChild(node('p', 'suggest-why', t('suggest.list.because', { because: s.because })));
         if (s.action && opts.onAction) {
-          const b = node('button', 'btn', opts.actionLabel || 'Aplicar');
+          const label = opts.actionLabel || t('suggest.list.apply');
+          const b = node('button', 'btn', label);
           b.type = 'button';
-          b.setAttribute('aria-label', `${opts.actionLabel || 'Aplicar'}: ${s.title || s.text}`);
+          b.setAttribute('aria-label', t('suggest.list.actionAria', { label, title: s.title || s.text }));
           b.addEventListener('click', () => opts.onAction(s));
           li.appendChild(b);
         }
@@ -340,7 +332,7 @@
     const me = opts.who !== 'therapist';
     const p = profile || { limitations: [], pain_areas: [], note: null };
     const n = ++uid;
-    container.innerHTML = '';
+    container.replaceChildren();
     const form = node('form', 'profile-form');
     form.noValidate = true;
     const group = (legend, options, chosen, name) => {
@@ -355,18 +347,18 @@
       });
       return fs;
     };
-    form.append(group(me ? 'Lo que no puedo hacer o me cuesta' : 'Limitaciones', LIMITS, p.limitations, 'limitations'),
-      group(me ? '¿Dónde te duele?' : 'Zonas con dolor', PAIN_AREAS, p.pain_areas, 'pain_areas'));
+    form.append(group(me ? t('suggest.profile.limitsMe') : t('suggest.profile.limits'), LIMITS, p.limitations, 'limitations'),
+      group(me ? t('suggest.profile.painMe') : t('suggest.profile.pain'), PAIN_AREAS, p.pain_areas, 'pain_areas'));
     const field = node('div', 'field');
-    const lab = node('label', null, me ? 'Otra limitación (opcional)' : 'Nota (opcional)');
+    const lab = node('label', null, me ? t('suggest.profile.otherMe') : t('suggest.profile.note'));
     lab.htmlFor = `profile-note-${n}`;
     const note = document.createElement('textarea');
     Object.assign(note, { id: `profile-note-${n}`, maxLength: 200, rows: 2, value: p.note || '' });
     note.setAttribute('aria-describedby', `profile-note-hint-${n}`);
-    const hint = node('p', 'hint', 'Hasta 200 caracteres. Sin nombres ni datos que te identifiquen.');
+    const hint = node('p', 'hint', t('suggest.profile.hint'));
     hint.id = `profile-note-hint-${n}`;
     field.append(lab, note, hint);
-    const save = node('button', 'btn primary', 'Guardar perfil');
+    const save = node('button', 'btn primary', t('suggest.profile.save'));
     save.type = 'submit';
     const status = node('p', 'status-line');
     status.setAttribute('role', 'status');
@@ -375,12 +367,12 @@
       ev.preventDefault();
       const pick = (name) => [...form.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
       save.disabled = true;
-      status.textContent = 'Guardando…';
+      status.textContent = t('suggest.profile.saving');
       try {
         await onSave({ limitations: pick('limitations'), pain_areas: pick('pain_areas'), note: note.value.trim() || null });
-        status.textContent = me ? 'Guardado. Tu fisioterapeuta ya lo ve.' : 'Guardado.';
+        status.textContent = me ? t('suggest.profile.savedMe') : t('suggest.profile.saved');
       } catch (err) {
-        status.textContent = `No se pudo guardar: ${err.message}`;
+        status.textContent = t('suggest.profile.error', { error: err.message });
       } finally {
         save.disabled = false;
       }

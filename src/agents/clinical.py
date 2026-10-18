@@ -40,7 +40,7 @@ def build_messages(utterance: str, ctx: dict, *, discomfort_reported: bool = Fal
         "sobre_de_seguridad": ctx.get("envelope", {}),
         "ultimas_repeticiones": ctx.get("recent_reps", [])[-5:],
     }
-    if allowed is not None:                                 # lo que la pantalla del paciente sabe aplicar (ADR-025)
+    if allowed is not None:                                 # lo que la pantalla del paciente sabe aplicar (ADR-033)
         context["parametros_que_puedes_ajustar"] = sorted(allowed)
     user = f"Contexto de la sesión:\n{json.dumps(context, ensure_ascii=False, separators=(",", ":"))}\n\nEl paciente dijo: «{utterance}»"
     if discomfort_reported:
@@ -51,7 +51,7 @@ def build_messages(utterance: str, ctx: dict, *, discomfort_reported: bool = Fal
 def propose(llm, utterance: str, ctx: dict, *, discomfort_reported: bool = False, allowed: set[str] | None = None) -> dict:
     """Pide una propuesta al LLM y la valida; ante una molestia, el motor de reglas respalda al LLM (ADR-021).
     `discomfort_reported` marca el turno del formulario «Tengo una molestia» aunque el texto no traiga una palabra de
-    molestia, y `allowed` limita los parámetros a los que la pantalla puede aplicar (ADR-025).
+    molestia, y `allowed` limita los parámetros a los que la pantalla puede aplicar (ADR-033).
     Devuelve la decisión (forma de `agent_decision`) más tiempos y texto crudo."""
     return _protect(_ask(llm, utterance, ctx, discomfort_reported, allowed), utterance, ctx, discomfort_reported, allowed)
 

@@ -27,8 +27,8 @@ pila ya está lista para encenderse (ADR-016).
 | Descanso recomendado entre series, que se puede saltar o alargar (ADR-022) | ✅ prototipo |
 | Panel del fisioterapeuta en la nube | ⏳ hackathon |
 | IA con AMD Token Factory (agentes, resumen para el fisioterapeuta) | ✅ verificado con la clave del equipo |
-| Agente clínico en el flujo del paciente, con texto: propone una baja dentro del sobre, las reglas la validan y la pantalla dice qué modelo de AMD respondió y en cuánto, o que respondieron las reglas (ADR-025) | ✅ prototipo (Staging; la voz queda en TD-105) |
-| Privacidad antes de la IA: se ocultan correos, teléfonos, documentos, direcciones y nombres antes de enviar el texto al asistente de AMD, y se guarda lo mismo que se envía (ADR-026) | ✅ prototipo (Staging) |
+| Agente clínico en el flujo del paciente, con texto: propone una baja dentro del sobre, las reglas la validan y la pantalla dice qué modelo de AMD respondió y en cuánto, o que respondieron las reglas (ADR-033) | ✅ prototipo (Staging; la voz queda en TD-120) |
+| Privacidad antes de la IA: se ocultan correos, teléfonos, documentos, direcciones y nombres antes de enviar el texto al asistente de AMD, y se guarda lo mismo que se envía (ADR-034) | ✅ prototipo (Staging) |
 | Inicio de sesión con Google, roles y Administrador maestro | ✅ verificado con el Administrador real |
 | Despliegue en la nube de AMD (Docker + HTTPS) y web en Vercel | ✅ listo para publicar ([`config/deploy/`](config/deploy/README.md), TD-71) |
 
@@ -62,9 +62,9 @@ datos, decisiones (ADRs, hasta el ADR-022 aceptado) y pendientes. Los agentes de
 
 ## Licencias
 
-El código de AXONFAS todavía no tiene archivo de licencia: la regla de la entrega pide que sea compatible con MIT y el
-owner decide si se agrega `LICENSE` (MIT) en la raíz. Estas son las licencias de lo que usa el proyecto (según la ficha
-de cada modelo o proyecto, revisado 2026-10-17; pendiente de confirmar en las fichas oficiales, TD-26):
+El código de AXONFAS se publica con licencia MIT ([LICENSE](LICENSE), desde el 2026-10-18; la regla de la entrega pide
+que sea compatible con MIT). Estas son las licencias de lo que usa el proyecto (según la ficha de cada modelo o
+proyecto, revisado 2026-10-17; pendiente de confirmar en las fichas oficiales, TD-26):
 
 | Componente | Para qué | Licencia | Dónde |
 |---|---|---|---|

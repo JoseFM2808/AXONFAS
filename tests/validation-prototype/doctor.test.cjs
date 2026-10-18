@@ -1,5 +1,7 @@
 // Lectura estática del panel del fisioterapeuta (ADR-012, ADR-021).
 //   node --test "tests/validation-prototype/*.test.cjs"
+// Los textos viven en el diccionario (i18n/clinic.js, ADR-030): estos tests revisan que doctor.js use la clave y que el
+// texto diga lo que tiene que decir en español y, en lo de seguridad o legal, también en inglés.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,35 +9,59 @@ const path = require('node:path');
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'frontend', 'validation-prototype');
 const js = fs.readFileSync(path.join(SRC, 'doctor.js'), 'utf8');
+const I = require(path.join(SRC, 'i18n.js'));
+/** Texto de una clave en un idioma. */
+const say = (key, lang = 'es') => { I.use(lang); const s = I.t(key); I.use('es'); assert.notEqual(s, key, `falta ${key} (${lang})`); return s; };
+/** doctor.js usa la clave como literal. */
+const uses = (key) => js.includes(`t('${key}'`) || js.includes(`tn('${key}'`);
 
 test('el editor del plan tiene el rango de rodilla opcional del sobre (ADR-021)', () => {
   assert.ok(js.includes("'rom_min'") && js.includes("'rom_max'"));
-  assert.ok(js.includes('deja los dos vacíos'));
+  assert.ok(uses('doctor.plan.incompleteRange'));
+  assert.ok(say('doctor.plan.incompleteRange').includes('deja los dos vacíos'));
+  assert.ok(say('doctor.plan.incompleteRange', 'en').includes('leave both empty'));
 });
 
 const html = fs.readFileSync(path.join(SRC, 'doctor.html'), 'utf8');
 
-test('la nota SOAP tiene su sección accesible y la tabla de sesiones 7 columnas (TD-09)', () => {
+test('la nota SOAP tiene su sección accesible y la tabla de sesiones 8 columnas (TD-09, ADR-025)', () => {
   assert.match(html, /<section[^>]*id="soap-card"[^>]*aria-labelledby="soap-title"/);
   assert.match(html, /id="soap-status"[^>]*role="status"|role="status"[^>]*id="soap-status"/);
   assert.match(html, /<button[^>]*id="soap-approve"[^>]*>\s*\S[^<]*<\/button>/);
-  const sessions = html.match(/<thead><tr>((?:<th>[^<]*<\/th>)+)<\/tr><\/thead>\s*<tbody id="p-sessions">/);
-  assert.equal(sessions[1].match(/<th>/g).length, 7);
+  const sessions = html.match(/<thead><tr>((?:<th\b[^>]*>[^<]*<\/th>)+)<\/tr><\/thead>\s*<tbody id="p-sessions">/);
+  assert.equal(sessions[1].match(/<th\b/g).length, 8);
+  assert.ok(sessions[1].includes('Dolor (EVA)'), 'respaldo en español sin JS');
+  assert.ok(sessions[1].includes('data-i18n="doctor.th.pain"'));
+  assert.equal(say('doctor.th.pain'), 'Dolor (EVA)');
+  assert.match(say('doctor.th.pain', 'en'), /VAS/);
+  assert.ok(js.includes('td.colSpan = 8'), 'la fila vacía ocupa las 8 columnas');
 });
 
 test('la nota dice que es borrador y no menciona la IA si no la redactó el LLM (I-8, TD-34)', () => {
-  assert.ok(js.includes('Borrador sin firmar'));
-  assert.ok(js.includes('sin IA'));
+  assert.ok(uses('doctor.soap.unsigned') && say('doctor.soap.unsigned').includes('Borrador sin firmar'));
+  assert.match(say('doctor.soap.unsigned', 'en'), /Unsigned draft/);
+  assert.match(say('doctor.soap.notRecord'), /No es un registro clínico hasta que lo firmes/);
+  assert.match(say('doctor.soap.notRecord', 'en'), /not a clinical record until you sign it/);
+  assert.ok(uses('doctor.soap.byTemplate') && say('doctor.soap.byTemplate').includes('sin IA'));
+  assert.ok(say('doctor.soap.byTemplate', 'en').includes('no AI'));
   assert.ok(js.includes('/report/approve'));
-  const line = js.split('\n').find((l) => l.includes('propuso la IA'));
-  assert.ok(line && line.includes("'llm'"), 'el texto de la IA debe ir en la misma condición que source === llm');
-  assert.equal(js.split('\n').filter((l) => l.includes('propuso la IA')).length, 1);
+  // El aviso de la IA está en un solo lugar y en la misma condición que source === 'llm'.
+  const lines = js.split('\n').filter((l) => l.includes("'doctor.soap.byAi'"));
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].includes("'llm'"), 'el texto de la IA debe ir en la misma condición que source === llm');
+  assert.ok(say('doctor.soap.byAi').includes('propuso la IA') && /\bAI\b/.test(say('doctor.soap.byAi', 'en')));
+  for (const k of I.keys('es').filter((x) => x.startsWith('doctor.soap.') && x !== 'doctor.soap.byAi')) {
+    assert.ok(!/propuso la IA/.test(say(k)), `${k} no atribuye la nota a la IA`);
+  }
 });
 
 test('el panel descarga la Observation FHIR con el token en la cabecera (TD-10)', () => {
   assert.ok(js.includes('/fhir'));
   assert.ok(js.includes('application/fhir+json'));
-  assert.ok(js.includes('preliminary'));
+  for (const k of ['doctor.soap.preliminary', 'doctor.soap.obsPrelim', 'doctor.soap.docPrelim']) {
+    assert.ok(uses(k), k);
+    assert.ok(say(k).includes('preliminary') && say(k, 'en').includes('preliminary'), `${k}: el estado FHIR se nombra igual`);
+  }
   assert.match(html, /id="soap-fhir"/);
 });
 
@@ -54,47 +80,103 @@ test('la nota abierta se vacía al cambiar de paciente, al cerrar o si falla la 
 });
 
 test('un código nuevo vuelve a pedir el consentimiento y el panel lo dice (TD-85)', () => {
-  assert.ok(js.includes('el consentimiento se vuelve a pedir'));
-  assert.ok(js.includes('Sin consentimiento'));
+  assert.ok(uses('doctor.status.waiting') && uses('doctor.card.noConsent'));
+  assert.ok(say('doctor.status.waiting').includes('el consentimiento se vuelve a pedir'));
+  assert.ok(say('doctor.status.waiting', 'en').includes('consent is requested again'));
+  assert.equal(say('doctor.card.noConsent'), 'Sin consentimiento');
+  assert.equal(say('doctor.card.noConsent', 'en'), 'No consent');
 });
 
 test('el panel muestra y anuncia las molestias del paciente (ADR-021)', () => {
   assert.ok(html.includes('p-symptoms-title'));
   assert.match(html, /id="p-symptom-alert"[^>]*role="status"|role="status"[^>]*id="p-symptom-alert"/);
   assert.ok(js.includes('symptom_reported'));
-  assert.ok(js.includes('Molestias 30 días'));
+  assert.ok(js.includes("kpi(t('doctor.kpi.discomfort')"));
+  assert.equal(say('doctor.kpi.discomfort'), 'Molestias 30 días');
   assert.ok(js.includes("setAttribute('role', 'alert')"));
+  assert.match(say('doctor.symptom.alarmIn', 'en'), /^Red flag in \{exercise\}\. The session was stopped\.$/);
 });
 
 test('el aviso de alarma no repite "señal de alarma" dos veces', () => {
   assert.ok(!js.includes('`Señal de alarma: ${what}'));
+  assert.ok(!js.includes("t('doctor.symptom.alarmIn', { what"), 'la alarma nombra el ejercicio, no la categoría (que ya es "señal de alarma")');
+  for (const l of ['es', 'en']) assert.equal((say('doctor.symptom.alarmIn', l).match(/alarma|red flag/gi) || []).length, 1, l);
 });
 
-// ---------------------------------------------------------------- decisiones del agente (ADR-025)
+test('el editor del plan tiene la meta de recorrido y su límite para la galería (ADR-025, TD-99)', () => {
+  assert.ok(js.includes("'goal_target'") && js.includes("'goal_limit'"));
+  assert.ok(js.includes('item.range_goal = { target: Number(goalTarget), limit: Number(goalLimit) }'));
+  assert.ok(uses('doctor.plan.incompleteGoal') && say('doctor.plan.incompleteGoal').includes('o deja los dos vacíos'));
+  assert.ok(js.includes("spec.mode !== 'manual'"), 'los ejercicios que la cámara no ve no llevan meta');
+  for (const k of ['doctor.goal.hint', 'doctor.goal.hintLower']) {
+    assert.ok(js.includes(`'${k}'`), k);
+    assert.ok(say(k).includes('no es una alerta'), `${k}: el texto deja claro que el límite no es una alerta (I-12)`);
+    assert.ok(say(k, 'en').includes('it is not an alert'), `${k} (en)`);
+  }
+});
+
+test('el panel muestra el dolor al terminar y lo recibe en vivo (ADR-025, TD-100)', () => {
+  assert.ok(js.includes("kpi(t('doctor.kpi.pain')"));
+  assert.equal(say('doctor.kpi.pain'), 'Dolor al terminar (EVA)');
+  assert.ok(js.includes("msg.kind === 'pain_scored'"));
+  assert.ok(js.includes('s.pain_score'));
+  assert.ok(uses('doctor.cam.over'));
+  assert.ok(say('doctor.cam.over').includes('sobre el límite') && say('doctor.cam.over', 'en').includes('over the limit'));
+});
+
+test('el aviso de sesión sin cámara dice lo mismo que la nota SOAP (TD-111) y el panel sigue el idioma (ADR-030)', () => {
+  const soap = js.match(/const NO_CAMERA_NOTE_SOAP = '([^']+)'/)[1];
+  assert.equal(say('doctor.nocam'), soap, 'en español, el mismo texto que escribe agents/soap.py');
+  assert.match(say('doctor.nocam', 'en'), /without a camera/);
+  assert.ok(!/toLocale(?:Date|Time)?String\('es-PE'/.test(js), 'fechas con I18N.locale()');
+  assert.ok(js.includes('I18N.locale()'));
+});
+
+// ---------------------------------------------------------------- decisiones del agente (ADR-033)
+const I18N = require(path.join(SRC, 'i18n.js'));
+
 test('el panel tiene la sección «Decisiones del agente» con nombre accesible y recibe el turno en vivo', () => {
-  assert.match(html, /<section[^>]*aria-labelledby="p-decisions-title"[^>]*>\s*<h2 id="p-decisions-title">Decisiones del agente<\/h2>/);
+  assert.match(html, /<section[^>]*aria-labelledby="p-decisions-title"[^>]*>\s*<h2 id="p-decisions-title" data-i18n="doctor\.decisions\.title">Decisiones del agente<\/h2>/);
   assert.match(html, /id="p-decisions"/);
+  assert.match(html, /data-i18n="doctor\.decisions\.intro"/);
   assert.match(js, /msg\.kind === 'agent_turn'/);
   assert.ok(js.includes('renderDecisions(d)'));
+  for (const [lang, title] of [['es', 'Decisiones del agente'], ['en', 'Agent decisions']]) {
+    I18N.use(lang);
+    assert.equal(I18N.t('doctor.decisions.title'), title);
+  }
+  I18N.use('es');
 });
 
 test('el modelo solo se nombra cuando propuso el agente clínico; si decidieron las reglas se dice así (TD-34)', () => {
   const withModel = js.split('\n').filter((l) => l.includes('ai_model'));
   assert.ok(withModel.length > 0 && withModel.every((l) => l.includes("d.agent === 'clinical'")), 'ai_model solo en la rama del agente clínico');
-  assert.ok(js.includes('Propuso el motor de reglas'));
-  assert.ok(js.includes('sin cambio de dosis; respondieron las reglas'));
-  const live = js.split('\n').filter((l) => l.includes('msg.model'));
-  assert.ok(live.length > 0 && live.every((l) => l.includes("msg.decided_by === 'llm'")), 'el modelo del aviso en vivo solo si lo decidió la IA');
+  assert.ok(js.includes("t('doctor.decisions.byRules'") && js.includes("t('doctor.decisions.quiet')"));
+  const live = js.split("msg.kind === 'agent_turn'")[1].split("msg.kind === 'pain_scored'")[0];
+  assert.match(live, /msg\.decided_by === 'llm' \? t\('doctor\.live\.byModel'[\s\S]*: t\('doctor\.live\.byRules'\)/, 'el modelo del aviso en vivo solo si lo decidió la IA');
   assert.ok(js.includes('d.ai_provider') && !/Token Factory/.test(js), 'el proveedor sale de los datos, no se escribe a mano');
+  I18N.use('es');
+  assert.equal(I18N.t('doctor.decisions.byRules', { why: '' }), 'Propuso el motor de reglas');
+  assert.equal(I18N.t('doctor.decisions.quiet'), 'sin cambio de dosis; respondieron las reglas');
+  I18N.use('en');
+  assert.equal(I18N.t('doctor.decisions.byRules', { why: '' }), 'Proposed by the rules engine');
+  assert.equal(I18N.t('doctor.decisions.quiet'), 'no dose change; the rules answered');
+  I18N.use('es');
 });
 
 test('el resultado de la decisión se dice con texto y no solo con color, y lo escrito por el paciente va como texto', () => {
-  assert.ok(js.includes("'Aplicado'") && js.includes("'Escalado'") && js.includes("'Rechazado'"));
+  for (const [lang, words] of [['es', ['Aplicado', 'Escalado', 'Rechazado']], ['en', ['Applied', 'Escalated', 'Rejected']]]) {
+    I18N.use(lang);
+    assert.deepEqual(['applied', 'escalated_to_therapist', 'rejected'].map((k) => I18N.t(`doctor.decisions.outcome.${k}`)), words);
+  }
+  I18N.use('es');
+  assert.ok(js.includes('doctor.decisions.outcome.${x.outcome}'));
   const render = js.split('function renderDecisions')[1].split('/** Aviso en vivo')[0];
   assert.ok(!render.includes('innerHTML'));
+  assert.ok(!render.includes('.forEach((t) =>'), 'el parámetro no tapa la función t()');
 });
 
 test('el panel ya no atribuye la IA a la GPU (TD-34)', () => {
   assert.ok(!/GPU AMD esté conectada|modelo en la GPU|IA en la GPU AMD/.test(js + html));
-  assert.ok(js.includes('Pidiendo el resumen al modelo de ${state.aiProvider'));
+  assert.ok(js.includes("t('doctor.ai.asking')"));
 });

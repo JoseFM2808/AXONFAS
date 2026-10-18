@@ -12,6 +12,7 @@
 
   const KEY_POINTS = [0, 11, 12, 23, 24, 25, 26, 27, 28];
   const $ = (id) => document.getElementById(id);
+  const { t, tn } = window.AxonI18n;                        // idioma de la página (ADR-030)
   let item = null;
   let startedAt = null;
   let source = null;
@@ -24,23 +25,28 @@
   const banner = document.createElement('section');
   banner.className = 'panel-card';
   banner.style.marginBottom = '16px';
-  banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p><div id="symptom-index"></div>';
+  const el = (tag, attrs = {}, text) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const eva = el('div', { id: 'eva-index', class: 'eva-card' });
+  eva.hidden = true;
+  banner.append(el('h2', {}, t('link.title')), el('p', { id: 'pl-text', class: 'muted' }, t('link.loading')), eva,
+    el('div', { id: 'symptom-index' }));
   document.querySelector('.wrap').prepend(banner);
   const text = (msg) => { $('pl-text').textContent = msg; };
 
   // TD-34: en modo paciente la página sí habla con el servidor, así que sus textos de prototipo aislado ya no serían verdad.
   // Las alertas de postura siguen siendo reglas fijas de este navegador; la molestia la revisan las reglas del servidor y,
-  // si está conectada, la IA de AMD Token Factory (el turno dice en pantalla cuál respondió).
+  // si está conectada, la IA de AMD (el turno dice en pantalla cuál respondió).
   const chip = $('chip-status');
-  if (chip) chip.textContent = 'Modo paciente · alertas con reglas en este navegador';
+  if (chip) chip.textContent = t('link.chip');
   const lead = document.querySelector('.header-brand .brand-info p');
-  if (lead) lead.textContent = 'Las alertas salen de reglas fijas en este navegador. Si avisas una molestia, la revisan las reglas del '
-    + 'servidor y, si está conectada, la IA de AMD Token Factory.';
+  if (lead) lead.textContent = t('link.lead');
   const foot = document.querySelector('footer');
-  if (foot) foot.textContent = 'AXONFAS · prototipo de validación en modo paciente. La pose se estima en este navegador con MediaPipe y '
-    + 'las alertas salen de reglas fijas (ADR-004), con los umbrales que fija el fisioterapeuta. El video no sale del equipo (ADR-003). '
-    + 'Si avisas una molestia, la revisan las reglas del servidor y, si está conectada, la IA de AMD Token Factory. '
-    + 'No es un dispositivo médico.';
+  if (foot) foot.textContent = t('link.footer');
 
   function setLocked(id, value) {
     const el = $(id);
@@ -48,7 +54,7 @@
     el.value = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.disabled = true;
-    el.title = 'Lo fijó tu fisioterapeuta';
+    el.title = t('link.locked');
   }
 
   function post(path, body) {
@@ -88,15 +94,20 @@
     const d = e.detail;
     post('/api/live', { exercise_id: exerciseId, source, ended: d.endReason }).catch(() => {});
     try {
-      await post('/api/sessions', {
+      const res = await post('/api/sessions', {
         exercise_id: exerciseId, mode: 'monitored', source: d.source === 'camera' ? 'camera' : 'demo',
         started_at: startedAt || d.endedAt, ended_at: d.endedAt, end_reason: d.endReason, reps_done: d.reps.length,
         baseline: d.baseline || undefined, reps: d.reps, events: d.events, symptom_report_ids: symptomIds,
         voice_turn_ids: turnIds,
       });
-      text(`Sesión guardada y enviada a tu fisioterapeuta (${d.reps.length} repeticiones). Puedes volver a tu plan.`);
+      text(tn('link.saved', d.reps.length));
+      // Dolor al terminar (EVA 0-10, ADR-025): opcional, le llega al fisioterapeuta.
+      const exercise = window.AxonCatalog && AxonCatalog.get(exerciseId);
+      if (window.AxonPainScale && res && res.session_id) {
+        AxonPainScale.render($('eva-index'), { sessionId: res.session_id, exerciseName: exercise ? exercise.name : null });
+      }
     } catch (err) {
-      text(`No se pudo guardar la sesión: ${err.message}`);
+      text(t('link.saveError', { error: err.message }));   // el motivo llega escrito por el servidor
     }
   });
 
@@ -106,7 +117,7 @@
       item = me.plan.find((p) => p.exercise_id === exerciseId);
       const exercise = window.AxonCatalog && AxonCatalog.get(exerciseId);
       if (!item || !exercise || exercise.monitoring !== 'auto') {
-        text('Este ejercicio no está en tu plan con monitoreo por cámara. Vuelve a tu plan.');
+        text(t('link.notInPlan'));
         item = null;
         return;
       }
@@ -114,14 +125,13 @@
       setLocked('trunk-margin', env.trunk_margin);
       setLocked('valgus-margin', env.valgus_margin);
       setLocked('max-reps', env.max_reps);
-      $('pl-text').innerHTML = '';
+      $('pl-text').replaceChildren();
       const p = document.createElement('p');
-      p.textContent = `Hola, ${me.patient.alias}. Plan de ${me.therapist.name}: ${exercise.name}, ${env.max_reps} repeticiones `
-        + `(3 de calibración). Tu fisioterapeuta ve en vivo tus ángulos y alertas, nunca el video. El sobre de seguridad lo fijó tu fisioterapeuta.`;
+      p.textContent = t('link.hello', { alias: me.patient.alias, therapist: me.therapist.name, exercise: exercise.name, reps: env.max_reps });
       const back = document.createElement('a');
       back.href = 'paciente.html';
       back.className = 'link';
-      back.textContent = 'Volver a mi plan';
+      back.textContent = t('link.back');
       $('pl-text').append(p, back);
       // Molestia en plena sesión (ADR-021): el servidor decide con reglas; aquí se aplica la baja o se detiene (I-7).
       if (window.AxonSymptom) {
@@ -139,7 +149,7 @@
         if (msg.kind === 'highlight' && window.AxonTeach) AxonTeach.show(msg);
       });
     } catch (err) {
-      text(err.status === 401 ? 'Tu cuenta de este equipo ya no es válida. Vuelve a afiliarte desde la página de paciente.' : err.message);
+      text(err.status === 401 ? t('link.expired') : err.message);
     }
   })();
 })();

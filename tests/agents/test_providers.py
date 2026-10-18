@@ -162,6 +162,7 @@ class ProvidersTest(unittest.TestCase):
         self.assertTrue(2 <= out["suggested"]["TURN_COACH_S"] <= 8)
         self.assertEqual(out["suggested"]["TURN_BUDGET_S"], out["suggested"]["TURN_CLINICAL_S"] + out["suggested"]["TURN_COACH_S"] + 1)
         self.assertTrue(out["json_mode_fallback"])
+        self.assertEqual(out["by_model"], {"DeepSeek-V4-Flash": 3}, "cuántas respuestas dio cada modelo de la cadena")
         self.assertNotIn(KEY, text)
         self.assertNotIn(self.url, text)
         self.assertNotIn("127.0.0.1", text)

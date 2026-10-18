@@ -28,10 +28,18 @@
 | 020 | 2026-10-17 | Aceptada | Despliegue: web estática en Vercel y servidor completo en la nube de AMD con Docker y HTTPS |
 | 021 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
 | 022 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
-| 023 | 2026-10-17 | Aceptada | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
+| 023 | 2026-10-17 | Aceptada (ajustada por ADR-028) | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
 | 024 | 2026-10-17 | Aceptada | El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera |
-| 025 | 2026-10-18 | Aceptada | Turno de texto del paciente con el agente clínico de AMD: reglas primero, tiempo acotado y atribución visible |
-| 026 | 2026-10-18 | Aceptada | Filtro determinista de datos personales antes de cualquier LLM; se guarda lo mismo que se envía |
+| 025 | 2026-10-17 | Aceptada | Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar (EVA) |
+| 026 | 2026-10-18 | Aceptada | Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos |
+| 027 | 2026-10-17 | Aceptada | Video de presentación generado con código: Remotion y voz local con Kokoro |
+| 028 | 2026-10-18 | Aceptada | Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador |
+| 029 | 2026-10-18 | Aceptada | Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base |
+| 030 | 2026-10-18 | Aceptada | Idioma de la interfaz según el navegador (español e inglés), con selector manual y sin geolocalización por IP |
+| 031 | 2026-10-18 | Aceptada | Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT |
+| 032 | 2026-10-18 | Aceptada | El servidor escribe en el idioma de la interfaz |
+| 033 | 2026-10-18 | Aceptada | Turno de texto del paciente con el agente clínico de AMD: reglas primero, tiempo acotado y atribución visible |
+| 034 | 2026-10-18 | Aceptada | Filtro determinista de datos personales antes de cualquier LLM; se guarda lo mismo que se envía |
 
 ---
 
@@ -398,7 +406,7 @@
     Todo texto lo dice.
   - El paciente ve una cuenta regresiva (`rest-timer.js`) al terminar una serie y tras una pausa por molestia. Puede
     saltarla o sumar 30 s. Nunca bloquea el siguiente paso.
-  - El agente: el `current.rest_seconds` que recibe en el turno del paciente es `rest.min` (ADR-025; en el demo todavía no se aplica en ninguna pantalla, TD-104); se valida solo con los límites fijos
+  - El agente: el `current.rest_seconds` que recibe en el turno del paciente es `rest.min` (ADR-033; en el demo todavía no se aplica en ninguna pantalla, TD-119); se valida solo con los límites fijos
     10–180; tras una molestia solo puede subirlo (`LESS_DEMAND`). Un `rest_seconds` aplicado cambia la cuenta de esa
     sesión, nunca el plan. La reducción determinista de ADR-021 nunca lo usa.
 - **Consecuencias:**
@@ -464,7 +472,245 @@
     Con giros mayores a 45° el valgo sigue siendo poco confiable, y ADR-015 lo apaga desde 62°.
   - La validez contra un sistema con marcadores sigue pendiente (TD-16, TD-57).
 
-## ADR-025 · Turno de texto del paciente con el agente clínico de AMD, tiempo acotado y atribución visible — Aceptada
+## ADR-025 · Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - El Nivel 2 del estudio de tele-rehabilitación es la terapia guiada por el plan del fisioterapeuta.
+  - Hasta hoy, el fisioterapeuta solo fijaba límites de movimiento en sentarse y pararse (sobre con `rom_min` y
+    `rom_max`, ADR-005 y ADR-021). En los 23 ejercicios de la galería, la cámara usaba el recorrido de `SPECS`, igual
+    para todos los pacientes (TD-99).
+  - El paciente veía todo su plan cada día, sin saber qué le tocaba hoy.
+  - El fisioterapeuta no sabía cómo terminaba cada sesión: solo veía las detenciones por dolor y las molestias que el
+    paciente reportaba (TD-100).
+- **Decisión:**
+  - **Meta de recorrido (TD-99):**
+    - Cada ejercicio de la galería que la cámara mide (modo de repeticiones o de sostén) puede llevar en el plan un
+      `range_goal = {target, limit, unit}`, en la unidad de su medida.
+    - En repeticiones, `target` reemplaza el recorrido pedido (`delta`). En sostenes, reemplaza el valor a sostener
+      (`threshold`).
+    - `limit` va más allá de la meta en el sentido del esfuerzo (más bajo en la postura en tándem).
+    - La API valida contra `SPECS` de `tracker.js`, leído por `load_tracking`, con límites de forma por unidad: 1–180°,
+      0,5–50 cm y 1–200 %.
+    - Rechaza la meta en sentarse y pararse (usa su sobre) y en los ejercicios manuales (la cámara no los ve).
+    - La meta no es el sobre: va en su propia columna y los guiados siguen sin sobre (I-9).
+    - `tracker.withGoal` la aplica solo en modo paciente.
+    - Pasar el límite no es una alerta (I-12): la repetición cuenta igual y queda marcada con `overLimit`. La pantalla y
+      la voz dicen "Hasta ahí basta", y el panel muestra cuántas pasaron el límite.
+  - **Plan de Cuidados del día (TD-100):**
+    - `care-plan.js` decide con reglas fijas, sin IA, qué toca hoy en la hora local del paciente. Usa `per_week` y las
+      sesiones completadas de los últimos 14 días (`history` en `GET /api/me`).
+    - La semana va de lunes a domingo. Hecho hoy → "hecho". Frecuencia cumplida → "cumplido".
+    - Si no, toca cuando pasaron `floor(7 / per_week)` días desde la última vez, o cuando lo que falta ya no entra en los
+      días que quedan de la semana. Si no toca, "descanso" con el día en que vuelve a tocar.
+    - `paciente.html` muestra primero "Hoy toca". El resto queda plegado y se puede hacer igual: es una agenda, no un
+      bloqueo.
+  - **Dolor al terminar (TD-100):**
+    - Después de guardar cada sesión (vista guiada, seguimiento con cámara y sentarse y pararse), el paciente puede
+      marcar una EVA de 0 a 10 (`pain-scale.js`). Es opcional.
+    - `PUT /api/sessions/{id}/pain` la guarda una sola vez en `session.pain_score` y avisa en vivo (`pain_scored`).
+    - El panel muestra el KPI "Dolor al terminar (EVA)", la columna en el historial y el aviso en vivo. La nota SOAP
+      (S) y la Observation FHIR la incluyen.
+    - Desde 7/10 (`PAIN_HIGH`), el panel lo marca como alto y el paciente recibe un texto fijo: no repetir hoy y avisar.
+      No detiene nada, no cambia el plan y el LLM no lo lee para decidir (I-1, I-13).
+- **Consecuencias:**
+  - El fisioterapeuta adapta el recorrido de la galería a cada paciente, igual que el sobre de sentarse y pararse.
+  - Las metas, la separación entre sesiones y el umbral de dolor alto son valores de partida, no clínicos: se validan
+    con fisioterapeutas (TD-104).
+  - La EVA es lo que el paciente marca al terminar; no reemplaza "Dolor: detener" ni el formulario de molestias, que
+    siguen siendo el camino ante dolor agudo, mareo o pérdida de fuerza (I-7).
+  - Una meta guardada en el plan solo cambia el seguimiento en modo paciente; la galería abierta sigue con `SPECS`.
+  - No amplía el alcance clínico de ADR-009: no agrega ejercicios ni compensaciones, y el seguimiento sigue sin alertar.
+
+## ADR-026 · Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - El estudio de tele-rehabilitación (2026-10-17) propone un tercer perfil, la empresa: cadenas de clínicas u
+    hospitales que contratan un plan, gestionan las licencias de sus profesionales y conectan su historia clínica
+    electrónica con HL7 FHIR.
+  - ADR-002 ya vende a clínicas, pero el modelo de Staging tiene "una sola clínica implícita" (03) y no hay manera de
+    contar licencias ni de ubicar a un profesional en una organización.
+- **Decisión:**
+  - Tablas `organization` y `org_license` en Staging. Reglas puras en `src/backend/organizations.py`: dos planes sin
+    precio ("Clínica pequeña", 5 licencias; "Red hospitalaria", 50), una licencia activa por correo en todo el sistema,
+    liberar sin tocar al profesional ni a sus pacientes, y la dirección FHIR solo https y sin credenciales.
+  - El Administrador maestro crea la organización con un correo de administración (`POST /api/admin/orgs`). Esa cuenta
+    de Google recibe un token `org` (sujeto = la organización) y entra a `empresa.html`. Tiene prioridad sobre otro rol
+    de la misma cuenta, salvo el Administrador maestro.
+  - La administración invita profesionales por correo. La licencia se vincula al fisioterapeuta cuando entra con Google
+    con ese correo y elige ese rol, o cuando el Administrador lo deja como fisioterapeuta.
+  - El panel de empresa solo devuelve plan, licencias y cuántos pacientes atiende cada profesional (I-19).
+  - Con licencia activa, la nota SOAP como documento FHIR lleva a la organización como custodio (TD-103). En Staging no
+    se envía nada a la historia clínica: solo se guarda la dirección (TD-20).
+  - El token gana los roles `org` y `guest` (este último, reservado para TD-106). Las bases anteriores reconstruyen la
+    tabla `token` al arrancar, como en ADR-019.
+- **Consecuencias:**
+  - Amplía ADR-002 con un perfil de empresa, pero no cambia el producto clínico ni el alcance de ADR-009.
+  - Planes, cupos y la regla de una licencia por correo son valores de partida. Facturación, precios y la asignación de
+    pacientes entre profesionales de una misma organización quedan en TD-105.
+  - Antes de Producción hace falta autenticación real para las cuentas de empresa (TD-41) y la revisión de protección de
+    datos de los correos de los profesionales (TD-14).
+
+## ADR-027 · Video de presentación generado con código: Remotion y voz local con Kokoro — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:**
+  - La entrega de lablab pide un video demo (TD-11). El owner quiere un video animado, todo en inglés, hecho con código y
+    con el guion del documento estratégico *Investigacion_y_Guion_Video_AXONFAS* (4 fases: The Problem, The Capture, The
+    Brain, The Impact).
+  - El repo es público y vive en Google Drive: las dependencias pesadas no pueden ir en Drive (como en Mi-puestito), el
+    audio y el video no se versionan (ADR-003, `.gitignore`) y no se pueden usar imágenes de terceros.
+  - La frase de la fase 3 del documento atribuía la lógica del movimiento a la IA y la latencia a "edge GPU clusters",
+    lo que contradice ADR-004, ADR-018 y TD-34.
+- **Decisión:**
+  - **Remotion 4** (React + TypeScript, versiones fijadas) en `src/axonfas-video-presentation/`: emula el HUD del
+    prototipo con SVG propio y los tokens de `docs/design-system/tokens.css`, que se copian al compilar (no se duplican).
+  - **Voz en off con Kokoro-82M** (Apache-2.0, el TTS de ADR-016) en ONNX sobre la CPU con `kokoro-onnx`: local, sin
+    claves. Si no está instalado, las voces en inglés de Windows (SAPI). Cada escena dura lo que su audio, más la entrada, una
+    pausa fija de 0,45 s entre frases y la salida; la última sostiene el logo 2 s. Actualizado el 2026-10-18 tras la
+    revisión del owner: antes cada fase se estiraba hasta la duración base del guion y quedaban pausas largas entre frases.
+  - Un solo guion, `script/voiceover.json`, para los subtítulos y el TTS. La fase 3 se reescribe en tres frases
+    alineadas con los ADRs; la original queda en el JSON.
+  - `video.py` (solo biblioteca estándar) copia el proyecto a `~/.axonfas/video-presentation`, fuera de Drive y del
+    repo, y ahí instala, narra y renderiza. El modelo se verifica con SHA-256.
+- **Consecuencias:**
+  - Node y Remotion entran al repo solo para el video; el producto sigue sin build de frontend.
+  - El primer render baja Chrome Headless Shell y usa Google Fonts: necesita internet.
+  - Remotion es gratis para personas y equipos pequeños; una empresa grande necesitaría licencia comercial (TD-112).
+  - Cambiar el guion obliga a correr `py video.py voice` y `py video.py render` de nuevo.
+
+## ADR-028 · Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - El owner pide equilibrar la captación (B2C) con la seguridad de los datos.
+  - La demo inicial queda abierta para cualquiera, y lo que genere solo lo ve el Administrador.
+  - Un invitado explora sin registrarse, y la cuenta se exige recién ante algo permanente o clínico.
+  - Hasta hoy, sin cuenta no había nada que ver del lado clínico. El triaje (ADR-023) tapaba la galería y el Prototipo
+    enteros, incluso el demo sintético, que no es ejercicio.
+- **Decisión:**
+  - Token `guest` (`POST /api/auth/guest`), sin datos personales.
+  - Con el token `guest`, las lecturas de fisioterapeuta (GET) se resuelven contra un consultorio de muestra compartido,
+    creado una vez con datos sintéticos. Cualquier otra ruta responde 401 `auth_required`.
+  - `auth-wall.js` muestra la barra del invitado y el diálogo del muro. `api-client.js` lo dispara ante `auth_required`,
+    y las páginas lo piden antes con `AxonWall.require(motivo)`.
+  - Sin cuenta, el seguimiento libre es una vista previa de una serie.
+  - La demo pública manda a `demo_run` solo números anónimos, con una casilla visible para no compartir y un tope de 500
+    por hora. Solo los lee `GET /api/admin/demo-runs`.
+  - El triaje de ADR-023 se pide donde se hace ejercicio: el seguimiento libre entero y la cámara del Prototipo
+    (`AxonTriage.ensure()`). La galería y el demo sintético quedan sin triaje.
+- **Consecuencias:**
+  - Ajusta ADR-023 en dónde se pide el triaje, no en qué pregunta ni en qué bloquea.
+  - Una persona sin cuenta ya no hace la rutina libre completa: la vista previa termina tras la primera serie.
+  - El consultorio de muestra cuenta en los totales del Administrador, y `guest` y `demo_run` crecen sin borrado: lo
+    resuelve TD-114.
+  - La vista previa de una serie y el tope por hora son valores de partida (TD-113).
+
+## ADR-029 · Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - Sobre todo en celular, la persona necesita ver el ejercicio antes de intentarlo con la cámara.
+  - Quien no quiere o no puede usar la cámara no debe quedar bloqueado. Antes, un permiso negado dejaba el seguimiento
+    parado.
+  - El fisioterapeuta tiene que saber cuándo una sesión no tuvo medición.
+- **Decisión:**
+  - La primera vez que se usa la cámara con un ejercicio en ese equipo, va antes el tutorial con la figura de referencia
+    en grande (`practice.js`, `seguimiento.js`).
+  - Si la cámara falla o no se permite (`pose-camera.js` avisa el motivo con `onFail`), o si la persona elige "Hacer sin
+    cámara", la rutina sigue con la guía en grande y un conteo manual.
+  - Se guarda como sesión guiada. El servidor marca `session.no_camera = 1` con su motivo siempre que
+    `source = 'guided'` (I-20) y rechaza métricas cinemáticas o eventos en esa sesión.
+  - El panel, la nota SOAP (O) y la Observation FHIR (`camera-used: false`) lo dicen con el mismo texto fijo.
+- **Consecuencias:**
+  - La vista guiada de `paciente.html`, que ya era sin cámara, queda marcada igual (`guided_view`), también en las bases
+    anteriores.
+  - Una sesión sin cámara cuenta para el cumplimiento, pero no para la calidad ni para el recorrido medio, que salen de la
+    cámara. Si debe contar igual que una con cámara se valida con fisioterapeutas (TD-113).
+  - No cambia el alcance de ADR-009 ni agrega alertas: sin cámara no hay detección postural.
+
+## ADR-030 · Idioma de la interfaz según el navegador (español e inglés), sin geolocalización por IP — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - Toda la web estaba en español y los jueces del hackathon son internacionales. El owner pidió traducir "por región".
+  - Saber la región por la IP exige mandar la IP a un servicio de geolocalización de terceros. Eso choca con ADR-003 (lo
+    mínimo sale del equipo) y con TD-14 (privacidad). Además, la IP dice dónde está la persona, no qué idioma lee.
+  - Los textos de seguridad (descargo, banderas rojas, urgencias, alertas) no pueden cambiar de sentido al traducirse.
+- **Decisión:**
+  - La región sale del propio navegador. Primero, la elección manual guardada en `axonfas.lang`. Si no hay, el primer
+    idioma de `navigator.languages` que tengamos: `es-*` da español y `en-*` inglés. Un navegador con otros idiomas ve
+    inglés. Solo si el navegador no declara idiomas desempata la zona horaria de `Intl`: una zona de habla hispana da
+    español. Sin ninguna señal, español. No se usa la IP ni ningún servicio externo.
+  - Un selector visible en la cabecera (ES / EN), con nombre accesible y `aria-pressed`. La elección se guarda en este
+    equipo y recarga la página, para que todo, incluidos los textos que arman los scripts, salga en el idioma nuevo.
+  - `i18n.js` es el núcleo: `t(clave)`, plurales, `fill()` (texto con nodos dentro, sin `innerHTML`) y `data-i18n` en
+    el HTML. También pone `<html lang>`, la voz (`es-PE` o `en-US`) y el formato de fechas. Los diccionarios van en
+    `i18n/`, un paquete por área con los bloques `es` y `en`. El catálogo de 24 ejercicios se traduce como datos
+    (`i18n/catalog.en.js`). Las fuentes citadas no cambian.
+  - Para sumar un idioma (por ejemplo, portugués) basta con agregarlo a `LANGS` y poner su bloque en cada paquete. Lo
+    que falte cae al español.
+  - Los textos de seguridad dicen lo mismo en los dos idiomas. Las urgencias citan el SAMU (106) y "el número de
+    emergencias de tu país". Los tests lo revisan.
+- **Consecuencias:**
+  - Lo que escribe el servidor sigue en español en esta etapa: la nota SOAP, la Observation FHIR, los mensajes de error
+    de la API y los textos guardados en la base (TD-116).
+  - Cambiar de idioma en medio de una sesión con cámara la reinicia, porque la página se recarga.
+  - Un texto nuevo de la interfaz necesita su clave en los dos idiomas. Los tests revisan que es y en tengan las mismas
+    claves y que cada `data-i18n` y cada `t()` existan.
+  - La traducción al inglés la hizo el equipo, no un fisioterapeuta nativo. Se valida antes de Producción (TD-116; desde ADR-032, TD-117).
+
+## ADR-031 · Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:** a horas del cierre, la revisión contra las bases del hackathon dejó tres cosas:
+  - La página reserva el premio de Google para proyectos que usen Gemma, y Token Factory ofrece `Gemma-4-31B-IT`.
+  - Los jueces no veían la IA de AMD sin crear una cuenta: el invitado (ADR-028) no podía pedir nada que la usara.
+  - Las entregas tienen que ser "MIT-compliant" y el repo no tenía licencia (TD-26).
+  - El owner pidió sumar Gemma como alternativa y usar primero el modelo que responda más rápido.
+- **Decisión:**
+  - `AMD_TOKENFACTORY_MODEL` acepta una lista en orden de preferencia: `DeepSeek-V4-Flash,Gemma-4-31B-IT`.
+    `MeteredLLM` prueba en orden y, si un modelo falla o se pasa del tiempo, responde el siguiente.
+  - Medido el 2026-10-18 con 5 llamadas cortas a cada modelo: mediana de 7,4 s para DeepSeek y 10,2 s para Gemma.
+    Gemma pasó el turno del agente clínico (propuesta del LLM, dentro del sobre, `applied`).
+  - El invitado puede hacer `POST /api/patients/{id}/advice` solo sobre el paciente de muestra, que trae un perfil
+    sintético, con un tope de 60 llamadas por hora para todos los invitados juntos. No guarda nada.
+  - `LICENSE` MIT en la raíz, aprobado por el owner y sumado a los archivos raíz permitidos de CLAUDE.md.
+- **Consecuencias:**
+  - Sigue siendo solo IA de AMD (ADR-018, I-15). Si DeepSeek se cae o se demora, la app sigue con Gemma.
+  - El peor caso suma los dos tiempos de espera.
+  - El tope protege la clave compartida del equipo; con más uso público, la medida es por IP (TD-114).
+  - Cierra TD-26.
+
+---
+
+## ADR-032 · El servidor escribe en el idioma de la interfaz — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:** ADR-030 tradujo la interfaz, pero lo que escribe el servidor seguía en español (TD-116): la nota SOAP, la
+  Observation y el documento FHIR, los errores de la API y los mensajes al paciente. Un juez con el navegador en inglés
+  veía la nota de muestra del invitado en español, y el resumen con IA podía rechazar un resumen válido porque revisaba
+  los nombres solo contra el catálogo en español. Además el muro mostraba siempre el motivo genérico.
+- **Decisión:**
+  - `api-client.js` manda `Accept-Language` con el idioma de la interfaz; la API lo lee en cada petición (`messages.lang_of`)
+    y, sin cabecera, usa español.
+  - Los mensajes se siguen escribiendo en español en el código y `messages.tr` los traduce a la salida con una tabla de
+    plantillas, en vez de mandar códigos que traduzca el cliente: no cambia el contrato de la API para quien ya la usa y
+    un test exige que todo `ApiError` tenga su traducción.
+  - La nota SOAP se redacta en el idioma de quien la crea y se guarda con `lang` y con su entrada (`input`). Un borrador
+    sin firmar hecho solo con la plantilla se vuelve a redactar al leerlo en otro idioma, desde esa entrada (mismos
+    datos, I-6). Lo que redactó la IA queda en su idioma y lo firmado no cambia (I-8); al firmar se guarda lo que se veía.
+  - FHIR: textos legibles en el idioma de la nota y `language` en el recurso; los códigos nunca cambian.
+  - El resumen con IA se pide en el idioma de la interfaz y revisa los nombres en los dos catálogos.
+  - Un 401 `auth_required` trae `reason`, la frase del muro según la ruta.
+- **Consecuencias:**
+  - Una tabla más que mantener (`messages.EN`); el test la mantiene completa.
+  - Una nota firmada puede quedar en un idioma distinto del de quien la lee: el panel lo avisa.
+  - Los textos que escribió una persona no se traducen.
+  - Cierra TD-116, salvo la revisión clínica de la traducción por un fisioterapeuta con inglés nativo (TD-117).
+
+## ADR-033 · Turno de texto del paciente con el agente clínico de AMD, tiempo acotado y atribución visible — Aceptada
 
 - **Fecha:** 2026-10-18
 - **Contexto:**
@@ -488,7 +734,7 @@
     un parámetro sin valor actual en pantalla tampoco se ajusta: el agente no puede inventar el `old`.
   - **Valor actual (`current`).** `rom_target` y `reps` los manda el navegador (lo que se ve en pantalla) y el servidor
     los acota: `rom_target` 10–140, `reps` entero de 1 a `max_reps`. `rest_seconds` lo pone el servidor con `rest.min`
-    del plan (ADR-022) y nunca el navegador; no se aplica en ninguna pantalla (TD-104). Lo único que se aplica es `new`,
+    del plan (ADR-022) y nunca el navegador; no se aplica en ninguna pantalla (TD-119). Lo único que se aplica es `new`,
     validado contra el sobre guardado en el servidor.
   - **Guiados y seguimiento** (sin sobre): no se consulta al agente clínico (I-3). Deciden las reglas (pausa y descanso
     recomendado). El agente conversacional puede redactar la frase.
@@ -498,16 +744,16 @@
     (`TURN_BUDGET_S`). El navegador espera el presupuesto más 7 s (25 s), que le dice `/api/me`. Se ajustan sin tocar
     código con `AXONFAS_TURN_CLINICAL_S`, `AXONFAS_TURN_COACH_S` y `AXONFAS_TURN_BUDGET_S`, y se fijan con datos con
     `py -m agents.turn --measure N` en la terminal del owner. Una tarea vencida se cancela. Sin respuesta a tiempo, o
-    con error, deciden las reglas y el paciente no ve un error.
+    con error, deciden las reglas y el paciente no ve un error. Con varios modelos (ADR-031), la alternativa vive dentro de los 12 s del agente clínico: el principal deja 4 s y la alternativa solo se intenta con 2 s o más; el conversacional usa solo el principal. La pantalla dice el modelo que respondió.
   - **Menos latencia sin tocar la seguridad.** Si el proveedor rechaza `response_format`, se recuerda y no se vuelve a
     mandar (una petición por llamada, no dos). El contexto va en JSON compacto y el motivo en 12 palabras como mucho. El
     estado de la IA se precalienta al arrancar `serve.py` y, ya caliente (menos de 10 min), el turno no lo espera: se
     refresca en segundo plano.
   - **Cupo de Token Factory.** Como mucho una llamada clínica y una conversacional por turno, nunca por frame. Por
     paciente: 3 s entre turnos con IA y 20 por hora. En todo el servidor: 4 turnos con IA a la vez. Pasado el límite,
-    responden las reglas (`ai.skipped = rate_limited` o `busy`). Son valores de partida, en memoria (TD-108).
+    responden las reglas (`ai.skipped = rate_limited` o `busy`). Son valores de partida, en memoria (TD-123).
   - **Privacidad.** Al LLM van el ejercicio, el sobre, los valores actuales, hasta 5 repeticiones y el texto
-    (≤ 200 caracteres), ya filtrado de datos personales (ADR-026). Nunca el alias, el año de nacimiento ni el nombre del
+    (≤ 200 caracteres), ya filtrado de datos personales (ADR-034). Nunca el alias, el año de nacimiento ni el nombre del
     fisioterapeuta. Solo Staging (ADR-010).
   - **Registro.** Un `voice_turn` por turno; un `agent_decision` solo si hubo propuesta (del agente o de las reglas); la
     molestia en `symptom_report` con `source = 'voice_turn'`. Se unen a la sesión al guardarla, por id (`voice_turn_ids`).
@@ -517,22 +763,22 @@
     de seguridad de AXONFAS.” (texto neutro y verdadero; el motivo exacto queda en el panel del fisioterapeuta). Mientras
     espera, “El asistente de AMD está revisando lo que dijiste…” solo si `/api/me` dice que la IA está disponible; si no,
     “Revisando lo que dijiste con las reglas de seguridad…”. El proveedor y el modelo salen de los datos, nunca de un
-    texto fijo.
+    texto fijo. Los textos salen en el idioma de la interfaz (ADR-030, ADR-032): la plantilla se traduce en el servidor y el conversacional redacta en ese idioma (I-22). Si la frase del LLM no está en el idioma de la interfaz (cuenta palabras de enlace de cada idioma, `coach.in_language`), vuelve la plantilla traducida.
   - **SOAP.** La nota lee las decisiones aplicadas, con quién las propuso (“agente clínico” o “motor de reglas”), y las
     frases del paciente que no estén ya como molestia. El motivo del LLM no entra en la nota (I-6).
 - **Consecuencias:**
   - Los jueces ven la IA de AMD en el producto: modelo y latencia en la pantalla del paciente y en el panel.
   - La vía de reglas sigue igual: sin IA, el turno da la misma acción, el mismo ajuste y la misma frase que
     `/api/me/discomfort`.
-  - Es más restrictiva que ADR-005 y ADR-021, y no los reemplaza. Invariante I-18 en [01](01-logic.md).
-  - Pendientes: descanso aplicable (TD-104), voz (TD-105), escala de dolor (TD-106), reenvío sin duplicar (TD-107),
-    límites persistentes (TD-108), texto libre hacia un servicio externo (TD-109) y decisiones en FHIR (TD-110).
+  - Es más restrictiva que ADR-005 y ADR-021, y no los reemplaza. Invariante I-23 en [01](01-logic.md).
+  - Pendientes: descanso aplicable (TD-119), voz (TD-120), escala de dolor (TD-121), reenvío sin duplicar (TD-122),
+    límites persistentes (TD-123), texto libre hacia un servicio externo (TD-124) y decisiones en FHIR (TD-125).
 
-## ADR-026 · Filtro determinista de datos personales antes de cualquier LLM — Aceptada
+## ADR-034 · Filtro determinista de datos personales antes de cualquier LLM — Aceptada
 
 - **Fecha:** 2026-10-18
 - **Contexto:**
-  - El texto libre del paciente viaja a AMD Token Factory, un servicio fuera de la máquina (TD-109): en el turno (al
+  - El texto libre del paciente viaja a AMD Token Factory, un servicio fuera de la máquina (TD-124): en el turno (al
     agente clínico y al conversacional), en el resumen para el fisioterapeuta (la nota del perfil y las sugerencias) y
     en la A y la P del borrador SOAP (molestias y frases).
   - Hasta ahora solo se limitaba a 200 caracteres y no iban el alias ni el año de nacimiento. Un paciente puede escribir
@@ -558,12 +804,13 @@
   - **Aviso visible** bajo el campo, cuando el asistente está disponible: “Lo revisan las reglas de seguridad de AXONFAS
     y el asistente de AMD. Se envía sin tu nombre; ocultamos correos, teléfonos y documentos.” Tras el turno, si se ocultó
     algo: “Ocultamos N datos personales antes de enviarlo.”
+  - En inglés también: "my name is", "my last name is", "I'm/I am <Nombre>" con mayúscula, SSN, pasaporte y licencia de conducir, y calles con Street/Avenue/Road/apt. Lo que falta va en TD-136.
 - **Consecuencias:**
   - Un falso positivo solo oculta texto; nunca decide nada ni oculta una alarma (se lee del original).
   - El dato personal original no se guarda.
   - No detecta nombres sin disparador, datos escritos con letras ni un teléfono escrito en grupos de dos cifras; eso
-    queda para Producción (TD-117).
-  - Invariante I-19 en [01](01-logic.md).
+    queda para Producción (TD-132).
+  - Invariante I-24 en [01](01-logic.md).
 
 ---
 

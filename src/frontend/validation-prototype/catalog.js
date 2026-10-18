@@ -6,12 +6,17 @@
  * (hoy solo sentarse y pararse, ADR-009); `'guided'` = sin detección de compensaciones: se hace con la cámara, que cuenta
  * repeticiones o sostenes (tracker.js, ADR-014), o guiado por pasos y temporizador.
  * Es material educativo para Staging: el fisioterapeuta ajusta dosis y elección por paciente. Navegador y Node.
+ *
+ * Idioma (ADR-030): este archivo es la fuente de verdad en español (el servidor lee sus literales con expresiones
+ * regulares). En inglés, los textos salen de i18n/catalog.en.js (`I18N.data('catalog')`) y se aplican al cargar sobre
+ * copias: ids, temática, monitoring, músculos, dosis numérica, sourceName y URL de las fuentes quedan iguales.
  */
 (function (root, factory) {
-  const api = factory();
+  const I18N = (root && root.AxonI18n) || (typeof module === 'object' && module.exports ? require('./i18n.js') : null);
+  const api = factory(I18N);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AxonCatalog = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (I18N) {
   'use strict';
 
   const SOURCES = {
@@ -364,9 +369,47 @@
     },
   ];
 
-  const byId = Object.fromEntries(EXERCISES.map((e) => [e.id, e]));
+  /**
+   * Copia del catálogo con los textos de otro idioma (`tr` = data.catalog.<idioma> de i18n/). No muta el original. Un
+   * array que no tenga el mismo largo que el español se queda en español entero: así una precaución nunca se corre de
+   * lugar ni se pierde (catalog.test.cjs lo revisa).
+   */
+  function localize(tr) {
+    const text = (over, base) => (typeof over === 'string' && over.trim() ? over : base);
+    const list = (over, base) => (Array.isArray(over) && over.length === base.length && over.every((s) => typeof s === 'string' && s.trim()) ? over.slice() : base.slice());
+    const keyOf = new Map(Object.entries(SOURCES).map(([k, s]) => [s, k]));
+    const sources = Object.fromEntries(Object.entries(SOURCES).map(([k, s]) =>
+      [k, Object.assign({}, s, { title: text((tr.sources || {})[k] && tr.sources[k].title, s.title) })]));
+    const themes = THEMES.map((th) => {
+      const x = (tr.themes || {})[th.id] || {};
+      return Object.assign({}, th, { name: text(x.name, th.name), blurb: text(x.blurb, th.blurb) });
+    });
+    const exercises = EXERCISES.map((e) => {
+      const x = (tr.exercises || {})[e.id] || {};
+      return Object.assign({}, e, {
+        name: text(x.name, e.name),
+        camera: e.camera == null ? e.camera : text(x.camera, e.camera),
+        goal: text(x.goal, e.goal),
+        position: text(x.position, e.position),
+        steps: list(x.steps, e.steps),
+        dose: Object.assign({}, e.dose, { text: text(x.doseText, e.dose.text) }),
+        muscles: e.muscles.slice(),
+        bones: list(x.bones, e.bones),
+        joints: list(x.joints, e.joints),
+        precautions: list(x.precautions, e.precautions),
+        source: sources[keyOf.get(e.source)] || e.source,
+      });
+    });
+    return { SOURCES: sources, THEMES: themes, EXERCISES: exercises, NO_PAIN: text(tr.noPain, NO_PAIN) };
+  }
+
+  const tr = I18N && typeof I18N.data === 'function' ? I18N.data('catalog') : null;
+  const L = tr ? localize(tr) : { SOURCES, THEMES, EXERCISES, NO_PAIN };
+
+  const byId = Object.fromEntries(L.EXERCISES.map((e) => [e.id, e]));
   // Descanso sugerido cuando el fisioterapeuta no fija uno: valor de partida, no clínico (ADR-022, TD-87). Mismo valor que la API.
   const REST_DEFAULT_SECONDS = 60;
 
-  return { SOURCES, THEMES, EXERCISES, byId, REST_DEFAULT_SECONDS, get: (id) => byId[id] || null };
+  return { SOURCES: L.SOURCES, THEMES: L.THEMES, EXERCISES: L.EXERCISES, NO_PAIN: L.NO_PAIN, byId, REST_DEFAULT_SECONDS,
+    get: (id) => byId[id] || null };
 });

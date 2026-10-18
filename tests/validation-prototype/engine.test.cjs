@@ -247,8 +247,29 @@ test('demo con la cámara en diagonal: las mismas alertas y el mismo pico de val
 
 test('la voz de cada alerta dice qué pasa, de qué lado y qué hacer (TD-97)', () => {
   const app = require('node:fs').readFileSync(path.join(SRC, 'app.js'), 'utf8');
-  assert.ok(app.includes("knee_valgus_left: 'Tu rodilla izquierda se está yendo hacia adentro: llévala hacia afuera'"));
-  assert.ok(app.includes("knee_valgus_right: 'Tu rodilla derecha se está yendo hacia adentro: llévala hacia afuera'"));
-  assert.ok(app.includes("trunk_flexion: 'Te estás inclinando mucho hacia adelante: sube el pecho'"));
+  // Las frases viven en el diccionario (ADR-030); app.js las toma de ahí para cada alerta.
+  for (const key of ['trunk_flexion', 'knee_valgus_left', 'knee_valgus_right']) {
+    assert.ok(app.includes(`${key}: t('app.voice.${key}')`), `VOICE.${key} sale del diccionario`);
+  }
   assert.ok(app.includes('speak(VOICE[key] || phrase'), 'la alerta habla con la frase situacional');
+  const I = require(path.join(SRC, 'i18n.js'));
+  I.use('es');
+  assert.equal(I.t('app.voice.knee_valgus_left'), 'Tu rodilla izquierda se está yendo hacia adentro: llévala hacia afuera');
+  assert.equal(I.t('app.voice.knee_valgus_right'), 'Tu rodilla derecha se está yendo hacia adentro: llévala hacia afuera');
+  assert.equal(I.t('app.voice.trunk_flexion'), 'Te estás inclinando mucho hacia adelante: sube el pecho');
+  // En inglés dice lo mismo: qué pasa, de qué lado y qué hacer.
+  I.use('en');
+  const enL = I.t('app.voice.knee_valgus_left'), enR = I.t('app.voice.knee_valgus_right'), enT = I.t('app.voice.trunk_flexion');
+  assert.match(enL, /\bleft knee\b.*\binward\b.*\boutward\b/i);
+  assert.match(enR, /\bright knee\b.*\binward\b.*\boutward\b/i);
+  assert.match(enT, /\bforward\b.*\bchest\b/i);
+  I.use('es');
+  assert.ok(app.includes('u.lang = I18N.speechLang()') && app.includes('I18N.voiceFor('), 'la voz habla el idioma de la página');
+});
+
+test('el Prototipo arma tablas, avisos y modo paciente con DOM, sin innerHTML (ADR-030)', () => {
+  const fs = require('node:fs');
+  for (const f of ['app.js', 'patient-link.js', 'camera-setup.js', 'demo-telemetry.js']) {
+    assert.ok(!/\.innerHTML\s*\+?=|insertAdjacentHTML/.test(fs.readFileSync(path.join(SRC, f), 'utf8')), `${f} usa innerHTML`);
+  }
 });

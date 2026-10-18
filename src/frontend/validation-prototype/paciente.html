@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Paciente</title>
+<title data-i18n="patient.title">AXONFAS · Paciente</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -17,21 +17,21 @@
 </style>
 </head>
 <body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Paciente</span></h1>
-      <p>Prototipo de prueba: tus ejercicios y lo que trabajas en cada uno.</p>
+      <h1>AXONFAS <span data-i18n="patient.h1">· Paciente</span></h1>
+      <p data-i18n="patient.tagline">Prototipo de prueba: tus ejercicios y lo que trabajas en cada uno.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html">Prototipo</a>
-    <a href="galeria.html">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html" aria-current="page">Paciente</a>
-    <a href="login.html">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" aria-current="page" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" data-i18n="nav.login">Entrar</a>
   </nav>
 </header>
 
@@ -39,21 +39,21 @@
 <main id="main" tabindex="-1">
   <!-- AFILIACIÓN -->
   <section id="join" class="panel-card" hidden style="max-width:34rem;">
-    <h2>Unirme a mi fisioterapeuta</h2>
-    <p style="margin-bottom:14px;"><a class="btn primary" href="login.html">Entrar con Google</a></p>
-    <p class="muted" id="demo-join-note" style="margin-bottom:10px;">O, sin cuenta de Google (demostración), solo con el código:</p>
+    <h2 data-i18n="patient.join.title">Unirme a mi fisioterapeuta</h2>
+    <p style="margin-bottom:14px;"><a class="btn primary" href="login.html" data-i18n="patient.join.google">Entrar con Google</a></p>
+    <p class="muted" id="demo-join-note" style="margin-bottom:10px;" data-i18n="patient.join.demo">O, sin cuenta de Google (demostración), solo con el código:</p>
     <form id="join-form">
       <div class="field">
-        <label for="join-code">Código de afiliación (6 caracteres)</label>
+        <label for="join-code" data-i18n="patient.join.code">Código de afiliación (6 caracteres)</label>
         <input id="join-code" type="text" maxlength="12" required autocomplete="off" style="text-transform:uppercase; letter-spacing:0.2em; font-family:var(--font-mono);">
       </div>
       <label class="check" style="align-items:flex-start;">
         <input type="checkbox" id="join-consent" required>
-        <span>Entiendo que es un <strong>prototipo de prueba</strong>, no un dispositivo médico. Acepto que mis
+        <span data-i18n="patient.join.consent">Entiendo que es un <strong data-i18n-slot="proto" data-i18n="patient.join.proto">prototipo de prueba</strong>, no un dispositivo médico. Acepto que mis
           repeticiones, ángulos y alertas se compartan con mi fisioterapeuta en esta red. El video de mi cámara nunca sale
           de este equipo.</span>
       </label>
-      <button class="btn primary" type="submit" style="margin-top:14px;">Unirme</button>
+      <button class="btn primary" type="submit" style="margin-top:14px;" data-i18n="patient.join.submit">Unirme</button>
       <p class="status-line" id="join-error" role="status" style="margin-top:10px;"></p>
     </form>
   </section>
@@ -65,25 +65,39 @@
         <h2 class="page-title" id="hello"></h2>
         <p class="muted" id="therapist"></p>
       </div>
-      <button class="btn" id="btn-forget" type="button">Olvidar este equipo</button>
+      <button class="btn" id="btn-forget" type="button" data-i18n="patient.plan.forget">Olvidar este equipo</button>
     </div>
-    <p class="notice">Si algo te duele, te mareas o pierdes fuerza de golpe, detente y avísale a tu fisioterapeuta.</p>
+    <p class="notice" data-i18n="patient.plan.safety">Si algo te duele, te mareas o pierdes fuerza de golpe, detente y avísale a tu fisioterapeuta.</p>
+    <section id="eva-card" class="panel-card eva-card" hidden aria-label="Dolor al terminar la sesión" data-i18n-aria-label="patient.eva.label"></section>
     <div id="symptom-plan"></div>
+    <!-- Plan de Cuidados del día (ADR-025): lo que toca hoy primero; el resto de la semana, plegado -->
+    <section class="stack" aria-labelledby="today-title">
+      <div class="today-head">
+        <h2 id="today-title" data-i18n="patient.today.title">Hoy toca</h2>
+        <p class="muted" id="today-note" role="status"></p>
+      </div>
+      <div class="card-grid" id="plan-grid"></div>
+    </section>
+    <details class="panel-card rest-plan" id="rest-plan" hidden>
+      <summary id="rest-summary" data-i18n="patient.rest.summary">El resto de tu plan esta semana</summary>
+      <p class="muted" style="margin-bottom:14px;" data-i18n="patient.rest.note">Hoy no te tocan, pero si un día no pudiste, puedes hacerlos igual: la
+        sesión se guarda y tu fisioterapeuta la ve.</p>
+      <div class="card-grid" id="rest-grid"></div>
+    </details>
     <div id="tips" class="panel-card"></div>
     <details class="panel-card" id="profile-card">
-      <summary class="profile-summary-title">Mi perfil: lo que no puedo hacer y dónde me duele</summary>
-      <p class="muted" style="margin:10px 0 14px;">Tu fisioterapeuta lo ve y lo usa para adaptar tus ejercicios. Solo marca lo que
+      <summary class="profile-summary-title" data-i18n="patient.profile.summary">Mi perfil: lo que no puedo hacer y dónde me duele</summary>
+      <p class="muted" style="margin:10px 0 14px;" data-i18n="patient.profile.note">Tu fisioterapeuta lo ve y lo usa para adaptar tus ejercicios. Solo marca lo que
         te pasa; puedes cambiarlo cuando quieras.</p>
       <div id="profile-form"></div>
     </details>
-    <div class="card-grid" id="plan-grid"></div>
   </section>
 
   <!-- EJERCICIO GUIADO -->
   <section id="guided" hidden class="panel-card stack">
     <div class="row-between">
       <h2 id="g-title"></h2>
-      <span class="live-dot on" title="Tu fisioterapeuta ve tu avance"></span>
+      <span class="live-dot on" title="Tu fisioterapeuta ve tu avance" data-i18n-title="patient.guided.watching"></span>
     </div>
     <div id="g-guide"></div>
     <div id="g-map"></div>
@@ -94,21 +108,30 @@
     <div id="g-rest"></div>
     <div id="g-symptom"></div>
     <div class="guided-actions">
-      <button class="btn" id="g-hold" type="button">Contar el sostén</button>
-      <button class="btn primary" id="g-set" type="button">Terminé la serie</button>
-      <button class="btn danger" id="g-pain" type="button">Me dolió: detener</button>
-      <button class="btn" id="g-quit" type="button">Salir sin terminar</button>
+      <button class="btn" id="g-hold" type="button" data-i18n="patient.guided.hold">Contar el sostén</button>
+      <button class="btn primary" id="g-set" type="button" data-i18n="patient.guided.set">Terminé la serie</button>
+      <button class="btn danger" id="g-pain" type="button" data-i18n="patient.guided.pain">Me dolió: detener</button>
+      <button class="btn" id="g-quit" type="button" data-i18n="patient.guided.quit">Salir sin terminar</button>
     </div>
     <p class="status-line" id="g-status" role="status"></p>
   </section>
 </main>
 
-  <footer>
+  <footer data-i18n="patient.footer">
     AXONFAS es un prototipo de validación (Staging): no es un dispositivo médico ni reemplaza a tu fisioterapeuta. Los
     ejercicios vienen de programas públicos (AAOS, NHS, CDC STEADI). Mapa muscular: react-body-highlighter (MIT).
   </footer>
 </div>
 
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="body-map-data.js"></script>
 <script src="body-map.js"></script>
 <script src="catalog.js"></script>
@@ -116,11 +139,14 @@
 <script src="guide-figure.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
+<script src="auth-wall.js"></script>
 <script src="teach-toast.js"></script>
 <script src="suggestions.js"></script>
 <script src="symptom-form.js"></script>
 <script src="rest-timer.js"></script>
 <script src="gallery.js"></script>
+<script src="care-plan.js"></script>
+<script src="pain-scale.js"></script>
 <script src="patient.js"></script>
 </body>
 </html>

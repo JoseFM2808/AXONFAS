@@ -6,9 +6,18 @@
  */
 (function (root) {
   'use strict';
-  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user' };
+  const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user',
+    org: 'axonfas.org',     // org = administración de una organización (Nivel 3, ADR-026)
+    guest: 'axonfas.guest' }; // invitado sin registro: solo mira (ADR-028)
+  // Una página puede leer "como" otro rol: doctor.html muestra la interfaz clínica de muestra al invitado (TD-106).
+  const alias = {};
+  function previewAs(role, as) { alias[role] = as; }
   const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
   const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
+  // Textos de la interfaz (ADR-030): i18n.js se carga antes que este archivo. El idioma viaja en Accept-Language y el
+  // servidor redacta en él sus errores, la nota SOAP y FHIR (TD-116): sus textos se muestran tal como llegan.
+  const t = (key, vars) => (root.AxonI18n ? root.AxonI18n.t(key, vars) : key);
+  const lang = () => (root.AxonI18n && root.AxonI18n.lang) || 'es';
 
   function load(role) {
     try { return JSON.parse(localStorage.getItem(KEYS[role]) || 'null'); } catch { return null; }
@@ -23,8 +32,8 @@
 
   /** opts.timeoutMs corta la espera (AbortController): el error trae status 0 y timeout true. Sin opts, espera lo normal. */
   async function call(role, method, path, body, opts = {}) {
-    const headers = { 'Content-Type': 'application/json' };
-    const account = role ? load(role) : null;
+    const headers = { 'Content-Type': 'application/json', 'Accept-Language': lang() };
+    const account = role ? load(alias[role] || role) : null;
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
     const controller = opts.timeoutMs ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
@@ -35,8 +44,7 @@
           signal: controller ? controller.signal : undefined });
       } catch {
         const timedOut = Boolean(controller && controller.signal.aborted);
-        const err = new Error(timedOut ? 'No llegó la respuesta a tiempo.'
-          : 'No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.');
+        const err = new Error(timedOut ? t('api.timeout') : t('api.offline'));
         err.status = 0;
         err.timeout = timedOut;
         throw err;
@@ -44,8 +52,14 @@
       let data = null;
       try { data = await res.json(); } catch { /* sin cuerpo, o cortado por el tiempo límite */ }
       if (!res.ok) {
-        const err = new Error((data && data.error) || `Error ${res.status}`);
+        const err = new Error((data && data.error) || t('api.error', { status: res.status }));
         err.status = res.status;
+        err.code = data && data.code;
+        // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.
+        // `reason` es la frase que completa su texto ("Para guardar tu progreso…"); `message`, el error completo.
+        if (err.code === 'auth_required' && root.dispatchEvent && typeof CustomEvent === 'function') {
+          root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { reason: (data && data.reason) || null, message: err.message, path } }));
+        }
         throw err;
       }
       return data;
@@ -63,8 +77,8 @@
         controller = new AbortController();
         try {
           if (onState) onState('connecting');
-          const account = load(role);
-          const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}` }, signal: controller.signal, cache: 'no-store' });
+          const account = load(alias[role] || role);
+          const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}`, 'Accept-Language': lang() }, signal: controller.signal, cache: 'no-store' });
           if (!res.ok) {
             if (onState) onState('error', res.status);
             if ([401, 403, 404].includes(res.status)) return;
@@ -135,7 +149,8 @@
   }
 
   /** Página de inicio de cada rol. */
-  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html' };
+  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html', org: 'empresa.html',
+    guest: 'galeria.html' };
 
-  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, HOME };
+  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, previewAs, HOME };
 })(typeof self !== 'undefined' ? self : this);

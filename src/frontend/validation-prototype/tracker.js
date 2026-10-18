@@ -216,6 +216,42 @@
       camera: 'De frente o de espalda, a 2 m, sentado.' },
   };
 
+  /**
+   * Meta de recorrido del plan del fisioterapeuta (ADR-025): { target, limit } en la unidad de la medida. En repeticiones
+   * reemplaza el recorrido pedido (delta) y en sostenes el valor a sostener (threshold); el límite va más allá de la meta
+   * en el sentido del esfuerzo. Pasarlo no es una alerta (I-12): la repetición cuenta igual y solo queda marcada. Una
+   * meta inválida, o un ejercicio sin medida de recorrido (manual), deja el spec de la galería sin tocar.
+   */
+  function withGoal(spec, goal) {
+    if (!spec || !goal || spec.mode === 'manual') return spec;
+    const target = Number(goal.target);
+    const limit = Number(goal.limit);
+    if (!Number.isFinite(target) || !Number.isFinite(limit) || target <= 0) return spec;
+    const beyond = spec.mode === 'hold' && spec.dir < 0 ? limit < target : limit > target;
+    if (!beyond) return spec;
+    const key = spec.mode === 'reps' ? 'delta' : 'threshold';
+    return Object.assign({}, spec, { [key]: target, limit, goalFrom: 'plan', galleryValue: spec[key] });
+  }
+
+  // ------------------------------------------------------------------ textos en el idioma de la interfaz (ADR-030)
+  // METRICS y SPECS guardan el español literal: el servidor los lee con expresiones regulares (staging_api.py,
+  // load_tracking) y la medida en vivo viaja con ese texto. Lo que se ve en pantalla pasa por el diccionario.
+  function i18n() {
+    if (typeof self !== 'undefined' && self.AxonI18n) return self.AxonI18n;
+    try { return require('./i18n.js'); } catch { return null; }
+  }
+  function t(key, vars) { const I = i18n(); return I ? I.t(key, vars) : key; }
+  const shown = (text, fallback) => (text && !/^tracker\./.test(text) ? text : fallback);
+  /** Nombre de la medida para mostrar ("Flexión de rodilla" / "Knee flexion"). */
+  const metricLabel = (id) => shown(t(`tracker.metric.${id}`), METRICS[id] ? METRICS[id].label : id);
+  /** Dónde va la cámara en un ejercicio (texto para mostrar). */
+  const cameraText = (exId) => shown(t(`tracker.camera.${exId}`), SPECS[exId] ? SPECS[exId].camera : '');
+  /** Por qué el seguimiento de un ejercicio es aproximado ('' si no lo es). */
+  const noteText = (exId) => (SPECS[exId] && SPECS[exId].note ? shown(t(`tracker.note.${exId}`), SPECS[exId].note) : '');
+  /** Lado de una repetición: 'L' | 'R' | '+' | '-' → texto para mostrar; sin lado, '—'. */
+  const sideName = (side) => (side === 'L' ? t('tracker.side.L') : side === 'R' ? t('tracker.side.R')
+    : side === '+' ? t('tracker.side.plus') : side === '-' ? t('tracker.side.minus') : '—');
+
   /** Dosis a seguir: la del plan del paciente si existe, si no la de la fuente (catalog.js). */
   function targetFor(spec, dose) {
     const perSide = spec.perSide ? 2 : 1;
@@ -322,6 +358,13 @@
 
     const r1 = (v) => Math.round(v * 10) / 10;
 
+    /** Límite del plan (ADR-025): una vez por repetición o sostén avisa que no hace falta ir más allá. No es una alerta. */
+    function checkLimit(rep, beyond, events) {
+      if (spec.limit == null || rep.overLimit || !beyond) return;
+      rep.overLimit = true;
+      events.push({ type: 'over_limit', limit: spec.limit });
+    }
+
     function stepReps(t, vals, events) {
       if (s.phase === 'setup') {
         if (settle(t, vals)) {
@@ -340,9 +383,10 @@
         if (dev >= spec.delta) {
           s.state = 'up';
           s.rep = { key: cur.key, sign: Math.sign(cur.value - cur.rest), start: t, peak: dev, holdStart: t, lastIn: t,
-            holdMax: 0, holdDone: !target.hold };
+            holdMax: 0, holdDone: !target.hold, overLimit: false };
           s.excursion = 0;
           if (target.hold) events.push({ type: 'hold_start', seconds: target.hold });
+          checkLimit(s.rep, dev > spec.limit, events);
         } else {
           s.excursion = Math.max(s.excursion, dev);
           if (dev <= spec.delta * cfg.releaseRatio) {
@@ -363,6 +407,7 @@
         // bajar más tiempo sí, y la cuenta vuelve a empezar al subir otra vez.
         const rep = s.rep;
         rep.peak = Math.max(rep.peak, dev);
+        checkLimit(rep, dev > spec.limit, events);
         if (dev >= spec.delta * cfg.holdZone) {
           if (rep.holdStart == null) {
             rep.holdStart = t;
@@ -386,8 +431,8 @@
             s.shortHolds += 1;
             events.push({ type: 'hold_short', seconds: holdSec, needed: target.hold });
           } else {
-            count(events, { side: sideOf(rep.key) || (spec.dir === 0 ? (rep.sign > 0 ? '+' : '-') : null), peak: r1(rep.peak),
-              holdSec, holdOk: true, seconds: r1((t - rep.start) / 1000) });
+            count(events, Object.assign({ side: sideOf(rep.key) || (spec.dir === 0 ? (rep.sign > 0 ? '+' : '-') : null), peak: r1(rep.peak),
+              holdSec, holdOk: true, seconds: r1((t - rep.start) / 1000) }, rep.overLimit ? { overLimit: true } : {}));
           }
         }
       }
@@ -407,15 +452,19 @@
       });
       const h = s.hold;
       if (best && best.inside) {
+        const over = spec.dir >= 0 ? best.value > spec.limit : best.value < spec.limit;
         if (!h) {
-          s.hold = { start: t, lastIn: t, counted: false, side: best.key };
+          s.hold = { start: t, lastIn: t, counted: false, side: best.key, overLimit: false };
           events.push({ type: 'hold_start', seconds: target.hold });
+          checkLimit(s.hold, over, events);
         } else {
           h.lastIn = t;
+          checkLimit(h, over, events);
           if (!h.counted && t - h.start >= target.hold * 1000) {
             h.counted = true;
             events.push({ type: 'hold_done' });
-            count(events, { side: h.side, holdSec: target.hold, holdOk: true, seconds: target.hold });
+            count(events, Object.assign({ side: h.side, holdSec: target.hold, holdOk: true, seconds: target.hold },
+              h.overLimit ? { overLimit: true } : {}));
           }
         }
       } else if (h && t - h.lastIn > cfg.holdGraceMs) {
@@ -492,6 +541,7 @@
         target, value: picked ? picked.value : null, side: picked ? sideOf(picked.key) : null,
         rest: picked && picked.rest != null ? picked.rest : null, progress,
         holdMs: holding, metric: { id: spec.metric, label: metric.label, unit: metric.unit },
+        limit: spec.limit != null ? spec.limit : null, overLimitReps: s.reps.filter((r) => r.overLimit).length,
       };
     }
 
@@ -504,5 +554,6 @@
     };
   }
 
-  return { SIDES, SIDE_NAMES, METRICS, SPECS, DEFAULTS, measure, targetFor, createTracker, angleAt };
+  return { SIDES, SIDE_NAMES, METRICS, SPECS, DEFAULTS, measure, targetFor, withGoal, createTracker, angleAt,
+    metricLabel, cameraText, noteText, sideName };
 });

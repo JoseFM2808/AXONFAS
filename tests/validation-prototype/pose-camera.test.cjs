@@ -67,6 +67,13 @@ test('sin cámara en el navegador avisa con el texto de cada página', async () 
   assert.deepEqual(said, ['Ábrelo desde localhost']);
   assert.equal(PC.cameraError({ name: 'NotAllowedError' }), PC.TEXT.denied);
   assert.equal(PC.cameraError({ name: 'NotFoundError' }), PC.TEXT.notFound);
+  // Los avisos siguen el idioma (ADR-030) y siempre dicen que el video no sale del equipo.
+  const I = require(path.join(SRC, 'i18n.js'));
+  I.use('en');
+  assert.equal(PC.cameraError({ name: 'NotFoundError' }), 'No camera was found.');
+  assert.match(PC.TEXT.active, /Video never leaves this device/);
+  I.use('es');
+  assert.match(PC.TEXT.active, /El video no sale de este equipo/);
 });
 
 test('la carga de MediaPipe vive en un solo lugar', () => {

@@ -57,7 +57,7 @@ def run_turn(llm, utterance: str, ctx: dict, *, voice: VoiceClient | None = None
     said = coach.reply(None if flag else llm, utterance, decision)
     out["timings_ms"]["coach_llm"] = said.get("llm_ms")
     out.update(decision=decision, reply=said["text"], reply_source=said["source"])
-    out["symptom"] = safety.symptom_record(utterance, decision)     # Staging lo guarda con source voice_turn (ADR-025)
+    out["symptom"] = safety.symptom_record(utterance, decision)     # Staging lo guarda con source voice_turn (ADR-033)
     if voice is not None:
         try:
             tts = voice.tts(said["text"], voice=tts_voice)
@@ -82,8 +82,9 @@ def _default_pool() -> ThreadPoolExecutor:
 
 def run_text_turn(clinical_llm, coach_llm, text: str, ctx: dict, *, monitored: bool, allowed: set[str] | None,
                   budget_s: float = 18.0, clinical_timeout_s: float = 12.0, coach_timeout_s: float = 5.0,
-                  coach_if_under_s: float = 6.0, executor=None, provider: str | None = None, model: str | None = None) -> dict:
-    """Turno de texto del paciente en Staging (ADR-025). El texto viene del formulario «Tengo una molestia», así que
+                  coach_if_under_s: float = 6.0, executor=None, provider: str | None = None, model: str | None = None,
+                  lang: str = "es", translate=None) -> dict:
+    """Turno de texto del paciente en Staging (ADR-033). El texto viene del formulario «Tengo una molestia», así que
     siempre cuenta como molestia declarada: el agente solo puede bajar la exigencia, y solo parámetros de `allowed`.
 
     Orden fijo: 1) alarma por reglas, sin consultar a ningún LLM (I-7); 2) agente clínico solo si la sesión está
@@ -128,7 +129,7 @@ def run_text_turn(clinical_llm, coach_llm, text: str, ctx: dict, *, monitored: b
     said = None
     slow = clinical_ms is not None and clinical_ms > coach_if_under_s * 1000      # el clínico ya gastó la espera razonable
     if reply_llm is not None and error is None and not slow and left() >= 1.0:       # si el proveedor falló, no se vuelve a esperar
-        future = executor.submit(coach.reply, reply_llm, text, decision)
+        future = executor.submit(coach.reply, reply_llm, text, decision, lang, translate)
         try:
             said = future.result(timeout=min(coach_timeout_s, left()))
         except FutureTimeout:
@@ -137,7 +138,8 @@ def run_text_turn(clinical_llm, coach_llm, text: str, ctx: dict, *, monitored: b
         except Exception:
             error = error or "llm_error"
     if said is None:
-        said = {"text": coach.template(decision), "source": "template", "llm_ms": None}
+        said = {"text": translate(coach.template(decision)) if translate else coach.template(decision),
+                "source": "template", "llm_ms": None}
     called = clinical_called or (reply_llm is not None)
     ai = {"provider": provider if called else None, "model": model if called else None, "clinical_ms": clinical_ms,
           "coach_ms": said.get("llm_ms"), "decided_by": decision.get("source") or "rules",
@@ -149,7 +151,7 @@ def run_text_turn(clinical_llm, coach_llm, text: str, ctx: dict, *, monitored: b
 
 MEASURE_TEXTS = ["me molesta la rodilla", "estoy cansado", "la rodilla no va bien", "siento un pinchazo en la ingle",
                  "me cuesta pararme", "tengo una molestia en el muslo"]
-MEASURE_MAX = 20                                       # tope por el cupo de la clave del equipo (TD-108)
+MEASURE_MAX = 20                                       # tope por el cupo de la clave del equipo (TD-123)
 
 
 def _percentiles(values: list[float]) -> dict | None:
@@ -177,6 +179,7 @@ def measure(n: int, *, with_coach: bool = False, gap: float = 3.0, save: bool = 
     clinical_ms: list[float] = []
     coach_ms: list[float] = []
     tokens: list[int] = []
+    by_model: dict[str, int] = {}                      # cuántas respuestas dio cada modelo de la cadena (ADR-031)
     counts = {"ok": 0, "errors": 0, "http_429": 0, "valid_json": 0, "applied": 0}
     for i in range(n):
         if i and gap > 0:
@@ -191,6 +194,7 @@ def measure(n: int, *, with_coach: bool = False, gap: float = 3.0, save: bool = 
             counts["http_429"] += after["errors"] > before["errors"] and "429" in str(after.get("last_error") or "")
             continue
         counts["ok"] += 1
+        by_model[client.model] = by_model.get(client.model, 0) + 1
         clinical_ms.append(decision["llm_ms"])
         tokens.append((after["completion_tokens"] or 0) - (before["completion_tokens"] or 0))
         # JSON inválido = el LLM no dio propuesta ni "none": con respaldo de reglas, su resultado queda en llm_outcome.
@@ -206,7 +210,7 @@ def measure(n: int, *, with_coach: bool = False, gap: float = 3.0, save: bool = 
     clin, talk = _percentiles(clinical_ms), _percentiles(coach_ms)
     suggested_clinical = _clamp(clin["p95"] / 1000 * 1.5, 8, 15) if clin else 12
     suggested_coach = _clamp(talk["p95"] / 1000 * 1.5, 2, 8) if talk else 5
-    result = {"provider": client.label, "model": client.model, "n": n, **counts,
+    result = {"provider": client.label, "model": client.model, "by_model": by_model, "n": n, **counts,
               "json_mode_fallback": client.inner.url in llm_module._NO_JSON_MODE,
               "clinical_ms": clin, "coach_ms": talk,
               "completion_tokens_p95": _percentiles(tokens)["p95"] if tokens else None,

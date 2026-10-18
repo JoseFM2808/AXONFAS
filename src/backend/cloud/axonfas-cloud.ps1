@@ -286,7 +286,8 @@ switch ($Command) {
       & scp @a
       if ($LASTEXITCODE -ne 0) { throw 'No se pudo copiar el archivo de entorno.' }
     } finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
-    Invoke-Remote $t.Ip 'chmod 600 /opt/axonfas/config/.env.web && cd /opt/axonfas && git pull --ff-only && cd config/deploy && docker compose --env-file ../.env.web up -d --build'
+    # git y docker escriben su progreso en stderr: en PowerShell 5.1 eso cortaba el script, así que se junta en stdout.
+    Invoke-Remote $t.Ip 'chmod 600 /opt/axonfas/config/.env.web && cd /opt/axonfas && git pull --ff-only 2>&1 && cd config/deploy && docker compose --env-file ../.env.web up -d --build 2>&1'
     Write-Host "Probando https://$domain …"
     Start-Sleep -Seconds 10
     try {

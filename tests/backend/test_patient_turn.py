@@ -1,4 +1,4 @@
-"""Tests del turno de texto del paciente con el agente clínico (ADR-025): POST /api/me/turn. Solo datos sintéticos y sin
+"""Tests del turno de texto del paciente con el agente clínico (ADR-033): POST /api/me/turn. Solo datos sintéticos y sin
 red real: el LLM es un FakeLLM o un servidor local con la forma de AMD Token Factory.
 
     py -m unittest discover -s tests/backend -v
@@ -24,6 +24,7 @@ from staging_api import SCHEMA, StagingApi  # noqa: E402
 from test_staging_api import CATALOG, Client  # noqa: E402
 from fake_tokenfactory import KEY, FakeTokenFactory  # noqa: E402
 from agents import coach, providers  # noqa: E402
+from agents.llm import LLMError  # noqa: E402
 from agents.llm import FakeLLM  # noqa: E402
 
 ENV = ("AMD_TOKENFACTORY_BASE_URL", "AMD_TOKENFACTORY_API_KEY", "AMD_TOKENFACTORY_MODEL", "AXONFAS_LLM_KEY", "AXONFAS_LLM_URL",
@@ -235,7 +236,61 @@ class PatientTurnTest(unittest.TestCase):
         self.api.db.execute("UPDATE patient SET consent_given = 0")
         self.assertEqual(self.turn()[0], 403)
 
-    # ------------------------------------------------------------------ privacidad antes de la IA (ADR-026)
+    # ------------------------------------------------------------------ idioma, invitado y cadena de modelos (ADR-030/031/032)
+    def turn_in(self, lang, **body):
+        payload = {"exercise_id": "sit-to-stand", "text": "la rodilla no va bien", "in_session": True, "current": CUR, **body}
+        token = self.patient.token
+        status, out = self.api.handle("POST", "/api/me/turn", {"Authorization": f"Bearer {token}", "Accept-Language": lang},
+                                      json.dumps(payload).encode())
+        return status, out
+
+    def test_el_turno_responde_en_el_idioma_de_la_interfaz(self):
+        status, body = self.turn_in("en", text="my knee hurts")
+        self.assertEqual(status, 201)
+        self.assertEqual(body["message"], "Understood. So it does not bother you, only go down to 80 degrees. "
+                                          "If the pain increases, tap Pain and we stop.")
+        self.assertEqual(self.turn_in("es", text="me molesta")[1]["message"].split(".")[0], "Entendido")
+        status, alarm = self.turn_in("en", text="I feel dizzy")
+        self.assertEqual((alarm["stop"], alarm["message"]),
+                         (True, "We are stopping the session. If the discomfort continues, contact your physiotherapist."))
+        self.assertEqual(self.rows("SELECT reply FROM voice_turn ORDER BY id DESC")[0]["reply"], alarm["message"], "se guarda lo que vio el paciente")
+
+    def test_en_ingles_el_conversacional_redacta_en_ingles_y_la_base_esta_en_ingles(self):
+        clinical, talker = self.use_ai(coach_text="Okay, only go down to 70 degrees.")
+        status, body = self.turn_in("en", text="my knee hurts")
+        self.assertEqual((body["message"], body["ai"]["phrased_by"]), ("Okay, only go down to 70 degrees.", "llm"))
+        self.assertIn("inglés", talker.calls[0][0]["content"])
+        self.assertIn("only go down to 70 degrees", talker.calls[0][-1]["content"])
+        self.assertNotIn("baja solo hasta", talker.calls[0][-1]["content"])
+
+    def test_el_invitado_no_puede_usar_el_turno_ni_pide_ningun_llm(self):
+        self.api.ai_status = lambda *_: self.fail("el invitado no consulta la IA")
+        self.api._llm = lambda *a, **k: self.fail("el invitado no pide un LLM (I-21)")
+        _, guest = Client(self.api).call("POST", "/api/auth/guest", {})
+        status, body = Client(self.api, guest["token"]).call("POST", "/api/me/turn", {"exercise_id": "sit-to-stand", "text": "me molesta",
+                                                                                       "in_session": True})
+        self.assertEqual((status, body["code"]), (401, "auth_required"))
+
+    def test_si_responde_la_alternativa_la_pantalla_y_la_base_dicen_ese_modelo(self):
+        class Bad:
+            model, timeout = "DeepSeek-V4-Flash", 30.0
+
+            def chat(self, *a, **k):
+                raise LLMError("se pasó del tiempo")
+
+        class Gemma(Tagged):
+            model, timeout = "Gemma-4-31B-IT", 30.0
+
+        gemma = Gemma(default=ADJ_ROM)
+        self.api.ai_status = lambda *_: (200, {"available": True, "provider": "AMD Token Factory"})
+        self.api._llm = lambda purpose="x", **k: providers.MeteredLLM([Bad(), gemma], "tokenfactory", purpose, "AMD Token Factory",
+                                                                      k.get("budget_s"))
+        body = self.turn()[1]
+        self.assertEqual((body["ai"]["decided_by"], body["ai"]["model"]), ("llm", "Gemma-4-31B-IT"))
+        self.assertEqual(self.rows("SELECT ai_model FROM agent_decision")[0]["ai_model"], "Gemma-4-31B-IT")
+        self.assertEqual(self.rows("SELECT ai_model FROM voice_turn")[0]["ai_model"], "Gemma-4-31B-IT")
+
+    # ------------------------------------------------------------------ privacidad antes de la IA (ADR-034)
     def test_los_datos_personales_no_llegan_al_llm_y_lo_guardado_es_lo_filtrado(self):
         clinical, talker = self.use_ai()
         plain = self.turn(text="me molesta la rodilla")[1]
@@ -295,7 +350,7 @@ class PatientTurnTest(unittest.TestCase):
             path = Path(tmp) / "old.sqlite3"
             old = sqlite3.connect(path)
             old.executescript(SCHEMA.replace(",\n  redactions INTEGER NOT NULL DEFAULT 0);", ");")
-                              .replace("   -- datos personales ocultados en el texto guardado (ADR-026)", ""))
+                              .replace("   -- datos personales ocultados en el texto guardado (ADR-034)", ""))
             old.commit()
             self.assertNotIn("redactions", {r[1] for r in old.execute("PRAGMA table_info(voice_turn)")})
             old.close()
@@ -319,7 +374,7 @@ class PatientTurnTest(unittest.TestCase):
         self.assertNotIn("Ana", json.dumps(llm.calls, ensure_ascii=False))
         self.assertIn("Ana", rep["report"]["soap"]["S"], "la plantilla, que es interna, no cambia")
 
-    # ------------------------------------------------------------------ tiempos ajustables y estado de la IA (ADR-025)
+    # ------------------------------------------------------------------ tiempos ajustables y estado de la IA (ADR-033)
     def test_los_tiempos_se_ajustan_por_entorno_y_se_acotan(self):
         names = ("AXONFAS_TURN_CLINICAL_S", "AXONFAS_TURN_COACH_S", "AXONFAS_TURN_BUDGET_S")
         saved = {k: os.environ.pop(k, None) for k in names}

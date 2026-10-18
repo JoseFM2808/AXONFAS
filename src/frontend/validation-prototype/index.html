@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AXONFAS · Prototipo de validación</title>
+<title data-i18n="index.title">AXONFAS · Prototipo de validación</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
@@ -201,34 +201,34 @@
 </style>
 </head>
 <body>
-<a class="skip-link" href="#stage">Saltar al video y los controles</a>
+<a class="skip-link" href="#stage" data-i18n="skip.stage">Saltar al video y los controles</a>
 
 <!-- HEADER COCKPIT -->
 <header class="top-header">
   <div class="header-brand">
     <div class="brand-icon">AX</div>
     <div class="brand-info">
-      <h1>AXONFAS <span>· Prototipo de validación</span></h1>
-      <p>Prototipo sin conexión: no usa servidor, GPU ni agente de IA. Las alertas salen de reglas fijas en este navegador.</p>
+      <h1>AXONFAS <span data-i18n="index.h1">· Prototipo de validación</span></h1>
+      <p data-i18n="index.tagline">Prototipo: la pose se estima en este navegador y las alertas salen de reglas fijas. No usa GPU ni IA.</p>
     </div>
   </div>
-  <nav class="top-nav" aria-label="Secciones">
-    <a href="index.html" aria-current="page">Prototipo</a>
-    <a href="galeria.html">Galería</a>
-    <a href="doctor.html">Fisioterapeuta</a>
-    <a href="paciente.html">Paciente</a>
-    <a href="login.html">Entrar</a>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" aria-current="page" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="login.html" data-i18n="nav.login">Entrar</a>
   </nav>
   <div class="header-badge">
     <span class="pulse"></span>
-    <span id="chip-status">Prototipo · sin conexión</span>
+    <span id="chip-status" data-i18n="index.header.chip">Prototipo · sin conexión</span>
   </div>
 </header>
 
 <div class="wrap">
 
   <!-- ESCENARIO CENTRAL / VIDEO VIEWPORT -->
-  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara"></section>
+  <section class="panel-card cam-setup" id="cam-setup" aria-label="Posición de la cámara" data-i18n-aria-label="index.cam.aria"></section>
 
   <main class="stage-wrapper" id="stage" tabindex="-1">
     <div class="viewport" id="viewport">
@@ -244,21 +244,21 @@
 
       <!-- Estado superior izquierdo -->
       <div class="hud-status-badge">
-        <span>PROTOTIPO</span>
+        <span data-i18n="index.badge.proto">PROTOTIPO</span>
         <span>•</span>
-        <span style="color:#FFFFFF;">SIN CONEXIÓN · REGLAS LOCALES</span>
+        <span style="color:#FFFFFF;" data-i18n="index.badge.mode">SIN CONEXIÓN · REGLAS LOCALES</span>
       </div>
 
       <!-- Indicador de Fase / Calibración (requerido por app.js renderPhase) -->
       <div class="phase-indicator" id="phase-indicator">
-        <div class="phase-label" id="phase">Esperando inicio…</div>
-        <div class="phase-sub" id="phase-sub">Pulsa un botón para comenzar.</div>
+        <div class="phase-label" id="phase" data-i18n="index.phase.wait">Esperando inicio…</div>
+        <div class="phase-sub" id="phase-sub" data-i18n="index.phase.waitSub">Pulsa un botón para comenzar.</div>
       </div>
 
       <!-- Pantalla de Bienvenida Placeholder -->
       <div class="placeholder" id="placeholder">
-        <strong>Inicia tu Sesión de Tele-Rehabilitación</strong>
-        <span>Pulsa "Ver el demo sintético" para evaluar en tiempo real la cinemática, los tacómetros y las alertas, o conecta tu cámara web.</span>
+        <strong data-i18n="index.placeholder.title">Inicia tu Sesión de Tele-Rehabilitación</strong>
+        <span data-i18n="index.placeholder.text">Pulsa "Ver el demo sintético" para evaluar en tiempo real la cinemática, los tacómetros y las alertas, o conecta tu cámara web.</span>
       </div>
 
       <!-- Alerta Biomecánica Inmediata (<250ms) -->
@@ -269,7 +269,7 @@
 
       <!-- HUD GIGANTE A 2-3 METROS (TD-31) -->
       <div class="hud" id="hud" hidden>
-        <div class="hud-phase" id="hud-phase">Calibración</div>
+        <div class="hud-phase" id="hud-phase" data-i18n="index.hud.phase">Calibración</div>
         <div class="hud-count"><span id="hud-done">0</span><span class="hud-total">/ <span id="hud-total">10</span></span></div>
         <div class="hud-bar" id="hud-bar" aria-hidden="true"></div>
       </div>
@@ -292,7 +292,7 @@
           </svg>
         </div>
         <div class="gauge-text-data">
-          <span class="k">Flexión Rodilla</span>
+          <span class="k" data-i18n="index.gauge.knee">Flexión Rodilla</span>
           <span class="v">—</span>
           <span class="th"></span>
         </div>
@@ -307,7 +307,7 @@
           </svg>
         </div>
         <div class="gauge-text-data">
-          <span class="k">Flexión Tronco</span>
+          <span class="k" data-i18n="index.gauge.trunk">Flexión Tronco</span>
           <span class="v">—</span>
           <span class="th"></span>
         </div>
@@ -322,7 +322,7 @@
           </svg>
         </div>
         <div class="gauge-text-data">
-          <span class="k">Valgo Rod. Izq</span>
+          <span class="k" data-i18n="index.gauge.valgusL">Valgo Rod. Izq</span>
           <span class="v">—</span>
           <span class="th"></span>
         </div>
@@ -337,7 +337,7 @@
           </svg>
         </div>
         <div class="gauge-text-data">
-          <span class="k">Valgo Rod. Der</span>
+          <span class="k" data-i18n="index.gauge.valgusR">Valgo Rod. Der</span>
           <span class="v">—</span>
           <span class="th"></span>
         </div>
@@ -352,7 +352,7 @@
           </svg>
         </div>
         <div class="gauge-text-data">
-          <span class="k">Confianza Pose</span>
+          <span class="k" data-i18n="index.gauge.conf">Confianza Pose</span>
           <span class="v">—</span>
           <span class="th"></span>
         </div>
@@ -362,16 +362,16 @@
     <!-- BOTONERA PILOTO FLOTANTE DOCK -->
     <div class="pilot-dock">
       <div class="dock-group">
-        <button class="btn primary" id="btn-camera" type="button">📹 Usar la cámara</button>
-        <button class="btn" id="btn-demo" type="button">⚡ Ver el demo sintético</button>
-        <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
-        <button class="btn" id="btn-share" type="button" hidden>📱 Probar en otro equipo</button>
-        <span class="status-line" id="source-status" role="status">Sin fuente conectada.</span>
+        <button class="btn primary" id="btn-camera" type="button" data-i18n="index.btn.camera">📹 Usar la cámara</button>
+        <button class="btn" id="btn-demo" type="button" data-i18n="index.btn.demo">⚡ Ver el demo sintético</button>
+        <button class="btn" id="btn-fullscreen" type="button" data-i18n="index.btn.fullscreen">⛶ Pantalla completa</button>
+        <button class="btn" id="btn-share" type="button" hidden data-i18n="index.btn.share">📱 Probar en otro equipo</button>
+        <span class="status-line" id="source-status" role="status" data-i18n="index.source.none">Sin fuente conectada.</span>
       </div>
       <div class="dock-group">
-        <button class="btn danger" id="btn-pain" type="button" disabled>🛑 Dolor: Detener</button>
-        <button class="btn" id="btn-stop" type="button" disabled>Terminar</button>
-        <button class="btn" id="btn-new" type="button" disabled>Nueva sesión</button>
+        <button class="btn danger" id="btn-pain" type="button" disabled data-i18n="index.btn.pain">🛑 Dolor: Detener</button>
+        <button class="btn" id="btn-stop" type="button" disabled data-i18n="index.btn.stop">Terminar</button>
+        <button class="btn" id="btn-new" type="button" disabled data-i18n="index.btn.new">Nueva sesión</button>
       </div>
     </div>
   </main>
@@ -382,25 +382,21 @@
     <section class="panel-card">
       <details class="guide" id="guide" open>
         <summary>
-          <span>📖 Guía de Ejecución: Sentarse y Pararse</span>
-          <span style="font-size:0.8rem; color:var(--tape);">Ver / Ocultar</span>
+          <span data-i18n="index.guide.summary">📖 Guía de Ejecución: Sentarse y Pararse</span>
+          <span style="font-size:0.8rem; color:var(--tape);" data-i18n="index.guide.toggle">Ver / Ocultar</span>
         </summary>
         <div class="guide-body">
           <div id="guide-figure"></div>
           <div>
             <ol class="guide-steps">
-              <li>Coloca la cámara a la altura de la cadera, a 2–3 m, donde se vean cuerpo y pies.</li>
-              <li>Silla sin brazos, espalda recta y brazos cruzados en el pecho.</li>
-              <li>Levántate extendiendo completamente rodillas y caderas sin impulsarte.</li>
-              <li>Vuelve a sentarte suavemente. Eso es una repetición.</li>
+              <li data-i18n="index.guide.step1">Coloca la cámara a la altura de la cadera, a 2–3 m, donde se vean cuerpo y pies.</li>
+              <li data-i18n="index.guide.step2">Silla sin brazos, espalda recta y brazos cruzados en el pecho.</li>
+              <li data-i18n="index.guide.step3">Levántate extendiendo completamente rodillas y caderas sin impulsarte.</li>
+              <li data-i18n="index.guide.step4">Vuelve a sentarte suavemente. Eso es una repetición.</li>
             </ol>
-            <p class="guide-flow" id="guide-flow">
-              Las 3 primeras repeticiones calibran tu línea base normal. Luego siguen <strong id="guide-rest">7</strong> con alertas automáticas (<span id="guide-total">10</span> en total).
-            </p>
+            <p class="guide-flow" id="guide-flow" data-i18n="index.guide.flow">Las 3 primeras repeticiones calibran tu línea base normal. Luego siguen <strong id="guide-rest" data-i18n-slot="rest">7</strong> con alertas automáticas (<span id="guide-total" data-i18n-slot="total">10</span> en total).</p>
             <div style="margin-top:12px;">
-              <span style="font-size:0.8rem; color:var(--muted); font-family:var(--font-mono);">
-                Distancia recomendada: 2–3 m · Visión directa
-              </span>
+              <span style="font-size:0.8rem; color:var(--muted); font-family:var(--font-mono);" data-i18n="index.guide.distance">Distancia recomendada: 2–3 m · Visión directa</span>
             </div>
           </div>
         </div>
@@ -409,52 +405,50 @@
 
     <!-- SOBRE DE SEGURIDAD DEL TERAPEUTA -->
     <aside class="panel-card">
-      <h2>Sobre de Seguridad (Terapeuta)</h2>
+      <h2 data-i18n="index.env.h2">Sobre de Seguridad (Terapeuta)</h2>
       <div class="control">
-        <label for="trunk-margin">Margen tronco sobre línea base <output id="trunk-margin-out">+15°</output></label>
+        <label for="trunk-margin" data-i18n="index.env.trunk">Margen tronco sobre línea base <output id="trunk-margin-out" data-i18n-slot="out">+15°</output></label>
         <input type="range" id="trunk-margin" min="5" max="35" step="1" value="15">
       </div>
       <div class="control">
-        <label for="valgus-margin">Margen valgo sobre línea base <output id="valgus-margin-out">+10°</output></label>
+        <label for="valgus-margin" data-i18n="index.env.valgus">Margen valgo sobre línea base <output id="valgus-margin-out" data-i18n-slot="out">+10°</output></label>
         <input type="range" id="valgus-margin" min="3" max="25" step="1" value="10">
       </div>
       <div class="control">
-        <label for="rom-target">Flexión de rodilla pedida <output id="rom-target-out">≥ 80°</output></label>
+        <label for="rom-target" data-i18n="index.env.rom">Flexión de rodilla pedida <output id="rom-target-out" data-i18n-slot="out">≥ 80°</output></label>
         <input type="range" id="rom-target" min="50" max="115" step="1" value="80" disabled>
-        <label class="check"><input type="checkbox" id="rom-auto" checked> Automática: línea base -10°</label>
+        <label class="check" data-i18n="index.env.romAuto"><input type="checkbox" id="rom-auto" checked data-i18n-slot="box"> Automática: línea base -10°</label>
       </div>
       <div class="control">
-        <label for="max-reps">Repeticiones en total <output id="max-reps-out">10</output></label>
+        <label for="max-reps" data-i18n="index.env.reps">Repeticiones en total <output id="max-reps-out" data-i18n-slot="out">10</output></label>
         <input type="range" id="max-reps" min="4" max="20" step="1" value="10">
       </div>
       <div class="control">
-        <label for="min-conf">Confianza mínima de pose <output id="min-conf-out">0.60</output></label>
+        <label for="min-conf" data-i18n="index.env.conf">Confianza mínima de pose <output id="min-conf-out" data-i18n-slot="out">0.60</output></label>
         <input type="range" id="min-conf" min="0.3" max="0.9" step="0.05" value="0.6">
-        <span class="hint">Descarta frames ruidosos para evitar falsos positivos.</span>
+        <span class="hint" data-i18n="index.env.confHint">Descarta frames ruidosos para evitar falsos positivos.</span>
       </div>
-      <label class="check"><input type="checkbox" id="voice" checked> Alertas audibles con síntesis de voz</label>
+      <label class="check" data-i18n="index.env.voice"><input type="checkbox" id="voice" checked data-i18n-slot="box"> Alertas audibles con síntesis de voz</label>
     </aside>
   </div>
 
   <!-- SECCIÓN DE RESULTADOS CLÍNICOS & NOTA SOAP -->
-  <section class="results-section" aria-label="Resultados">
+  <section class="results-section" aria-label="Resultados" data-i18n-aria-label="index.results.aria">
     <!-- REPETICIONES -->
     <div>
-      <h2>Repeticiones Registradas</h2>
-      <p class="baseline" id="baseline" style="font-size:0.9rem; color:var(--muted); margin-bottom:12px;">
-        La línea base calculada aparecerá al terminar las 3 repeticiones de calibración.
-      </p>
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones registradas">
+      <h2 data-i18n="index.reps.h2">Repeticiones Registradas</h2>
+      <p class="baseline" id="baseline" style="font-size:0.9rem; color:var(--muted); margin-bottom:12px;" data-i18n="index.reps.baseline">La línea base calculada aparecerá al terminar las 3 repeticiones de calibración.</p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Repeticiones registradas" data-i18n-aria-label="index.reps.region">
         <table>
           <thead>
             <tr>
-              <th>Rep</th><th>Tipo</th><th>Rodilla (°)</th><th>Tronco pico (°)</th>
-              <th>Valgo izq. (°)</th><th>Valgo der. (°)</th><th>Rango pedido</th>
-              <th>Visibilidad</th><th>Alertas</th>
+              <th data-i18n="index.th.rep">Rep</th><th data-i18n="index.th.type">Tipo</th><th data-i18n="index.th.knee">Rodilla (°)</th><th data-i18n="index.th.trunkPeak">Tronco pico (°)</th>
+              <th data-i18n="index.th.valgusL">Valgo izq. (°)</th><th data-i18n="index.th.valgusR">Valgo der. (°)</th><th data-i18n="index.th.rom">Rango pedido</th>
+              <th data-i18n="index.th.visibility">Visibilidad</th><th data-i18n="index.th.alerts">Alertas</th>
             </tr>
           </thead>
           <tbody id="reps-body">
-            <tr><td colspan="9" class="empty">Todavía no hay repeticiones registradas. Inicia el demo para observar la telemetría en vivo.</td></tr>
+            <tr><td colspan="9" class="empty" data-i18n="index.reps.empty">Todavía no hay repeticiones registradas. Inicia el demo para observar la telemetría en vivo.</td></tr>
           </tbody>
         </table>
       </div>
@@ -462,72 +456,79 @@
 
     <!-- EVENTOS DE COMPENSACIÓN -->
     <div>
-      <h2>Compensaciones Biomecánicas Detectadas (&lt;250ms)</h2>
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Compensaciones detectadas">
+      <h2 data-i18n="index.events.h2">Compensaciones Biomecánicas Detectadas (&lt;250ms)</h2>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Compensaciones detectadas" data-i18n-aria-label="index.events.region">
         <table>
           <thead>
             <tr>
-              <th>Rep</th><th>Compensación</th><th>Al alertar (°)</th><th>Pico (°)</th>
-              <th>Umbral (°)</th><th>Severidad</th><th>Latencia (ms)</th>
+              <th data-i18n="index.th.rep">Rep</th><th data-i18n="index.th.compensation">Compensación</th><th data-i18n="index.th.atAlert">Al alertar (°)</th><th data-i18n="index.th.peak">Pico (°)</th>
+              <th data-i18n="index.th.threshold">Umbral (°)</th><th data-i18n="index.th.severity">Severidad</th><th data-i18n="index.th.latency">Latencia (ms)</th>
             </tr>
           </thead>
           <tbody id="events-body">
-            <tr><td colspan="7" class="empty">Sin eventos de compensación detectados.</td></tr>
+            <tr><td colspan="7" class="empty" data-i18n="index.events.empty">Sin eventos de compensación detectados.</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
     <div style="display:flex; align-items:center; gap:12px;">
-      <button class="btn" id="btn-copy" type="button" disabled>📋 Copiar resumen para Nota SOAP</button>
+      <button class="btn" id="btn-copy" type="button" disabled data-i18n="index.btn.copy">📋 Copiar resumen para Nota SOAP</button>
       <span class="status-line" id="copy-status"></span>
     </div>
     <textarea id="copy-fallback" hidden readonly rows="8" style="width:100%; background:var(--surface); color:var(--ink); border:1px solid var(--surface-border); border-radius:8px; padding:10px;"></textarea>
   </section>
 
-  <footer>
-    AXONFAS · prototipo de validación. Todavía no está conectado al servidor, a la GPU AMD Instinct MI300X ni al agente
-    de IA: la pose se estima en este navegador con MediaPipe y las alertas salen de reglas fijas (ADR-004), con los
-    umbrales que fija el fisioterapeuta. El video no sale del equipo (ADR-003). No es un dispositivo médico.
-  </footer>
+  <footer data-i18n="index.footer">AXONFAS · prototipo de validación. La sesión no usa la GPU AMD Instinct MI300X ni la IA: la
+    pose se estima en este navegador con MediaPipe y las alertas salen de reglas fijas (ADR-004), con los
+    umbrales que fija el fisioterapeuta. El video no sale del equipo (ADR-003). No es un dispositivo médico.</footer>
 </div>
 
 <!-- PROBAR EN OTRO EQUIPO DE LA MISMA RED (TD-33): lo activa serve.py vía /lan.json -->
 <dialog class="share-dialog" id="share-dialog" aria-labelledby="share-title">
   <div class="share-head">
-    <h2 id="share-title">Probar en otro equipo</h2>
-    <button class="btn" id="share-close" type="button">Cerrar</button>
+    <h2 id="share-title" data-i18n="index.share.title">Probar en otro equipo</h2>
+    <button class="btn" id="share-close" type="button" data-i18n="index.share.close">Cerrar</button>
   </div>
   <div class="share-body">
     <div>
       <div class="share-qr" id="share-qr"></div>
       <div class="share-url-row">
         <code class="share-url" id="share-url"></code>
-        <button class="btn" id="share-copy" type="button">Copiar dirección</button>
+        <button class="btn" id="share-copy" type="button" data-i18n="index.share.copy">Copiar dirección</button>
       </div>
       <p class="status-line" id="share-copy-status" style="text-align:center;"></p>
     </div>
     <div>
       <ol class="share-steps">
-        <li>Conecta el celular, la tablet o la laptop a la misma red wifi que este equipo.</li>
-        <li>Escanea el QR con la cámara o escribe la dirección en Chrome, Edge o Safari.</li>
-        <li id="share-camera-note">Verás un aviso de seguridad: el certificado es local y autofirmado. Elige
-          "Configuración avanzada" y luego "Continuar" (en Safari, "Mostrar detalles" y "visitar este sitio web").</li>
-        <li>Permite la cámara cuando la página la pida. El video no sale de ese equipo.</li>
+        <li data-i18n="index.share.step1">Conecta el celular, la tablet o la laptop a la misma red wifi que este equipo.</li>
+        <li data-i18n="index.share.step2">Escanea el QR con la cámara o escribe la dirección en Chrome, Edge o Safari.</li>
+        <li id="share-camera-note" data-i18n="index.share.step3">Verás un aviso de seguridad: el certificado es local y autofirmado. Elige "Configuración avanzada" y luego "Continuar" (en Safari, "Mostrar detalles" y "visitar este sitio web").</li>
+        <li data-i18n="index.share.step4">Permite la cámara cuando la página la pida. El video no sale de ese equipo.</li>
       </ol>
-      <p class="share-note" id="share-plain">Sin aviso de seguridad, pero solo con el demo (sin cámara): <code></code></p>
-      <p class="share-note" id="share-local">En este equipo: <code></code></p>
+      <p class="share-note" id="share-plain" data-i18n="index.share.plain">Sin aviso de seguridad, pero solo con el demo (sin cámara): <code data-i18n-slot="url"></code></p>
+      <p class="share-note" id="share-local" data-i18n="index.share.local">En este equipo: <code data-i18n-slot="url"></code></p>
     </div>
   </div>
 </dialog>
 
 <!-- SCRIPTS OFICIALES DEL MOTOR Y PROTOTIPO -->
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
 <script src="engine.js"></script>
 <script src="synthetic.js"></script>
 <script src="catalog.js"></script>
 <script src="guide-figure.js"></script>
 <script src="camera-setup.js"></script>
 <script src="pose-camera.js"></script>
+<script src="twin.js"></script>
 <script src="app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="share.js"></script>
@@ -536,10 +537,13 @@
 <script src="body-map.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
-<script src="triage.js" data-gate="self-care"></script>
+<script src="auth-wall.js"></script>
+<script src="triage.js"></script>
 <script src="teach-toast.js"></script>
 <script src="symptom-form.js"></script>
+<script src="pain-scale.js"></script>
 <script src="patient-link.js"></script>
+<script src="demo-telemetry.js"></script>
 
 <!-- SINCRONIZADOR DE TACÓMETROS RADIALES SVG EN TIEMPO REAL -->
 <script>

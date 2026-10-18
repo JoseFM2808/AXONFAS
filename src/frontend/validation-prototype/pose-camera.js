@@ -13,14 +13,17 @@
   const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
   const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
 
+  // Avisos en el idioma actual (i18n/session.js, claves pose.*), leídos en el momento (ADR-030).
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');
+  const t = I18N.t;
   const TEXT = {
-    loading: 'Cargando el modelo de pose (~9 MB la primera vez)…',
-    modelError: 'No se pudo cargar el modelo de pose. Revisa la conexión a internet y vuelve a intentar.',
-    asking: 'Pidiendo permiso para la cámara…',
-    denied: 'El navegador no dio permiso para la cámara. Permítelo en la barra de direcciones y vuelve a intentar.',
-    notFound: 'No se encontró ninguna cámara.',
-    failed: 'No se pudo abrir la cámara.',
-    active: 'Cámara activa. El video no sale de este equipo.',
+    get loading() { return t('pose.loading'); },
+    get modelError() { return t('pose.modelError'); },
+    get asking() { return t('pose.asking'); },
+    get denied() { return t('pose.denied'); },
+    get notFound() { return t('pose.notFound'); },
+    get failed() { return t('pose.failed'); },
+    get active() { return t('pose.active'); },
   };
 
   let loading = null;
@@ -52,13 +55,15 @@
 
   /**
    * Abre el modelo y la cámara y ajusta el lienzo a la forma del video (vertical en celular), espejado.
-   * opts: video, canvas, viewport, status(texto) y unsupported (qué decir si el navegador no permite la cámara aquí).
+   * opts: video, canvas, viewport, status(texto), unsupported (qué decir si el navegador no permite la cámara aquí) y
+   * onFail(kind) con kind = 'unsupported' | 'model' | 'denied' | 'notFound' | 'failed', para seguir sin cámara (TD-110).
    * Devuelve un "run" (ver createRun) o null si algo falló, después de avisarlo por status.
    */
-  async function open({ video, canvas, viewport, status, unsupported }) {
+  async function open({ video, canvas, viewport, status, unsupported, onFail }) {
     const say = status || (() => {});
+    const fail = (kind) => { if (onFail) onFail(kind); return null; };
     const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : null;
-    if (!media || !media.getUserMedia) { say(unsupported || TEXT.failed); return null; }
+    if (!media || !media.getUserMedia) { say(unsupported || TEXT.failed); return fail('unsupported'); }
     say(TEXT.loading);
     let landmarker;
     try {
@@ -66,7 +71,7 @@
     } catch (err) {
       console.error(err);
       say(TEXT.modelError);
-      return null;
+      return fail('model');
     }
     say(TEXT.asking);
     let stream;
@@ -74,7 +79,7 @@
       stream = await media.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
     } catch (err) {
       say(cameraError(err));
-      return null;
+      return fail(err && err.name === 'NotAllowedError' ? 'denied' : err && err.name === 'NotFoundError' ? 'notFound' : 'failed');
     }
     video.srcObject = stream;
     await video.play();

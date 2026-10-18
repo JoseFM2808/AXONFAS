@@ -1,0 +1,2 @@
+# TTS local del video (py video.py voice-setup). Kokoro-82M en ONNX, en la CPU, sin claves.
+kokoro-onnx==0.4.9

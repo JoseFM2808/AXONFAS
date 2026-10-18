@@ -1,4 +1,4 @@
-/* AXONFAS · formulario "Tengo una molestia" del paciente (ADR-021, ADR-025). Lo que se elige viaja a
+/* AXONFAS · formulario "Tengo una molestia" del paciente (ADR-021, ADR-033). Lo que se elige viaja a
  * POST /api/me/discomfort y el motor de reglas decide (alarma → detener; molestia → registrar y bajar la exigencia dentro
  * del sobre, o pausar). Durante una sesión y con texto escrito (opts.turn) viaja a POST /api/me/turn: las reglas deciden
  * primero y, si la IA de AMD está conectada, el agente clínico propone una baja que las reglas validan. El mensaje y la
@@ -12,23 +12,23 @@
 }(typeof self !== 'undefined' ? self : this, (root) => {
   'use strict';
 
+  const I18N = (typeof self !== 'undefined' && self.AxonI18n) || require('./i18n.js');   // textos (ADR-030)
+  const t = I18N.t;
+
   // Los ids son los de SYMPTOM_OPTIONS en staging_api.py (un test lo comprueba).
   const OPTIONS = [
-    { id: 'pain_mild', label: 'Dolor leve o pinchazo' },
-    { id: 'fatigue', label: 'Cansancio' },
-    { id: 'cramp', label: 'Calambre' },
-    { id: 'stiffness', label: 'Rigidez' },
-    { id: 'red_flag', label: 'Dolor fuerte, mareo o pérdida de fuerza', hint: 'Detiene la sesión' },
+    // El id viaja a la API; label y hint son lo que se ve, en el idioma de la interfaz.
+    { id: 'pain_mild', label: t('symptom.opt.pain_mild') },
+    { id: 'fatigue', label: t('symptom.opt.fatigue') },
+    { id: 'cramp', label: t('symptom.opt.cramp') },
+    { id: 'stiffness', label: t('symptom.opt.stiffness') },
+    { id: 'red_flag', label: t('symptom.opt.red_flag'), hint: t('symptom.opt.red_flag.hint') },
   ];
   let counter = 0;
   const DEFAULT_WAIT_S = 25;                                      // la espera del navegador: siempre más que la del servidor (/api/me la trae)
-  // La espera solo nombra al asistente de AMD si /api/me dijo que está disponible (TD-34); si no, solo las reglas.
-  const WAITING_AI = 'El asistente de AMD está revisando lo que dijiste…';
-  const WAITING_RULES = 'Revisando lo que dijiste con las reglas de seguridad…';
-  const NO_REPLY = 'No llegó la respuesta. Si sientes dolor fuerte, mareo o pérdida de fuerza, toca «Dolor: detener».';
 
-  /** Segundos con coma decimal: 1240 → "1,2". */
-  const seconds = (ms) => (ms / 1000).toFixed(1).replace('.', ',');
+  /** Segundos con un decimal en el formato del idioma: 1240 → "1,2" (es) o "1.2" (en). */
+  const seconds = (ms) => (ms / 1000).toLocaleString(I18N.locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   /**
    * Frase de atribución de un turno (TD-34), armada solo con `res.ai`: dice qué modelo respondió y en cuánto, o que
@@ -37,34 +37,24 @@
    */
   function aiLine(ai) {
     if (!ai) return '';
-    const who = ai.provider || 'AMD';
-    const model = ai.model || 'de IA';
-    if (ai.decided_by === 'llm') {
-      return `Lo propuso el modelo ${model} de ${who} en ${seconds(ai.clinical_ms)} s y lo validaron las reglas de seguridad.`
-        + (ai.phrased_by === 'llm' ? ` Frase redactada por ${model}.` : '');
-    }
-    if (ai.llm_answered) {
-      return `El asistente de AMD (${model}) revisó lo que dijiste en ${seconds(ai.clinical_ms)} s; se aplicó la baja de las reglas `
-        + 'de seguridad de AXONFAS.' + (ai.phrased_by === 'llm' ? ` Frase redactada por ${model}.` : '');
-    }
-    if (ai.phrased_by === 'llm') {
-      return `La decisión la tomaron las reglas de seguridad de AXONFAS; la frase la redactó el modelo ${model} de ${who}.`;
-    }
-    if (ai.skipped === 'red_flag') return 'La alarma siempre la deciden las reglas de seguridad de AXONFAS.';
-    return 'Te respondieron las reglas de seguridad de AXONFAS.';
+    const provider = ai.provider || t('symptom.ai.defaultProvider');
+    const model = ai.model || t('symptom.ai.defaultModel');
+    const phrased = ai.phrased_by === 'llm' ? t('symptom.ai.phrased', { model }) : '';
+    if (ai.decided_by === 'llm') return [t('symptom.ai.llm', { model, provider, s: seconds(ai.clinical_ms) }), phrased].filter(Boolean).join(' ');
+    if (ai.llm_answered) return [t('symptom.ai.reviewed', { model, s: seconds(ai.clinical_ms) }), phrased].filter(Boolean).join(' ');
+    if (ai.phrased_by === 'llm') return t('symptom.ai.phraseOnly', { model, provider });
+    if (ai.skipped === 'red_flag') return t('symptom.ai.alarm');
+    return t('symptom.ai.rules');
   }
 
-  /** Aviso de datos personales ocultados antes de enviar el texto (ADR-026), o ''. */
+  /** Aviso de datos personales ocultados antes de enviar el texto (ADR-034), o ''. */
   function privacyLine(privacy) {
     const n = privacy && Number(privacy.redactions);
-    if (!n || n < 1) return '';
-    return n === 1 ? 'Ocultamos 1 dato personal antes de enviarlo.' : `Ocultamos ${n} datos personales antes de enviarlo.`;
+    return n >= 1 ? I18N.tn('symptom.privacy', n) : '';
   }
 
   /** Lo que se le dice al paciente bajo el campo de texto, según lo que /api/me dijo del asistente. */
-  const noteText = (assistant) => (assistant && assistant.available
-    ? 'Lo revisan las reglas de seguridad de AXONFAS y el asistente de AMD. Se envía sin tu nombre; ocultamos correos, teléfonos y documentos.'
-    : 'Lo revisan las reglas de seguridad de AXONFAS.');
+  const noteText = (assistant) => t(assistant && assistant.available ? 'symptom.note.ai' : 'symptom.note.rules');
 
   /**
    * render(container, { exerciseId, inSession, current, turn, recent, assistant, onResult })
@@ -81,7 +71,7 @@
     const node = (tag, cls, text) => { const x = doc.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
     container.replaceChildren();
 
-    const toggle = node('button', 'btn', 'Tengo una molestia');
+    const toggle = node('button', 'btn', t('symptom.toggle'));
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', `symptom-form-${n}`);
@@ -90,7 +80,7 @@
     form.id = `symptom-form-${n}`;
     form.hidden = true;
     const group = node('fieldset', 'profile-group');
-    const legend = node('legend', null, '¿Qué sientes?');
+    const legend = node('legend', null, t('symptom.legend'));
     legend.tabIndex = -1;
     group.appendChild(legend);
     OPTIONS.forEach((o) => {
@@ -99,11 +89,11 @@
       radio.type = 'radio';
       radio.name = `symptom-option-${n}`;
       radio.value = o.id;
-      label.append(radio, node('span', null, o.hint ? `${o.label} (${o.hint})` : o.label));
+      label.append(radio, node('span', null, o.hint ? t('symptom.option', { label: o.label, hint: o.hint }) : o.label));
       group.appendChild(label);
     });
     const field = node('div', 'field');
-    const textLabel = node('label', null, 'Cuéntalo en pocas palabras (opcional; sin tu nombre ni datos personales)');
+    const textLabel = node('label', null, t('symptom.text'));
     textLabel.htmlFor = `symptom-text-${n}`;
     const text = doc.createElement('input');
     Object.assign(text, { type: 'text', id: `symptom-text-${n}`, maxLength: 200, autocomplete: 'off' });
@@ -112,7 +102,7 @@
     note.hidden = true;
     text.setAttribute('aria-describedby', note.id);
     field.append(textLabel, text, note);
-    const send = node('button', 'btn primary', 'Avisar a mi fisioterapeuta');
+    const send = node('button', 'btn primary', t('symptom.send'));
     send.type = 'submit';
     form.append(group, field, send);
 
@@ -159,7 +149,7 @@
       if (text.value.trim()) body.text = text.value.trim();
       const current = opts.current ? opts.current() : null;
       if (current) body.current = current;
-      if (!body.option && !body.text) { say('Cuéntanos qué sientes: elige una opción o escribe una frase.'); return; }
+      if (!body.option && !body.text) { say(t('symptom.empty')); return; }
       const useTurn = Boolean(opts.turn && body.in_session && body.text && body.exercise_id);
       if (useTurn) {
         const recent = opts.recent ? opts.recent() : null;
@@ -168,19 +158,19 @@
       send.disabled = true;
       form.setAttribute('aria-busy', 'true');
       aiNote.textContent = '';
-      say(useTurn ? (opts.assistant && opts.assistant.available ? WAITING_AI : WAITING_RULES) : 'Enviando…');
+      say(useTurn ? (opts.assistant && opts.assistant.available ? t('symptom.wait.ai') : t('symptom.wait.rules')) : t('symptom.sending'));
       try {
         const res = useTurn
           ? await root.AxonApi.call('patient', 'POST', '/api/me/turn', body, { timeoutMs: waitMs() })
           : await root.AxonApi.call('patient', 'POST', '/api/me/discomfort', body);
-        say(res.message, res.stop);
+        say(res.message, res.stop);                     // lo escribe el servidor en el idioma de la página (TD-116)
         aiNote.textContent = useTurn ? [aiLine(res.ai), privacyLine(res.privacy)].filter(Boolean).join(' ') : '';
         form.reset();
         close(true);
         if (opts.onResult) opts.onResult(res);
       } catch (err) {
-        // El texto se conserva para reenviarlo y no se reintenta solo: reenviar podría duplicar el aviso (TD-107).
-        say(useTurn && err.status === 0 ? NO_REPLY : err.message, useTurn && err.status === 0);
+        // El texto se conserva para reenviarlo y no se reintenta solo: reenviar podría duplicar el aviso (TD-122).
+        say(useTurn && err.status === 0 ? t('symptom.noReply') : err.message, useTurn && err.status === 0);
       } finally {
         send.disabled = false;
         form.removeAttribute('aria-busy');

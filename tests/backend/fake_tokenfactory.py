@@ -1,6 +1,6 @@
 """Servidor de mentira con la forma de AMD Token Factory (GET /models y POST /chat/completions), solo para tests. Sin red.
 
-No es un test: lo importan los tests de la API de Staging (ADR-025). La clave es de prueba."""
+No es un test: lo importan los tests de la API de Staging (ADR-033). La clave es de prueba."""
 import json
 import threading
 import time

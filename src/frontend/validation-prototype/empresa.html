@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="company.title">AXONFAS · Empresa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<a class="skip-link" href="#main" data-i18n="skip.content">Saltar al contenido</a>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon" aria-hidden="true">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span data-i18n="company.h1">· Empresa</span></h1>
+      <p data-i18n="company.tagline">Licencias de la clínica o el hospital y conexión con su historia clínica. Sin datos clínicos de pacientes.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones" data-i18n-aria-label="nav.label">
+    <a href="index.html" data-i18n="nav.prototype">Prototipo</a>
+    <a href="galeria.html" data-i18n="nav.gallery">Galería</a>
+    <a href="doctor.html" data-i18n="nav.therapist">Fisioterapeuta</a>
+    <a href="paciente.html" data-i18n="nav.patient">Paciente</a>
+    <a href="empresa.html" aria-current="page" data-i18n="nav.company">Empresa</a>
+  </nav>
+</header>
+
+<div class="wrap">
+<main id="main" tabindex="-1">
+  <section id="denied" class="panel-card" hidden>
+    <h2 data-i18n="company.denied.h2">Solo para la administración de una organización</h2>
+    <p class="muted" data-i18n="company.denied.text">Entra con la cuenta de Google que el equipo de AXONFAS registró como administración de tu clínica u
+      hospital.</p>
+    <a class="btn primary" href="login.html" style="margin-top:12px;" data-i18n="common.toLogin">Ir a iniciar sesión</a>
+  </section>
+
+  <section id="panel" hidden class="stack">
+    <div class="row-between">
+      <div>
+        <h2 class="page-title" id="org-name" data-i18n="common.org">Organización</h2>
+        <p class="muted" id="who"></p>
+      </div>
+      <div class="chips">
+        <button class="btn" id="btn-refresh" type="button" data-i18n="common.refresh">Actualizar</button>
+        <button class="btn" id="btn-logout" type="button" data-i18n="common.logout">Cerrar sesión</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis" aria-label="Resumen" data-i18n-aria-label="common.summary"></div>
+
+    <section class="panel-card stack" aria-labelledby="pros-title">
+      <h2 id="pros-title" data-i18n="company.pros.h2">Profesionales y licencias</h2>
+      <p class="muted" data-i18n="company.pros.lead">Cada profesional invitado ocupa una licencia. Cuando entra con Google con ese correo y elige
+        "Fisioterapeuta", queda vinculado a la organización. Aquí solo se ve cuántos pacientes atiende, nunca sus datos.</p>
+      <form id="invite" class="field-row" style="align-items:end;">
+        <div class="field">
+          <label for="invite-email" data-i18n="company.invite.email">Correo del profesional</label>
+          <input id="invite-email" type="email" autocomplete="off" required maxlength="254">
+        </div>
+        <button class="btn primary" type="submit" data-i18n="company.invite.btn">Invitar</button>
+      </form>
+      <p class="status-line" id="invite-status" role="status"></p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de licencias" data-i18n-aria-label="company.table">
+        <table>
+          <thead><tr><th data-i18n="common.email">Correo</th><th data-i18n="common.status">Estado</th><th data-i18n="company.th.linked">Vinculado</th><th data-i18n="common.patients">Pacientes</th><th data-i18n="company.th.action">Acción</th></tr></thead>
+          <tbody id="pros"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel-card stack" aria-labelledby="ehr-title">
+      <h2 id="ehr-title" data-i18n="company.ehr.h2">Historia clínica electrónica (HL7 FHIR R4)</h2>
+      <p class="muted" data-i18n="company.ehr.lead">Dirección base del servidor FHIR de la organización, para recibir las notas SOAP firmadas como
+        documento. Las credenciales nunca se escriben aquí. En Staging no se envía nada: solo se guarda la dirección.</p>
+      <form id="ehr" class="stack" style="gap:10px;">
+        <div class="field">
+          <label for="ehr-url" data-i18n="company.ehr.url">Dirección FHIR (https)</label>
+          <input id="ehr-url" type="url" inputmode="url" placeholder="https://historia.ejemplo.pe/fhir" data-i18n-placeholder="company.ehr.placeholder" maxlength="300" autocomplete="off">
+        </div>
+        <label class="check"><input id="ehr-enabled" type="checkbox"><span data-i18n="company.ehr.enabled">Conexión activa</span></label>
+        <button class="btn primary" type="submit" style="justify-self:start;" data-i18n="common.save">Guardar</button>
+        <p class="status-line" id="ehr-status" role="status"></p>
+      </form>
+    </section>
+  </section>
+</main>
+
+  <footer data-i18n="company.footer">
+    AXONFAS · Staging (ADR-010). Nivel 3, empresa (ADR-026): planes y cupos son valores de partida, sin precio.
+  </footer>
+</div>
+
+<!-- Idioma (ADR-030): los diccionarios de i18n/ van antes que i18n.js, que traduce la página y pone el selector
+     antes de que corran los demás scripts. -->
+<script src="i18n/common.js"></script>
+<script src="i18n/session.js"></script>
+<script src="i18n/routine.js"></script>
+<script src="i18n/library.js"></script>
+<script src="i18n/clinic.js"></script>
+<script src="i18n/catalog.en.js"></script>
+<script src="i18n.js"></script>
+<script src="config.js"></script>
+<script src="api-client.js"></script>
+<script src="empresa.js"></script>
+</body>
+</html>

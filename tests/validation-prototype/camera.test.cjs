@@ -8,6 +8,7 @@ const SRC = path.join(__dirname, '..', '..', 'src', 'frontend', 'validation-prot
 const CS = require(path.join(SRC, 'camera-setup.js'));
 const T = require(path.join(SRC, 'tracker.js'));
 const C = require(path.join(SRC, 'catalog.js'));
+const I = require(path.join(SRC, 'i18n.js'));
 
 /** Puntos 2D normalizados de una persona de pie vista con un ángulo `yaw` (0 = de frente, 90 = de lado). */
 function image(yaw, { scale = 0.8 / 1.75, aspect = 16 / 9, vis = 0.95, feetVis = 0.95 } = {}) {
@@ -50,14 +51,40 @@ test('detecta el ángulo real de la cámara', () => {
 test('revisa el encuadre: todo a la vista y a buena distancia', () => {
   const need = CS.ENGINE.need;
   assert.equal(CS.checkFrame(image(45), need).ok, true);
+  I.use('es');
   const noFeet = CS.checkFrame(image(45, { feetVis: 0.2 }), need);
   assert.equal(noFeet.ok, false);
-  assert.ok(noFeet.missing.includes('los pies'));
+  assert.equal(I.t('camera.part.feet'), 'los pies');
+  assert.ok(noFeet.missing.includes(I.t('camera.part.feet')));
   const far = CS.checkFrame(image(45, { scale: 0.25 / 1.75 }), need);
   assert.equal(far.distance, 'far');
   const cut = image(45);
   cut[27] = { ...cut[27], y: 0.995 };                     // un pie fuera de la imagen
-  assert.ok(CS.checkFrame(cut, need).missing.includes('los pies'));
+  assert.ok(CS.checkFrame(cut, need).missing.includes(I.t('camera.part.feet')));
+  // En inglés dice lo mismo, con los textos del diccionario (ADR-030).
+  I.use('en');
+  assert.deepEqual(CS.checkFrame(image(45, { feetVis: 0.2 }), need).missing, ['your feet']);
+  I.use('es');
+});
+
+test('los textos de la cámara salen del diccionario en los dos idiomas (ADR-030)', () => {
+  for (const l of ['es', 'en']) {
+    I.use(l);
+    for (const v of CS.ORDER) for (const f of ['label', 'short', 'how']) {
+      assert.equal(CS.VIEWS[v][f], I.t(`camera.view.${v}.${f}`), `${l} ${v}.${f}`);
+    }
+    for (const p of CS.PARTS) assert.ok(I.has(`camera.part.${p.key}`, l), `${l}: falta la parte ${p.key}`);
+    for (const m of CS.ENGINE.measures) assert.equal(m.label, I.t(`camera.measure.${m.key}`), `${l} ${m.key}`);
+    for (const q of CS.qualityOf(CS.ENGINE.measures, 'side')) assert.equal(q.text, I.t(`camera.level.${q.level}`));
+  }
+  I.use('en');
+  assert.equal(CS.summary('side', CS.ENGINE.measures), 'camera from the side (valgus unreliable)');
+  I.use('es');
+  const js = require('node:fs').readFileSync(path.join(SRC, 'camera-setup.js'), 'utf8');
+  assert.ok(!/\.innerHTML\s*\+?=|insertAdjacentHTML/.test(js),'tarjetas y chequeo con DOM, sin innerHTML');
+  // METRICS de cada medida conservan su plano y lo que necesitan ver (ADR-015): measuresFor no cambia de forma.
+  const m = CS.measuresFor('hip-abduction', 'track', T).measures[0];
+  assert.ok(m.key && m.plane && typeof m.label === 'string' && m.label.length > 0);
 });
 
 test('el chequeo en vivo queda listo solo si se mantiene bien un momento', () => {

@@ -1,0 +1,82 @@
+{
+  "$comment": "Single source of the narration: Remotion reads it for the captions and tts/narrate.py for the voice. Phases and base timings come from the strategy document 'Investigacion_y_Guion_Video_AXONFAS' (Google Docs, section 5). 'text' is what the captions show; 'say' (optional) is what the TTS pronounces. 'original' keeps the document's voiceover when a line had to change to match the ADRs. baseStart/baseEnd are the document's reference timings: phases are no longer stretched to them (owner review, 2026-10-18: no unnecessary pauses), each phase lasts its voice plus leadIn, a fixed gap between lines and tail; the last phase holds finalHoldSeconds on the logo.",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "leadInSeconds": 0.5,
+  "gapSeconds": 0.45,
+  "tailSeconds": 0.6,
+  "finalHoldSeconds": 2.0,
+  "phases": [
+    {
+      "id": "problem",
+      "title": "The Problem",
+      "baseStart": 0,
+      "baseEnd": 15,
+      "lines": [
+        {
+          "text": "Traditional physical rehabilitation relies on subjective observation or cumbersome sensors."
+        },
+        {
+          "text": "It's time for a smarter, frictionless approach."
+        }
+      ]
+    },
+    {
+      "id": "capture",
+      "title": "The Capture",
+      "baseStart": 15,
+      "baseEnd": 35,
+      "lines": [
+        {
+          "text": "Meet AXONFAS.",
+          "say": "Meet Axonfas."
+        },
+        {
+          "text": "An advanced AI-assisted computer vision platform."
+        },
+        {
+          "text": "Through standard cameras, our system captures real-time biomechanical data."
+        },
+        {
+          "text": "No wearable sensors required. Just seamless, interactive tracking."
+        }
+      ]
+    },
+    {
+      "id": "brain",
+      "title": "The Brain",
+      "baseStart": 35,
+      "baseEnd": 50,
+      "original": "Behind the interface, a powerful architecture drives clinical decisions. Specialized AI agents process movement logic and medical history, fully integrated with FHIR standards, while edge GPU clusters ensure ultra-low latency.",
+      "changeNote": "Adjusted to ADR-004/005/018 and TD-34: safety alerts come only from the deterministic rule engine, the AI proposes inside the therapist's safety envelope, and today the AI runs on AMD Token Factory (the MI300X stack is ready but not live).",
+      "lines": [
+        {
+          "text": "Behind the interface, a powerful architecture supports clinical decisions."
+        },
+        {
+          "text": "Safety alerts come only from a deterministic rule engine."
+        },
+        {
+          "text": "AI agents on AMD Token Factory adapt each session within the therapist's limits, fully integrated with FHIR standards.",
+          "say": "A.I. agents on A.M.D. Token Factory adapt each session within the therapist's limits, fully integrated with fire standards."
+        }
+      ]
+    },
+    {
+      "id": "impact",
+      "title": "The Impact",
+      "baseStart": 50,
+      "baseEnd": 70,
+      "lines": [
+        {
+          "text": "The result? Precise monitoring, actionable clinical insights, and accessible rehabilitation for everyone."
+        },
+        {
+          "text": "AXONFAS: Redefining physical therapy through intelligent vision.",
+          "say": "Axonfas. Redefining physical therapy through intelligent vision."
+        }
+      ]
+    }
+  ]
+}

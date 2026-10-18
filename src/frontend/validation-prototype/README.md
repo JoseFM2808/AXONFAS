@@ -119,6 +119,7 @@ contraseñas y con seudónimos; la base vive en `~/.axonfas/staging.sqlite3`, fu
 | `api-client.js`, `patient-link.js`, `teach-toast.js` | Cliente de la API, modo paciente del prototipo y avisos de enseñanza |
 | `engine.js` | Motor de reglas: ángulos, repeticiones, línea base, umbrales y eventos. Funciones puras |
 | `synthetic.js` | Sesiones sintéticas con la forma de la salida de MediaPipe (demo y tests) |
+| `i18n.js`, `i18n/` | Idioma de la interfaz (ADR-030): español o inglés según el navegador, con el selector ES / EN de la cabecera (se recuerda en `axonfas.lang`). `i18n/` tiene un diccionario por área con los bloques `es` y `en`, y el catálogo en inglés. Texto nuevo: su clave en los dos idiomas y `data-i18n` en el HTML o `t('clave')` en el script |
 
 Tests del motor, del catálogo y del seguimiento, desde la carpeta del proyecto:
 
