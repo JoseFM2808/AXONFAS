@@ -90,10 +90,12 @@ test('exentos: el modo paciente con su plan y las cuentas de fisioterapeuta o Ad
   assert.equal(T.exempt({ search: '', hasAccount: has('admin') }), true);
 });
 
-test('las tres rutinas de autogestión pasan por el triaje; las cuentas no', () => {
-  for (const page of ['galeria.html', 'seguimiento.html', 'index.html']) {
-    assert.ok(read(page).includes('<script src="triage.js" data-gate="self-care"></script>'), page);
-  }
+test('el triaje va donde se hace ejercicio: el seguimiento entero y la cámara del Prototipo (ADR-028)', () => {
+  assert.ok(read('seguimiento.html').includes('<script src="triage.js" data-gate="self-care"></script>'));
+  assert.ok(read('index.html').includes('<script src="triage.js"></script>'), 'el Prototipo carga el triaje sin puerta');
+  assert.ok(read('app.js').includes('await AxonTriage.ensure()'), 'y lo pide al encender la cámara');
+  assert.ok(!read('galeria.html').includes('triage.js'), 'la galería se explora sin triaje');
+  assert.ok(read('triage.js').includes('function ensure('));
   for (const page of ['doctor.html', 'paciente.html', 'login.html', 'admin.html']) {
     assert.ok(!read(page).includes('data-gate'), `${page} no lleva la puerta`);
   }

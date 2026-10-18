@@ -6,7 +6,8 @@
  * Reglas fijas, sin IA (I-17). Las respuestas no salen del navegador y no se guardan: solo queda el resultado
  * (`clear` o `blocked`), su vencimiento y el tono, en localStorage (`axonfas.triage`).
  * Exentos: el modo paciente (`?plan=` con cuenta de paciente: su fisioterapeuta ya lo evaluó, Nivel 2) y las cuentas de
- * fisioterapeuta y Administrador. Una página entra al triaje con <script src="triage.js" data-gate="self-care">.
+ * fisioterapeuta y Administrador. Una página entera entra al triaje con <script src="triage.js" data-gate="self-care">;
+ * una página abierta (el Prototipo) lo pide al encender la cámara con `AxonTriage.ensure()` (ADR-028).
  * Funciones puras en Node y navegador; la pantalla, solo en el navegador. Valores de partida, a validar (TD-98).
  */
 (function (root, factory) {
@@ -239,7 +240,14 @@
       const when = until && Number.isFinite(until.getTime())
         ? `En este equipo podrás volver a responder desde el ${until.toLocaleString('es-PE', { dateStyle: 'long', timeStyle: 'short' })}.`.replace(/\.\.$/, '.')
         : 'En este equipo podrás volver a responder mañana.';
-      screen(MESSAGES.blockedTitle, alert, patient, node('p', 'muted', when));
+      const extra = [];
+      if (opts.onBack) {                                     // puerta "camera" (ADR-028): se puede volver al demo sin cámara
+        const back = node('button', 'btn', opts.backText || 'Volver');
+        back.type = 'button';
+        back.addEventListener('click', opts.onBack);
+        extra.push(back);
+      }
+      screen(MESSAGES.blockedTitle, alert, patient, node('p', 'muted', when), ...extra);
     }
 
     if (gateState(load()) === 'blocked') blocked();
@@ -256,8 +264,14 @@
     const rec = load();
     const state = gateState(rec);
     if (state === 'clear') { toneNote(doc, rec); return 'clear'; }
+    showGate(doc, {});
+    return state;
+  }
+
+  /** Oculta el contenido de `.wrap` y muestra el triaje en su lugar. opts: { onClear, onBlocked, onBack, backText }. */
+  function showGate(doc, opts) {
     const wrap = doc.querySelector('.wrap');
-    if (!wrap) return state;
+    if (!wrap) return;
     const hidden = Array.from(wrap.children).filter((el) => !el.hidden);
     hidden.forEach((el) => { el.hidden = true; });
     const host = doc.createElement('main');
@@ -267,15 +281,34 @@
     const skip = doc.querySelector('.skip-link');
     const skipHref = skip && skip.getAttribute('href');
     if (skip) skip.setAttribute('href', '#triage');
+    const restore = () => {
+      host.remove();
+      hidden.forEach((el) => { el.hidden = false; });
+      if (skip && skipHref) skip.setAttribute('href', skipHref);
+    };
     mount(host, {
       onClear(next) {
-        host.remove();
-        hidden.forEach((el) => { el.hidden = false; });
-        if (skip && skipHref) skip.setAttribute('href', skipHref);
+        restore();
         toneNote(doc, next, true);
+        if (opts.onClear) opts.onClear(next);
       },
+      onBlocked: opts.onBlocked,
+      onBack: opts.onBack ? () => { restore(); opts.onBack(); } : null,
+      backText: opts.backText,
     });
-    return state;
+  }
+
+  /**
+   * Puerta en el momento de hacer ejercicio (ADR-028): la página queda abierta (la demo sintética, la galería) y el
+   * triaje se pide al encender la cámara. Promesa: true si se puede seguir; false si hay una bandera roja o la persona
+   * vuelve atrás. Exentos y triaje vigente pasan sin mostrar nada.
+   */
+  function ensure(doc = root.document, { backText = 'Volver sin usar la cámara' } = {}) {
+    if (exempt({ search: root.location ? root.location.search : '', hasAccount })) return Promise.resolve(true);
+    if (gateState(load()) === 'clear') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      showGate(doc, { onClear: () => resolve(true), onBlocked: () => resolve(false), onBack: () => resolve(false), backText });
+    });
   }
 
   /** Mensaje al pasar el triaje; con banderas amarillas, el tono cuidadoso se mantiene mientras el triaje esté vigente. */
@@ -301,6 +334,6 @@
 
   return {
     VERSION, STORE_KEY, CLEAR_DAYS, BLOCK_HOURS, DISCLAIMER, DISCLAIMER_ACCEPT, RED_FLAGS, YELLOW_FLAGS, MESSAGES,
-    evaluate, record, gateState, exempt, mount, gate, tone, load, save,
+    evaluate, record, gateState, exempt, mount, gate, ensure, tone, load, save,
   };
 }));

@@ -24,6 +24,7 @@
 .plan-ex[data-on="false"] .plan-fields { display: none; }
 .plan-fields { margin-top: 10px; }
 .soap-body { display: grid; gap: 12px; margin: 12px 0; }
+.soap-nocam { margin-top: 10px; font-weight: 700; color: var(--ink); border-left-width: 4px; }
 .soap-body dt { font: 700 0.85rem var(--font-body); color: var(--ink-secondary); margin: 0; }
 .soap-body dd { margin: 4px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .soap-body textarea { width: 100%; min-height: 5em; resize: vertical; font: 500 0.95rem var(--font-body); color: var(--ink);
@@ -179,10 +180,12 @@
             <h2 id="soap-title" tabindex="-1">Nota SOAP · <span id="soap-when"></span></h2>
             <p id="soap-state"></p>
             <p class="muted" id="soap-source"></p>
+            <p class="notice soap-nocam" id="soap-nocam" role="note" hidden></p>
             <dl class="soap-body" id="soap-body"></dl>
             <div class="chips">
               <button class="btn primary" id="soap-approve" type="button">Firmar y aprobar la nota</button>
               <button class="btn" id="soap-fhir" type="button" hidden>Descargar Observation FHIR (JSON)</button>
+              <button class="btn" id="soap-fhir-doc" type="button" hidden>Descargar nota como documento FHIR (JSON)</button>
               <button class="btn" id="soap-close" type="button">Cerrar la nota</button>
             </div>
             <p class="muted" id="soap-fhir-note"></p>
@@ -255,6 +258,7 @@
 <script src="camera-setup.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
+<script src="auth-wall.js"></script>
 <script src="doctor.js"></script>
 </body>
 </html>

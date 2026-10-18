@@ -129,6 +129,8 @@
   }
 
   async function startCamera() {
+    // El demo sintético queda abierto; hacer el ejercicio con la cámara pide el triaje del Nivel 1 (ADR-023, ADR-028).
+    if (window.AxonTriage && !(await AxonTriage.ensure())) return;
     stopSource();
     const run = await PC.open({
       video: ui.video, canvas: ui.canvas, viewport: ui.viewport,

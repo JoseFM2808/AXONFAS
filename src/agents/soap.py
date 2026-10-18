@@ -20,6 +20,10 @@ SYMPTOM_ACTION = {"session_stopped": "se detuvo la sesión", "demand_lowered": "
 EVENT = {"trunk_flexion": "flexión de tronco", "knee_valgus": "valgo de rodilla"}
 
 
+# Sesión hecha sin cámara (TD-111): la nota lo dice en O, con este texto fijo, en lugar de "Compensaciones: ninguna".
+NO_CAMERA_NOTE = "Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales."
+
+
 def facts(session: dict) -> dict:
     """Solo lo que la nota puede citar, sacado de la sesión."""
     events = session.get("events") or []
@@ -36,6 +40,7 @@ def facts(session: dict) -> dict:
         "rom_medio_grados": session.get("rom_mean"),
         "dolor_reportado": bool(session.get("pain_reported")),
         "dolor_al_terminar_eva": session.get("pain_score"),          # 0-10 que marcó el paciente (ADR-025); None sin dato
+        "sin_camara": bool(session.get("no_camera")),                 # TD-111: sin métricas ni detección postural
         "ajustes_del_agente": [d.get("proposal") for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
         "lo_que_dijo_el_paciente": session.get("utterances") or [],
         # Sin horas: añadirían cifras citables a I-6. Los textos son lo que escribió el paciente.
@@ -60,7 +65,8 @@ def template(f: dict) -> dict:
         s += " Molestias reportadas: " + "; ".join(items) + "."
     done = (f"{f['repeticiones_hechas']} repeticiones" if f["repeticiones_indicadas"] is None    # sin meta no se escribe "de None"
             else f"{f['repeticiones_hechas']} de {f['repeticiones_indicadas']} repeticiones")
-    o = f"{f['ejercicio']}, {f['fecha']}: {done}, sesión {f['fin']}. Compensaciones: {comp}."
+    o = f"{f['ejercicio']}, {f['fecha']}: {done}, sesión {f['fin']}. " + (NO_CAMERA_NOTE if f.get("sin_camara")
+                                                                         else f"Compensaciones: {comp}.")
     if f["rom_medio_grados"] is not None:
         o += f" Flexión media de rodilla: {f['rom_medio_grados']}°."
     if f["ajustes_del_agente"]:

@@ -125,6 +125,8 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-17 | Sin descargo aceptado y triaje vigente no hay rutinas de autogestión; una bandera roja las bloquea y recomienda urgencias o una consulta. El triaje es de reglas fijas: ningún LLM lo decide ni lo resume, y las respuestas no salen del navegador | ADR-023 |
 | I-18 | El dolor al terminar (EVA) lo marca solo el paciente, una vez por sesión. No detiene ni cambia el plan y ningún LLM decide con él; ante dolor agudo, mareo o pérdida de fuerza vale I-7 | ADR-025 |
 | I-19 | La administración de una organización (Nivel 3) solo ve su plan, sus licencias y cuántos pacientes atiende cada profesional: nunca sesiones, notas, molestias ni alias de pacientes. La dirección FHIR de su historia clínica es https y nunca lleva credenciales | ADR-026 |
+| I-20 | Una sesión sin cámara la marca el servidor (`no_camera`, por `source = 'guided'`) y no lleva métricas cinemáticas ni eventos. El panel, la nota SOAP y FHIR lo dicen siempre con el mismo texto | ADR-029 |
+| I-21 | El invitado solo mira: lo permanente o clínico responde `auth_required` y pide una cuenta. La demo pública guarda solo números anónimos que nadie más que el Administrador lee | ADR-028 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
 
@@ -184,8 +186,9 @@ afuera"), para que el paciente se corrija sin mirar la pantalla.
 
 AXONFAS se organiza en tres niveles, según el estudio de tele-rehabilitación del 2026-10-17: **Nivel 1**, autogestión
 preventiva con triaje; **Nivel 2**, tele-rehabilitación guiada por el plan del fisioterapeuta (lo que ya hace ADR-012);
-**Nivel 3**, empresa B2B (TD-102). El Nivel 1 cubre las rutinas que alguien usa sin un plan: la galería, el seguimiento
-libre y el Prototipo sin `?plan=`.
+**Nivel 3**, empresa B2B (TD-102). El Nivel 1 cubre las rutinas que alguien hace sin un plan: el seguimiento libre (la
+página entera) y la cámara del Prototipo sin `?plan=` (se pide al encenderla, `AxonTriage.ensure()`). La galería y el demo
+sintético se exploran sin triaje: no son ejercicio (ADR-028).
 
 | Paso | Regla (`triage.js`) | Valor de partida (TD-98) |
 |---|---|---|
@@ -212,6 +215,27 @@ pinta en `--alert` los segmentos que compensan y agrega una guía de corrección
 | Flexión de tronco | El mismo tronco, vertical desde el centro de la cadera | Del centro de los hombros a ese punto |
 
 Solo dibuja: la alerta sale del motor de reglas (I-1). No escribe texto en el canvas, porque el espejo lo invertiría.
+
+## Invitado, muro de autenticación y demo pública (ADR-028)
+
+| Pieza | Regla | Valor de partida (TD-113) |
+|---|---|---|
+| Invitado | `POST /api/auth/guest` da un token `guest` sin registro ni datos personales. Con él, `doctor.html` lee un consultorio de muestra compartido (un paciente con seudónimo, su plan y tres sesiones sintéticas: monitoreada con dos alertas, con cámara y sin cámara) | — |
+| Muro diferido | Toda ruta que guarda o cambia algo, o que es de otro rol, responde 401 con `code: 'auth_required'`; `api-client.js` emite `axon:auth-required` y `auth-wall.js` abre el diálogo "Crea tu cuenta para seguir" (se cierra con "Seguir explorando"). Sin cuenta, el seguimiento libre es una vista previa de una serie | 1 serie |
+| Demo pública | El demo del Prototipo queda abierto. Al terminar, si la casilla "Compartir resultados anónimos" sigue marcada, manda solo números (`demo-telemetry.js` → `POST /api/demo/runs`): fuente, repeticiones, calibración, alertas por tipo, repeticiones mal vistas, duración y motivo de fin. Solo el Administrador los ve | 500 por hora |
+| Triaje | Se pide donde se hace ejercicio: el seguimiento libre y la cámara del Prototipo. La galería y el demo sintético no lo piden | — |
+
+Con una cuenta de verdad, el modo invitado termina y `login.html?next=` vuelve a la página que pidió la cuenta (solo un nombre
+de página local).
+
+## Tutorial y rutina sin cámara (ADR-029)
+
+| Paso | Regla (`practice.js`, `seguimiento.js`) |
+|---|---|
+| Tutorial (shadowing) | La primera vez que se usa la cámara con un ejercicio en ese equipo, va antes "Mira y sigue": la guía animada en grande para hacer el movimiento junto con ella. No se cuenta nada ni se usa la cámara. "Ver y practicar" lo repite cuando se quiera |
+| Sin cámara | Si el permiso se niega, no hay cámara o falla el modelo, la página ofrece seguir sin cámara en vez de bloquearse; también se elige con "Hacer sin cámara". La guía queda en grande marcando el ritmo, un botón grande «Hecha» suma cada repetición (con deshacer) y el descanso entre series se propone igual |
+| Registro | En modo paciente se guarda con `mode: 'guided'`, `source: 'guided'` y el motivo (`declined`, `denied` o `unavailable`); el servidor pone `no_camera = 1` (I-20). Las sesiones guiadas anteriores quedan con `guided_view` |
+| Reporte | El panel muestra "Sin cámara" en la lista y, en la nota, el aviso destacado: "Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales." La O de la nota SOAP dice lo mismo en lugar de "Compensaciones: ninguna", y la Observation FHIR lleva `camera-used: false` |
 
 ## Nivel 3: organizaciones y licencias (ADR-026)
 
@@ -424,6 +448,7 @@ ejercicios ajenos a los datos.
 | Fisioterapeuta | Cuenta de Google nueva que elige "Soy fisioterapeuta", o una cuenta que el Administrador deja como fisioterapeuta; también la cuenta de demostración | `doctor.html` |
 | Paciente | Cuenta de Google nueva con el código de su fisioterapeuta y el consentimiento; también el código sin cuenta (demostración) | `paciente.html` |
 | Pendiente | Cuenta de Google nueva que todavía no eligió | `login.html` para elegir |
+| Invitado | "Ingresar como invitado" en `login.html`, sin registro (ADR-028) | Galería, demo y `doctor.html` con el consultorio de muestra (datos sintéticos, solo lectura). Lo permanente abre el muro (I-21) |
 | Empresa (Nivel 3) | Correo de administración de una organización que creó el Administrador (ADR-026) | `empresa.html`: plan, licencias, pacientes por profesional y dirección FHIR. Sin datos clínicos (I-19) |
 
 Una cuenta desactivada no puede entrar y pierde sus tokens. Con `AXONFAS_DEMO_ACCOUNTS=0` solo se entra con Google.

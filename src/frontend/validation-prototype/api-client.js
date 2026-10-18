@@ -7,7 +7,11 @@
 (function (root) {
   'use strict';
   const KEYS = { therapist: 'axonfas.therapist', patient: 'axonfas.patient', admin: 'axonfas.admin', user: 'axonfas.user',
-    org: 'axonfas.org' };   // org = administración de una organización (Nivel 3, ADR-026)
+    org: 'axonfas.org',     // org = administración de una organización (Nivel 3, ADR-026)
+    guest: 'axonfas.guest' }; // invitado sin registro: solo mira (ADR-028)
+  // Una página puede leer "como" otro rol: doctor.html muestra la interfaz clínica de muestra al invitado (TD-106).
+  const alias = {};
+  function previewAs(role, as) { alias[role] = as; }
   const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
   const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
 
@@ -24,7 +28,7 @@
 
   async function call(role, method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
-    const account = role ? load(role) : null;
+    const account = role ? load(alias[role] || role) : null;
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
     let res;
     try {
@@ -39,6 +43,11 @@
     if (!res.ok) {
       const err = new Error((data && data.error) || `Error ${res.status}`);
       err.status = res.status;
+      err.code = data && data.code;
+      // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.
+      if (err.code === 'auth_required' && root.dispatchEvent && typeof CustomEvent === 'function') {
+        root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { message: err.message, path } }));
+      }
       throw err;
     }
     return data;
@@ -53,7 +62,7 @@
         controller = new AbortController();
         try {
           if (onState) onState('connecting');
-          const account = load(role);
+          const account = load(alias[role] || role);
           const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}` }, signal: controller.signal, cache: 'no-store' });
           if (!res.ok) {
             if (onState) onState('error', res.status);
@@ -125,7 +134,8 @@
   }
 
   /** Página de inicio de cada rol. */
-  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html', org: 'empresa.html' };
+  const HOME = { admin: 'admin.html', therapist: 'doctor.html', patient: 'paciente.html', user: 'login.html', org: 'empresa.html',
+    guest: 'galeria.html' };
 
-  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, HOME };
+  root.AxonApi = { load, save, call, stream, lanInfo, shareUrl, qrSvg, config, logout, previewAs, HOME };
 })(typeof self !== 'undefined' ? self : this);

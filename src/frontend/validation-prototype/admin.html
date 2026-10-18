@@ -108,6 +108,19 @@
       </div>
     </section>
 
+    <section class="panel-card stack" aria-labelledby="demo-title">
+      <h2 id="demo-title">Demo pública (anónima)</h2>
+      <p class="muted">Resultados que deja la demo abierta del Prototipo: solo números, sin video, puntos ni datos personales.
+        Nadie más los ve, ni quien hizo la demo (ADR-028).</p>
+      <div class="kpis" id="demo-kpis" aria-label="Resumen de la demo pública"></div>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Últimas demos">
+        <table>
+          <thead><tr><th>Fecha</th><th>Fuente</th><th>Fin</th><th>Repeticiones</th><th>Alertas tronco / valgo</th><th>Mal vistas</th><th>Duración</th></tr></thead>
+          <tbody id="demo-runs"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel-card" aria-labelledby="users-title">
       <h2 id="users-title">Cuentas de Google</h2>
       <p class="muted" style="margin-bottom:10px;">El rol de Administrador sale solo de <code>AXONFAS_ADMIN_EMAILS</code>. Aquí

@@ -11,6 +11,8 @@
   const $ = (id) => document.getElementById(id);
   const END = { completed: 'Completada', pain_stop: 'Detenida por dolor', user_quit: 'Terminada a mano', envelope_breach: 'Fuera del sobre' };
   const SOURCE = { camera: 'Cámara', demo: 'Demo sintético', guided: 'Guiado' };
+  // Texto fijo de una sesión sin cámara (TD-111); el mismo que escribe la nota SOAP (agents/soap.py, NO_CAMERA_NOTE).
+  const NO_CAMERA_NOTE = 'Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales.';
   const REPORT_ACTION = { none: 'Crear borrador', draft: 'Ver borrador', final: 'Ver nota firmada' };
   const EVENT = { trunk_flexion: 'Flexión de tronco', knee_valgus: 'Valgo de rodilla' };
   const SIDE = { left: 'izquierda', right: 'derecha' };
@@ -35,8 +37,13 @@
     $('dashboard').hidden = view !== 'dashboard';
   }
 
+  // Invitado (TD-106): sin cuenta de fisioterapeuta, ve el consultorio de muestra con datos sintéticos, solo lectura.
+  // Lo que guarda o cambia algo lo frena el servidor y abre el muro de autenticación (auth-wall.js, TD-107).
+  const preview = () => !A.load('therapist') && Boolean(A.load('guest'));
+
   async function boot() {
-    if (!A.load('therapist')) {
+    if (preview()) A.previewAs('therapist', 'guest');
+    if (!A.load('therapist') && !preview()) {
       show('login');
       A.config().then((cfg) => { $('demo-login').hidden = !cfg.demo_accounts; });
       return;
@@ -47,7 +54,7 @@
       clearInterval(state.refreshTimer);
       state.refreshTimer = setInterval(() => refreshPatients().catch(() => {}), 15000);
     } catch (err) {
-      if (err.status === 401) A.save('therapist', null);
+      if (err.status === 401) A.save(preview() ? 'guest' : 'therapist', null);
       $('login-error').textContent = err.message;
       show('login');
     }
@@ -64,7 +71,7 @@
   });
 
   $('btn-logout').addEventListener('click', async () => {
-    await A.logout('therapist');
+    await A.logout(preview() ? 'guest' : 'therapist');
     selectPatient(null);
     clearInterval(state.refreshTimer);
     show('login');
@@ -236,9 +243,14 @@
     d.sessions.forEach((s) => {
       const ex = C.get(s.exercise_id);
       const tr = el('tr');
-      [fmtDate(s.ended_at), ex ? ex.name : s.exercise_id,
-        s.mode === 'guided' && s.source === 'camera' ? 'Cámara (conteo)' : SOURCE[s.source] || s.source, String(s.reps_done)]
-        .forEach((t) => tr.appendChild(el('td', null, t)));
+      [fmtDate(s.ended_at), ex ? ex.name : s.exercise_id].forEach((t) => tr.appendChild(el('td', null, t)));
+      const how = el('td');
+      if (s.no_camera) {                                     // sin cámara: sin métricas ni detección postural (TD-111)
+        const tag = el('span', 'tag warn', 'Sin cámara');
+        tag.title = NO_CAMERA_NOTE;
+        how.append(tag);
+      } else how.textContent = s.mode === 'guided' && s.source === 'camera' ? 'Cámara (conteo)' : SOURCE[s.source] || s.source;
+      tr.append(how, el('td', null, String(s.reps_done)));
       const end = el('td');
       end.appendChild(el('span', `tag ${s.end_reason === 'completed' ? 'ok' : s.end_reason === 'pain_stop' ? 'bad' : 'warn'}`, END[s.end_reason] || s.end_reason));
       tr.appendChild(end);
@@ -327,17 +339,22 @@
   function resetSoap() {
     state.soap = null;
     $('soap-card').hidden = true;
-    ['soap-when', 'soap-source', 'soap-fhir-note'].forEach((id) => { $(id).textContent = ''; });
+    ['soap-when', 'soap-source', 'soap-fhir-note', 'soap-nocam'].forEach((id) => { $(id).textContent = ''; });
+    $('soap-nocam').hidden = true;
     $('soap-state').replaceChildren();
     $('soap-body').replaceChildren();
     $('soap-approve').hidden = true;
     $('soap-fhir').hidden = true;
+    $('soap-fhir-doc').hidden = true;
     soapStatus('');
   }
 
   function renderSoap(r) {
     const final = r.status === 'final';
     const session = state.soap.session;
+    const nocam = $('soap-nocam');                         // aviso destacado de sesión sin cámara (TD-111)
+    nocam.hidden = !session.no_camera;
+    nocam.textContent = session.no_camera ? NO_CAMERA_NOTE : '';
     const ex = C.get(session.exercise_id);
     $('soap-when').textContent = `${fmtDate(session.ended_at)} · ${ex ? ex.name : session.exercise_id}`;
     const stateBox = $('soap-state');
@@ -349,7 +366,7 @@
         ' No es un registro clínico hasta que lo firmes. S y O salen de los datos guardados de la sesión.');
     }
     if (final) $('soap-source').textContent = '';
-    else if (r.source === 'llm') $('soap-source').textContent = 'La valoración y el plan los propuso la IA en la GPU AMD; las cifras se comprobaron contra los datos. Revísalos antes de firmar.';
+    else if (r.source === 'llm') $('soap-source').textContent = 'La valoración y el plan los propuso la IA de AMD; las cifras se comprobaron contra los datos. Revísalos antes de firmar.';
     else $('soap-source').textContent = 'Redactado con una plantilla a partir de los datos de la sesión (sin IA).';
     const body = $('soap-body');
     body.replaceChildren();
@@ -369,6 +386,7 @@
       body.append(dt, dd);
     });
     $('soap-fhir').hidden = false;
+    $('soap-fhir-doc').hidden = false;
     $('soap-fhir-note').textContent = final ? '' : 'Sale como preliminary hasta que firmes la nota.';
     $('soap-approve').hidden = final;
     $('soap-approve').disabled = false;
@@ -415,21 +433,38 @@
   });
 
   // El token viaja en la cabecera, así que no sirve un enlace directo: se pide el JSON y se descarga como archivo.
+  function downloadJson(data, name) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/fhir+json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
   $('soap-fhir').addEventListener('click', async () => {
     if (!state.soap) return;
     const id = state.soap.session.id;
     try {
       const obs = await A.call('therapist', 'GET', `/api/sessions/${id}/fhir`);
-      const blob = new Blob([JSON.stringify(obs, null, 2)], { type: 'application/fhir+json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `axonfas-observation-sesion-${id}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      downloadJson(obs, `axonfas-observation-sesion-${id}.json`);
       soapStatus(obs.status === 'final' ? 'Observation descargada (final).'
         : 'Observation descargada (preliminary: la nota todavía es borrador).');
+    } catch (err) { soapStatus(err.message); }
+  });
+
+  // La nota SOAP como Bundle FHIR de tipo documento, para una historia clínica (TD-103). No se envía a ninguna parte.
+  $('soap-fhir-doc').addEventListener('click', async () => {
+    if (!state.soap) return;
+    const id = state.soap.session.id;
+    try {
+      const doc = await A.call('therapist', 'GET', `/api/sessions/${id}/fhir/document`);
+      downloadJson(doc, `axonfas-nota-soap-sesion-${id}.json`);
+      const comp = doc.entry && doc.entry[0] && doc.entry[0].resource;
+      soapStatus(comp && comp.status === 'final' ? 'Documento FHIR descargado (final, firmado).'
+        : 'Documento FHIR descargado (preliminary: la nota todavía es borrador).');
     } catch (err) { soapStatus(err.message); }
   });
 

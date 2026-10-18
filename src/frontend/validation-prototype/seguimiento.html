@@ -138,6 +138,17 @@
       <div class="announce" id="announce" role="status" aria-live="polite" hidden></div>
     </div>
 
+    <section class="practice" id="practice" aria-labelledby="practice-title" hidden>
+      <div class="practice-fig" id="practice-guide"></div>
+      <div class="practice-panel">
+        <h2 class="practice-title" id="practice-title" tabindex="-1">Mira y sigue</h2>
+        <p class="practice-text" id="practice-text"></p>
+        <p class="practice-note" id="practice-note" hidden></p>
+        <div class="practice-count" id="practice-count" role="status" hidden></div>
+        <div class="practice-actions" id="practice-actions"></div>
+      </div>
+    </section>
+
     <div class="kpis track-readouts" aria-live="off">
       <div class="kpi" id="ro-value">
         <span class="k" id="ro-label">Medida</span><span class="v">—</span><span class="s"></span>
@@ -151,6 +162,8 @@
     <div class="pilot-dock">
       <div class="dock-group">
         <button class="btn primary" id="btn-camera" type="button">📹 Usar la cámara</button>
+        <button class="btn" id="btn-tutorial" type="button">🎬 Ver y practicar</button>
+        <button class="btn" id="btn-nocam" type="button">Hacer sin cámara</button>
         <button class="btn primary" id="btn-hold" type="button" hidden disabled>⏱ Sostener</button>
         <button class="btn" id="btn-recal" type="button" disabled>↺ Recalibrar</button>
         <button class="btn" id="btn-fullscreen" type="button">⛶ Pantalla completa</button>
@@ -217,9 +230,11 @@
 <script src="guide-figure.js"></script>
 <script src="config.js"></script>
 <script src="api-client.js"></script>
+<script src="auth-wall.js"></script>
 <script src="triage.js" data-gate="self-care"></script>
 <script src="teach-toast.js"></script>
 <script src="pose-camera.js"></script>
+<script src="practice.js"></script>
 <script src="seguimiento.js"></script>
 </body>
 </html>

@@ -136,6 +136,35 @@
     } catch (err) { $('orgs-status').textContent = err.message; }
   });
 
+  /** Demo pública (TD-108): solo números anónimos, que solo ve el Administrador. */
+  const SRC = { demo: 'Demo sintético', camera: 'Cámara' };
+  const END = { completed: 'Completada', pain_stop: 'Dolor', user_quit: 'A mano', envelope_breach: 'Fuera del sobre' };
+  async function loadDemoRuns() {
+    const d = await A.call('admin', 'GET', '/api/admin/demo-runs');
+    $('demo-kpis').replaceChildren(
+      kpi('Demos', d.total, `${d.last_7d} en 7 días`),
+      kpi('Con cámara', d.by_source.camera || 0, `${d.by_source.demo || 0} con el demo sintético`),
+      kpi('Repeticiones medias', d.avg_reps ?? '—', 'por demo'),
+      kpi('Con alertas', `${d.with_trunk_events} / ${d.with_valgus_events}`, 'tronco / valgo'),
+      kpi('Invitados', d.guests, 'entradas sin registro'));
+    const body = $('demo-runs');
+    body.replaceChildren();
+    if (!d.recent.length) {
+      const tr = el('tr');
+      const td = el('td', 'empty', 'Todavía nadie terminó la demo.');
+      td.colSpan = 7;
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+    d.recent.forEach((r) => {
+      const tr = el('tr');
+      [fmt(r.created_at), SRC[r.source] || r.source, END[r.end_reason] || r.end_reason, `${r.reps_done} (${r.calibration_reps} de calibración)`,
+        `${r.trunk_events} / ${r.valgus_events}`, String(r.low_confidence_reps), r.duration_s ? `${r.duration_s} s` : '—']
+        .forEach((t, i) => tr.appendChild(el('td', i >= 3 ? 'num' : null, t)));
+      body.appendChild(tr);
+    });
+  }
+
   async function update(user, change) {
     $('users-status').textContent = 'Guardando…';
     try {
@@ -160,6 +189,7 @@
 
   async function refresh() {
     await Promise.all([loadOverview(), loadUsers(), loadOrgs().catch((err) => { $('orgs-status').textContent = err.message; }),
+      loadDemoRuns().catch(() => {}),
       loadAi().catch((err) => { $('ai-status').textContent = err.message; })]);
   }
 

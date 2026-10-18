@@ -7,7 +7,8 @@
   'use strict';
   const A = window.AxonApi;
   const $ = (id) => document.getElementById(id);
-  const ROLE_TEXT = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', user: 'Cuenta nueva', org: 'Empresa' };
+  const ROLE_TEXT = { admin: 'Administrador', therapist: 'Fisioterapeuta', patient: 'Paciente', user: 'Cuenta nueva', org: 'Empresa',
+    guest: 'Invitado' };
 
   function show(view) {
     ['signin', 'choose', 'signed'].forEach((id) => { $(id).hidden = id !== view; });
@@ -20,14 +21,25 @@
     const name = (res.user && res.user.name) || (res.therapist && res.therapist.name) || (res.patient && res.patient.alias) || '';
     A.save(res.role, { token: res.token, name, alias: res.patient ? res.patient.alias : undefined, email: res.user ? res.user.email : undefined });
     if (res.role !== 'user') A.save('user', null);
+    if (res.role !== 'guest') A.save('guest', null);           // con una cuenta de verdad, el modo invitado termina
     if (res.role === 'user') {
       $('choose-hello').textContent = `Hola${name ? `, ${name}` : ''}. Es tu primera vez: elige cómo vas a usar AXONFAS.`;
       $('t-name').value = name;
       show('choose');
       return;
     }
-    location.href = A.HOME[res.role];
+    // Volver a la página que pidió la cuenta (muro de autenticación, TD-107): solo un nombre de página local.
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = res.role !== 'guest' && next && /^[a-z-]+\.html$/.test(next) && next !== 'login.html' ? next : A.HOME[res.role];
   }
+
+  // Invitado (TD-106): sin registro ni datos personales; solo mira.
+  $('as-guest').addEventListener('click', async () => {
+    $('signin-status').textContent = 'Entrando como invitado…';
+    try {
+      enter(await A.call(null, 'POST', '/api/auth/guest', {}));
+    } catch (err) { $('signin-status').textContent = err.message; }
+  });
 
   async function onCredential(response) {
     $('signin-status').textContent = 'Verificando con Google…';
@@ -65,7 +77,7 @@
   }
 
   async function signedState() {
-    for (const role of ['admin', 'org', 'therapist', 'patient', 'user']) {
+    for (const role of ['admin', 'org', 'therapist', 'patient', 'user', 'guest']) {
       const acc = A.load(role);
       if (!acc) continue;
       try {

@@ -10,7 +10,7 @@
 
 Código: `src/backend/staging_api.py`; tests: `tests/backend/test_staging_api.py`. JSON en el mismo origen que el prototipo.
 Autenticación de demostración: `Authorization: Bearer <token>`, que devuelven `POST /api/therapists` y `POST /api/join`.
-Errores: `{"error": "mensaje en español"}` con 400 (datos inválidos), 401 (sin token o token inválido), 403 (rol
+Errores: `{"error": "mensaje en español"}` (y `code: "auth_required"` cuando un invitado intenta algo que pide cuenta, ADR-028) con 400 (datos inválidos), 401 (sin token o token inválido), 403 (rol
 equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejercicio fuera del plan, I-9, o nota ya firmada), 413 o 500 (error interno de la base, con mensaje).
 
 | Método y ruta | Rol | Cuerpo → respuesta |
@@ -27,13 +27,16 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/auth/config` | — | → `{google_client_id, demo_accounts, ai_provider}` (público; ADR-019) |
 | `POST /api/auth/google` | — | `{credential}` (ID token de Google) → `{role, token, user}`. `role` = `admin` si el correo está en `AXONFAS_ADMIN_EMAILS`; `org` si es el correo de administración de una organización (ADR-026); si no, el rol ya elegido, o `user` si es una cuenta nueva. Vincula la licencia que espera a ese correo si ya es fisioterapeuta. Token inválido → 401; cuenta desactivada → 403 |
 | `POST /api/auth/role` | user | `{role: "therapist", name?}` → 201 `{role, token, therapist}`; `{role: "patient", code, consent: true}` → 201 `{role, token, patient, therapist}`; ya con rol → 409 |
-| `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración); con `org`, además `organization: {id, name}` |
+| `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración y en el invitado); con `org`, además `organization: {id, name}` |
+| `POST /api/auth/guest` | — | → 201 `{role: "guest", token}`: invitado sin registro (ADR-028). Con ese token, las rutas GET de fisioterapeuta leen el consultorio de muestra (datos sintéticos); cualquier otra → 401 `{error, code: "auth_required"}` |
+| `POST /api/demo/runs` | — | `{source: "demo" \| "camera", exercise_id: "sit-to-stand", end_reason, reps_done (0–50), calibration_reps (0–10), duration_s?, trunk_events?, valgus_events?, low_confidence_reps?}` → 202 `{ok: true}`, sin devolver datos; otros campos se descartan; datos inválidos → 400; más de 500 en una hora → 429 (ADR-028) |
+| `GET /api/admin/demo-runs` | admin | → `{total, last_7d, by_source, by_end_reason, avg_reps, with_trunk_events, with_valgus_events, guests, recent (30)}` |
 | `POST /api/auth/logout` | cualquiera | Borra ese token |
 | `GET /api/admin/overview` | admin | → conteos (cuentas por rol, fisioterapeutas, pacientes, sesiones, detenciones por dolor), `config` (qué falta, sin la lista de correos) y `ai_usage` |
 | `GET /api/admin/users` · `PUT /api/admin/users/{id}` | admin | Lista de cuentas de Google · `{role: "pending" \| "therapist"}` o `{disabled: bool}`; no a sí mismo ni a otro admin; revoca los tokens |
 | `GET /api/admin/ai` · `POST /api/admin/ai/test` | admin | Estado del proveedor (catálogo `/models`, modelo en uso, qué variables faltan) y uso · `{prompt?}` → `{model, text, ms}`; sin proveedor → 503 (ADR-018) |
 | `GET /api/me` | paciente | → `{patient, therapist, plan: [... , range_goal, done_7d, history]}`. `history`: horas de fin (ISO) de las sesiones completadas de ese ejercicio en 14 días, en orden, para la agenda del día (`care-plan.js`, ADR-025) |
-| `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?, symptom_report_ids?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds, overLimit`, ver [03](03-database.md)); lo demás se descarta. En `events`, `value`, `peak` y `threshold` son números finitos o faltan (si no, 400); `alertLatencyMs` fuera de 0–60000 se guarda vacío. `symptom_report_ids` (hasta 20 enteros) une las molestias a la sesión; los de otro paciente o ya unidos se ignoran |
+| `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?, symptom_report_ids?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds, overLimit`, ver [03](03-database.md)); lo demás se descarta. En `events`, `value`, `peak` y `threshold` son números finitos o faltan (si no, 400); `alertLatencyMs` fuera de 0–60000 se guarda vacío. `symptom_report_ids` (hasta 20 enteros) une las molestias a la sesión; los de otro paciente o ya unidos se ignoran. `no_camera_reason?` (`declined`, `denied`, `unavailable`): con `source: "guided"` el servidor marca la sesión sin cámara y responde `{session_id, no_camera: true}`; esa sesión no admite `peak` en `reps` ni `events` (400) (ADR-029) |
 | `PUT /api/sessions/{id}/pain` | paciente | `{score}` (entero 0–10) → `{session_id, pain_score, high, message}`: dolor al terminar (EVA, ADR-025). Otro tipo o fuera de rango → 400; sesión de otro paciente o inexistente → 404; ya marcada → 409. `high` = 7 o más; `message` es el texto fijo para el paciente. Avisa `pain_scored` al fisioterapeuta |
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
 | `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`), `plan_updated` y `profile_updated` |
@@ -65,7 +68,7 @@ progress, metric: {label, value, unit}, view, points: {"0"|"7"|"8"|"11"|"12"|"13
 - `progress` (0–1, se recorta) y `metric` (`unit` = `°`, `cm` o `%`; `label` hasta 60 caracteres) los manda el
   seguimiento de la galería (ADR-014). En ese caso `phase` es `setup` mientras toma la posición inicial y `tracking`
   durante el conteo.
-- Al fisioterapeuta le llega con `kind: "frame"`; además recibe `kind: "symptom_reported"` (`{id, exercise_id, category, symptom_kind, action, text, adjustment, at}`) cuando el paciente avisa de una molestia, `kind: "session_saved"` cuando el paciente guarda una
+- Al fisioterapeuta le llega con `kind: "frame"`; además recibe `kind: "symptom_reported"` (`{id, exercise_id, category, symptom_kind, action, text, adjustment, at}`) cuando el paciente avisa de una molestia, `kind: "session_saved"` (con `no_camera`) cuando el paciente guarda una
   sesión y `kind: "pain_scored"` (`{session_id, exercise_id, score, high, at}`) cuando marca el dolor al terminar. Una sesión con conteo de cámara se guarda con `mode: "guided"` y `source: "camera"`.
 
 **Mensajes al paciente:** `{kind: "highlight", muscle?, exercise_id?, note?, from, at}`, `{kind: "plan_updated", at}` y `{kind: "profile_updated", at}` (cuando el fisioterapeuta cambia su perfil). Al fisioterapeuta le llega `{kind: "profile_updated", at}` cuando el paciente cambia el suyo.
@@ -78,7 +81,8 @@ creación del borrador o fin de la sesión), `performer` (`t<id>`, solo si está
 P, solo si hay nota).
 - `component`: `reps-done` y `reps-target` (`{repetitions}`), `knee-flexion-mean` (`deg`), `trunk-flexion-events` y
   `knee-valgus-events` (`{events}`, solo en monitoreadas), `end-reason` (`valueCodeableConcept`), `pain-reported`
-  (`valueBoolean`) y `pain-score-end` (`valueInteger`, la EVA 0–10 al terminar, ADR-025). Cantidades en UCUM (`http://unitsofmeasure.org`). Sin dato no hay componente.
+  (`valueBoolean`), `pain-score-end` (`valueInteger`, la EVA 0–10 al terminar, ADR-025) y `camera-used` (`valueBoolean`;
+  `false` en una sesión sin cámara, ADR-029). Cantidades en UCUM (`http://unitsofmeasure.org`). Sin dato no hay componente.
 - Los sistemas de código propios cuelgan de `https://axonfas.example/fhir/...` (dominio reservado: es Staging). No hay
   códigos LOINC. Nunca van el año de nacimiento ni el nombre del fisioterapeuta.
 

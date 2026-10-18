@@ -52,13 +52,15 @@
 
   /**
    * Abre el modelo y la cámara y ajusta el lienzo a la forma del video (vertical en celular), espejado.
-   * opts: video, canvas, viewport, status(texto) y unsupported (qué decir si el navegador no permite la cámara aquí).
+   * opts: video, canvas, viewport, status(texto), unsupported (qué decir si el navegador no permite la cámara aquí) y
+   * onFail(kind) con kind = 'unsupported' | 'model' | 'denied' | 'notFound' | 'failed', para seguir sin cámara (TD-110).
    * Devuelve un "run" (ver createRun) o null si algo falló, después de avisarlo por status.
    */
-  async function open({ video, canvas, viewport, status, unsupported }) {
+  async function open({ video, canvas, viewport, status, unsupported, onFail }) {
     const say = status || (() => {});
+    const fail = (kind) => { if (onFail) onFail(kind); return null; };
     const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : null;
-    if (!media || !media.getUserMedia) { say(unsupported || TEXT.failed); return null; }
+    if (!media || !media.getUserMedia) { say(unsupported || TEXT.failed); return fail('unsupported'); }
     say(TEXT.loading);
     let landmarker;
     try {
@@ -66,7 +68,7 @@
     } catch (err) {
       console.error(err);
       say(TEXT.modelError);
-      return null;
+      return fail('model');
     }
     say(TEXT.asking);
     let stream;
@@ -74,7 +76,7 @@
       stream = await media.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
     } catch (err) {
       say(cameraError(err));
-      return null;
+      return fail(err && err.name === 'NotAllowedError' ? 'denied' : err && err.name === 'NotFoundError' ? 'notFound' : 'failed');
     }
     video.srcObject = stream;
     await video.play();

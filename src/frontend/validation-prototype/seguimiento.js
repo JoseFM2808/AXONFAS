@@ -20,6 +20,7 @@
   const CS = window.AxonCameraSetup;
   const PC = window.AxonPoseCamera;                         // cámara y MediaPipe compartidos con app.js (TD-50)
   const SG = window.AxonSuggest;                            // consejos de uso al terminar (ADR-017)
+  const P = window.AxonPractice;                            // tutorial y rutina sin cámara (TD-109, TD-110)
   const S = T.SIDES;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
@@ -42,6 +43,7 @@
     hudBar: $('hud-bar'), announce: $('announce'), status: $('source-status'), voice: $('voice'),
     btnCamera: $('btn-camera'), btnHold: $('btn-hold'), btnRecal: $('btn-recal'), btnFull: $('btn-fullscreen'),
     btnPain: $('btn-pain'), btnStop: $('btn-stop'), repsBody: $('reps-body'),
+    btnTutorial: $('btn-tutorial'), btnNoCam: $('btn-nocam'), practice: $('practice'),
     holdBadge: $('hold-badge'), holdLabel: $('hold-label'), holdNum: $('hold-num'), holdBar: $('hold-bar'),
   };
   const ctx = ui.canvas.getContext('2d');
@@ -53,6 +55,7 @@
     startedAt: null, ended: false, lastPartialSpoken: 0, lastShortSpoken: 0, guides: [], cues: null, holdFlashUntil: 0,
     patient: null, item: null, symptomIds: [], lastSent: 0, inFlight: false, saved: false, frames: 0, lowFrames: 0, lastOut: null,
     lastLimitSpoken: 0,
+    practice: null,        // { mode: 'tutorial' | 'offer' | 'nocam', reason?, counter?, guide? } (TD-109, TD-110)
   };
 
   const cssCache = {};
@@ -102,6 +105,7 @@
 
   function setExercise(id) {
     stopCamera();
+    hidePractice();
     st.ex = C.get(id) || C.get('half-squat');
     // En modo paciente, la meta de recorrido y su límite son los del plan del fisioterapeuta (ADR-025).
     st.spec = T.withGoal(T.SPECS[st.ex.id], st.item && st.item.exercise_id === st.ex.id ? st.item.range_goal : null);
@@ -172,8 +176,10 @@
       video: ui.video, canvas: ui.canvas, viewport: ui.viewport,
       status: (text) => { ui.status.textContent = text; },
       unsupported: 'Este navegador no permite la cámara aquí: ábrelo desde http://localhost o con el QR (HTTPS).',
+      onFail: (kind) => offerNoCamera(kind),            // sin cámara la rutina sigue (TD-110)
     });
     if (!run) return;
+    hidePractice();
     st.cam = run;
     startSetup();
     st.cam.start(onCameraResult);
@@ -340,12 +346,14 @@
         renderReps();
         break;
       }
-      case 'set_done': announce(`Serie ${e.set} lista. Descansa y sigue`, { ms: 3200 }); startRest(); break;
+      case 'set_done': if (!previewEnds()) { announce(`Serie ${e.set} lista. Descansa y sigue`, { ms: 3200 }); startRest(); } break;
       default: break;
     }
   }
 
   function finish(reason) {
+    if (st.practice && st.practice.mode === 'nocam') { finishNoCamera(reason); return; }
+    if (st.practice) { hidePractice(); setButtons(false); return; }   // tutorial u oferta: no hay sesión que cerrar
     if (st.setup) {                                       // todavía preparando la cámara: solo se apaga
       stopCamera();
       setButtons(false);
@@ -396,6 +404,8 @@
     ui.btnRecal.disabled = !active || st.spec.mode !== 'reps';
     ui.btnHold.disabled = !active;
     ui.btnCamera.textContent = active ? '📹 Reiniciar' : '📹 Usar la cámara';
+    ui.btnTutorial.disabled = active;
+    ui.btnNoCam.disabled = active;
   }
 
   // ------------------------------------------------------------------ pintar
@@ -635,6 +645,163 @@
     }).catch(() => {}).finally(() => { st.inFlight = false; });
   }
 
+  /**
+   * Muro de autenticación diferido (TD-107): sin cuenta (invitado o visita), la rutina libre es una vista previa de una
+   * serie; la rutina completa y guardar el progreso piden crear una cuenta. Con el plan de un paciente no aplica.
+   */
+  function previewEnds() {
+    const W = window.AxonWall;
+    const sets = st.practice && st.practice.counter ? st.practice.counter.state().sets : st.tracker ? st.tracker.target.sets : 1;
+    if (st.item || !W || W.hasAccount() || sets <= 1) return false;
+    finish('user_quit');
+    announce('Fin de la vista previa: una serie', { ms: 3500 });
+    W.require('hacer la rutina completa y guardar tu progreso');
+    return true;
+  }
+
+  // ------------------------------------------------------------------ tutorial y rutina sin cámara (TD-109, TD-110)
+  function practiceBtn(text, cls, onClick, label) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn ${cls || ''}`.trim();
+    b.textContent = text;
+    if (label) b.setAttribute('aria-label', label);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  /** Muestra el panel de práctica con la guía en grande (componente .fig) en lugar del video. */
+  function showPractice(mode, { title, text, note, actions }) {
+    stopCamera();
+    if (st.practice && st.practice.guide) st.practice.guide.stop();
+    const guide = GF && st.cues ? GF.render($('practice-guide'), st.ex.id, { hold: st.dose.hold, variant: 'large', autoplay: 'always' }) : null;
+    st.practice = Object.assign(st.practice && st.practice.mode === mode ? st.practice : {}, { mode, guide });
+    ui.practice.hidden = false;
+    ui.viewport.hidden = true;
+    $('practice-title').textContent = title;
+    $('practice-text').textContent = text;
+    $('practice-note').hidden = !note;
+    $('practice-note').textContent = note || '';
+    $('practice-count').hidden = mode !== 'nocam';
+    $('practice-actions').replaceChildren(...actions);
+    $('practice-title').focus();
+  }
+
+  function hidePractice() {
+    if (st.practice && st.practice.guide) st.practice.guide.stop();
+    st.practice = null;
+    if (ui.practice) ui.practice.hidden = true;
+    ui.viewport.hidden = false;
+  }
+
+  /** Tutorial (shadowing): la animación en grande para seguirla antes de la evaluación con cámara. Nada se cuenta. */
+  function showTutorial() {
+    showPractice('tutorial', {
+      title: 'Mira y sigue',
+      text: `Haz el movimiento junto con la animación, a tu ritmo, hasta que te salga cómodo. ${doseText()}.`,
+      note: 'Todavía no se usa la cámara ni se cuenta nada.',
+      actions: [
+        practiceBtn('📹 Pasar a la cámara', 'primary', () => { P.markSeen(st.ex.id); startCamera(); }),
+        practiceBtn('Hacer sin cámara', '', () => { P.markSeen(st.ex.id); startNoCamera('declined'); }),
+      ],
+    });
+    setPhase('Mira y sigue', 'Practica con la animación antes de usar la cámara.');
+  }
+
+  /** La cámara no está disponible o no se permitió: la rutina sigue igual, sin cámara (TD-110). */
+  function offerNoCamera(kind) {
+    const reason = P.reasonFor(kind);
+    showPractice('offer', {
+      title: 'Puedes hacer tu rutina sin cámara',
+      text: `${P.REASON_TEXT[reason]} Sigue la animación para marcar el ritmo y toca «Hecha» al terminar cada repetición.`,
+      note: P.NO_CAMERA_NOTE,
+      actions: [
+        practiceBtn('Empezar sin cámara', 'primary', () => startNoCamera(kind)),
+        practiceBtn('📹 Intentar con la cámara otra vez', '', () => startCamera()),
+      ],
+    });
+    setPhase('Sin cámara', P.REASON_TEXT[reason]);
+  }
+
+  function startNoCamera(kind) {
+    stopRest();
+    st.tracker = null;
+    st.startedAt = new Date().toISOString();
+    st.ended = false;
+    st.saved = false;
+    st.symptomIds = [];
+    const counter = P.createCounter({ sets: st.dose.sets, reps: st.dose.reps, perSide: st.spec.perSide });
+    const reason = P.reasonFor(kind);
+    showPractice('nocam', {
+      title: 'Rutina sin cámara',
+      text: `Sigue la animación y toca «Hecha» al terminar cada repetición${st.spec.perSide ? ' (cada lado cuenta por separado)' : ''}`
+        + `${st.dose.hold ? `; sostén ${st.dose.hold} s en cada una` : ''}.`,
+      note: P.NO_CAMERA_NOTE,
+      actions: [
+        practiceBtn('✓ Hecha', 'primary practice-done', onManualRep, 'Hecha: sumar una repetición'),
+        practiceBtn('↶ Deshacer', '', () => { counter.undo(); renderNoCamera(); }, 'Deshacer la última repetición'),
+      ],
+    });
+    Object.assign(st.practice, { counter, reason });
+    ui.status.textContent = 'Sin cámara: solo cuenta lo que marques.';
+    setButtons(true);
+    ui.btnRecal.disabled = true;
+    ui.btnHold.disabled = true;
+    renderNoCamera();
+    announce('Sigue la animación y marca cada repetición', { ms: 3000 });
+    setPhase('Sin cámara', `${doseText()}.`);
+  }
+
+  function renderNoCamera() {
+    const c = st.practice.counter.state();
+    $('practice-count').textContent = `Serie ${c.set} de ${c.sets} · ${c.inSet} de ${c.perSet} · ${c.done} de ${c.total} en total`;
+  }
+
+  function onManualRep() {
+    if (!st.practice || st.practice.mode !== 'nocam' || st.ended) return;
+    const r = st.practice.counter.add();
+    const c = st.practice.counter.state();
+    renderNoCamera();
+    if (r.finished) { finish('completed'); return; }
+    if (r.setDone && previewEnds()) return;
+    if (r.setDone) { announce(`Serie ${c.set - 1} lista. Descansa y sigue`, { ms: 3200 }); startRest(); }
+    else { stopRest(); speak(String(c.inSet)); }
+  }
+
+  function finishNoCamera(reason) {
+    if (st.ended) return;
+    st.ended = true;
+    stopRest();
+    const c = st.practice.counter.state();
+    if (reason === 'pain_stop') {
+      showStop('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.');
+      speak('Sesión detenida. Si el dolor sigue, contacta a tu fisioterapeuta.', true);
+    } else announce(reason === 'completed' ? '¡Listo! Ejercicio completado' : 'Sesión terminada', { ms: 4000, tone: reason === 'completed' ? 'done' : '' });
+    $('practice-actions').replaceChildren(practiceBtn('Volver a empezar', '', () => setExercise(st.ex.id)));
+    setPhase(reason === 'completed' ? 'Completado sin cámara' : reason === 'pain_stop' ? 'Detenido por dolor' : 'Terminado',
+      `${plural(c.done, 'repetición', 'repeticiones')} de ${c.total}, marcadas a mano.`);
+    setButtons(false);
+    saveNoCamera(reason, c.done);
+  }
+
+  /** Se guarda como sesión guiada sin cámara: el servidor la marca `no_camera` y el panel lo destaca (TD-111). */
+  async function saveNoCamera(reason, reps) {
+    if (!st.item || st.saved) return;
+    st.saved = true;
+    try {
+      const res = await A.call('patient', 'POST', '/api/sessions', {
+        exercise_id: st.ex.id, mode: 'guided', source: 'guided', no_camera_reason: st.practice ? st.practice.reason : undefined,
+        started_at: st.startedAt || new Date().toISOString(), ended_at: new Date().toISOString(), end_reason: reason,
+        reps_done: reps, symptom_report_ids: st.symptomIds,
+      });
+      $('patient-text').textContent = `Sesión guardada sin cámara (${plural(reps, 'repetición', 'repeticiones')}). Tu fisioterapeuta `
+        + 'verá que no hubo medición de movimientos.';
+      if (window.AxonPainScale && res && res.session_id) AxonPainScale.render($('eva-track'), { sessionId: res.session_id, exerciseName: st.ex.name });
+    } catch (err) {
+      $('patient-text').textContent = `No se pudo guardar la sesión: ${err.message}`;
+    }
+  }
+
   async function saveSession(reason, reps) {
     if (!st.item || st.saved) return;
     st.saved = true;
@@ -661,7 +828,7 @@
   function onSymptom(res) {
     st.symptomIds.push(res.report.id);
     if (res.stop) { finish('pain_stop'); return; }
-    if (st.tracker && !st.ended) announce(res.message, { ms: 4000 });
+    if ((st.tracker || (st.practice && st.practice.mode === 'nocam')) && !st.ended) announce(res.message, { ms: 4000 });
   }
 
   async function bootPatient(exerciseId) {
@@ -689,7 +856,7 @@
       $('patient-text').replaceChildren(p);
       // La molestia es un reporte del paciente, no una alerta del sistema: el seguimiento nunca alerta (I-12).
       if (window.AxonSymptom) {
-        AxonSymptom.render($('symptom-track'), { exerciseId: st.ex.id, inSession: () => Boolean(st.tracker) && !st.ended,
+        AxonSymptom.render($('symptom-track'), { exerciseId: st.ex.id, inSession: () => (Boolean(st.tracker) || Boolean(st.practice && st.practice.mode === 'nocam')) && !st.ended,
           current: () => null, onResult: onSymptom });
       }
       A.stream('patient', '/api/me/stream', (msg) => {
@@ -702,7 +869,10 @@
   }
 
   // ------------------------------------------------------------------ arranque
-  ui.btnCamera.addEventListener('click', startCamera);
+  // La primera vez de cada ejercicio, antes de la cámara va el tutorial (TD-109); después, directo.
+  ui.btnCamera.addEventListener('click', () => { if (P && !P.seen(st.ex.id) && !st.tracker) showTutorial(); else startCamera(); });
+  ui.btnTutorial.addEventListener('click', showTutorial);
+  ui.btnNoCam.addEventListener('click', () => startNoCamera('declined'));
   ui.btnStop.addEventListener('click', () => finish('user_quit'));
   ui.btnPain.addEventListener('click', () => finish('pain_stop'));
   ui.btnRecal.addEventListener('click', () => {

@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS session (
   started_at TEXT NOT NULL, ended_at TEXT NOT NULL,
   end_reason TEXT NOT NULL CHECK (end_reason IN ('completed', 'pain_stop', 'envelope_breach', 'user_quit')),
   reps_done INTEGER NOT NULL, baseline TEXT, reps TEXT, pain_reported INTEGER NOT NULL DEFAULT 0,
-  pain_score INTEGER CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10), pain_scored_at TEXT);
+  pain_score INTEGER CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10), pain_scored_at TEXT,
+  no_camera INTEGER NOT NULL DEFAULT 0,  -- 1 = sin cámara: sin métricas cinemáticas ni detección postural (TD-111)
+  no_camera_reason TEXT CHECK (no_camera_reason IS NULL OR no_camera_reason IN ('declined', 'denied', 'unavailable', 'guided_view')));
 CREATE TABLE IF NOT EXISTS compensation_event (
   id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES session(id), rep INTEGER NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('trunk_flexion', 'knee_valgus')), side TEXT, value REAL, peak REAL,
@@ -91,6 +93,17 @@ CREATE TABLE IF NOT EXISTS symptom_report (
 CREATE INDEX IF NOT EXISTS idx_symptom_patient ON symptom_report(patient_id, reported_at);
 CREATE INDEX IF NOT EXISTS idx_patient_therapist ON patient(therapist_id);
 CREATE INDEX IF NOT EXISTS idx_session_patient ON session(patient_id, ended_at);
+CREATE TABLE IF NOT EXISTS guest (                  -- invitado sin registro (TD-106, ADR-028)
+  id INTEGER PRIMARY KEY, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS demo_run (               -- demo pública: solo números, solo los ve el Administrador (TD-108)
+  id INTEGER PRIMARY KEY, guest_id INTEGER REFERENCES guest(id),
+  source TEXT NOT NULL CHECK (source IN ('demo', 'camera')), exercise_id TEXT NOT NULL,
+  end_reason TEXT NOT NULL CHECK (end_reason IN ('completed', 'pain_stop', 'envelope_breach', 'user_quit')),
+  reps_done INTEGER NOT NULL, calibration_reps INTEGER NOT NULL, duration_s INTEGER,
+  trunk_events INTEGER NOT NULL DEFAULT 0, valgus_events INTEGER NOT NULL DEFAULT 0,
+  low_confidence_reps INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_demo_run_created ON demo_run(created_at);
 CREATE TABLE IF NOT EXISTS organization (           -- Nivel 3, empresa (ADR-026)
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, plan TEXT NOT NULL CHECK (plan IN ('clinic', 'network')),
   admin_email TEXT NOT NULL UNIQUE, ehr_fhir_base_url TEXT, ehr_enabled INTEGER NOT NULL DEFAULT 0,
@@ -124,13 +137,17 @@ MAX_BODY = 256 * 1024
 RANGE_GOAL_BOUNDS = {"°": (1.0, 180.0), "cm": (0.5, 50.0), "%": (1.0, 200.0)}
 # EVA al terminar (ADR-025): desde 7/10 el panel lo marca como dolor alto. Valor de partida, no clínico (TD-104).
 PAIN_HIGH = 7
+# Sesión sin cámara (TD-110/111): por qué no hubo cámara. guided_view = la vista guiada de siempre (paciente.html).
+NO_CAMERA_REASONS = {"declined", "denied", "unavailable", "guided_view"}
+# Demo pública (TD-108): tope de resultados anónimos por hora, contra el abuso. Valor de partida.
+DEMO_RUNS_PER_HOUR = 500
 DEFAULT_TRACKER = Path(__file__).resolve().parents[1] / "frontend" / "validation-prototype" / "tracker.js"
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, code: str | None = None):
         super().__init__(message)
-        self.status, self.message = status, message
+        self.status, self.message, self.code = status, message, code    # code = 'auth_required' abre el muro (TD-107)
 
 
 @dataclass
@@ -382,6 +399,12 @@ class StagingApi:
             self.db.execute("ALTER TABLE session ADD COLUMN pain_score INTEGER "
                             "CHECK (pain_score IS NULL OR pain_score BETWEEN 0 AND 10)")
             self.db.execute("ALTER TABLE session ADD COLUMN pain_scored_at TEXT")
+        if "no_camera" not in {r["name"] for r in self.db.execute("PRAGMA table_info(session)")}:     # bases anteriores a TD-111
+            with self.db:
+                self.db.execute("ALTER TABLE session ADD COLUMN no_camera INTEGER NOT NULL DEFAULT 0")
+                self.db.execute("ALTER TABLE session ADD COLUMN no_camera_reason TEXT CHECK (no_camera_reason IS NULL OR "
+                                "no_camera_reason IN ('declined', 'denied', 'unavailable', 'guided_view'))")
+                self.db.execute("UPDATE session SET no_camera = 1, no_camera_reason = 'guided_view' WHERE source = 'guided'")
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
@@ -406,6 +429,9 @@ class StagingApi:
             ("GET", r"/api/sessions/(\d+)/fhir/document", self.session_fhir_document, "therapist"),
             ("GET", r"/api/ai/status", self.ai_status, "therapist"),
             ("POST", r"/api/join", self.join, None),
+            ("POST", r"/api/auth/guest", self.auth_guest, None),
+            ("POST", r"/api/demo/runs", self.demo_run, None),
+            ("GET", r"/api/admin/demo-runs", self.admin_demo_runs, "admin"),
             ("GET", r"/api/auth/config", self.auth_config, None),
             ("POST", r"/api/auth/google", self.auth_google, None),
             ("POST", r"/api/auth/role", self.auth_role, "user"),
@@ -447,19 +473,19 @@ class StagingApi:
                     if role == "*":
                         subject = self._who(headers)
                     else:
-                        subject = self._auth(headers, role) if role else None
+                        subject = self._auth(headers, role, method) if role else None
                     return fn(subject, data, *[int(g) for g in match.groups()])
             if any(re.fullmatch(p, path) for _, p, _, _ in self.routes):
                 raise ApiError(405, "Método no permitido.")
             raise ApiError(404, "No existe esa ruta.")
         except ApiError as err:
-            return err.status, {"error": err.message}
+            return err.status, {"error": err.message, **({"code": err.code} if err.code else {})}
         except (json.JSONDecodeError, UnicodeDecodeError):
             return 400, {"error": "JSON inválido."}
         except sqlite3.Error:
             return 500, {"error": "Error interno de la base de Staging."}
 
-    def _auth(self, headers, role: str) -> int:
+    def _auth(self, headers, role: str, method: str = "GET") -> int:
         value = (headers.get("Authorization") or "").strip()
         if not value.startswith("Bearer "):
             raise ApiError(401, "Falta el token. Vuelve a entrar.")
@@ -467,6 +493,11 @@ class StagingApi:
             row = self.db.execute("SELECT role, subject_id FROM token WHERE token = ?", (value[7:].strip(),)).fetchone()
         if not row:
             raise ApiError(401, "El token no es válido. Vuelve a entrar.")
+        if row["role"] == "guest" and role != "guest":
+            # Invitado (TD-106): mira la interfaz clínica de muestra, solo lectura. Lo permanente pide cuenta (TD-107).
+            if role == "therapist" and method == "GET":
+                return self._guest_sandbox()
+            raise ApiError(401, "Para esto necesitas una cuenta: crea la tuya o entra con Google.", code="auth_required")
         if row["role"] != role:
             raise ApiError(403, "Esta acción no corresponde a tu tipo de cuenta.")
         return row["subject_id"]
@@ -726,6 +757,7 @@ class StagingApi:
                 "reps_target": target, "end_reason": row["end_reason"], "events": [{"type": e["type"]} for e in events],
                 "rom_mean": round(sum(knees) / len(knees), 1) if knees else None,
                 "pain_reported": bool(row["pain_reported"]), "pain_score": row["pain_score"], "decisions": [], "utterances": [],
+                "no_camera": bool(row["no_camera"]),
                 "symptom_reports": symptoms}
 
     def _report_public(self, session_id: int) -> dict:
@@ -882,6 +914,8 @@ class StagingApi:
 
     def auth_me(self, who, _data):
         out = {"role": who["role"]}
+        if who["role"] == "guest":
+            return 200, {**out, "user": None}
         with self.lock:
             if who["role"] in ("admin", "user"):
                 row = self.db.execute("SELECT * FROM app_user WHERE id = ?", (who["subject_id"],)).fetchone()
@@ -958,6 +992,100 @@ class StagingApi:
                 self._revoke(user)                       # la próxima vez entra con el rol nuevo
             user = self.db.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
         return 200, {"user": self._user_public(user)}
+
+    # ------------------------------------------------------------------ invitado y demo pública (ADR-028)
+    def auth_guest(self, _subject, _data):
+        """Entrar como invitado (TD-106): sin registro ni datos personales. Ve la galería y una interfaz clínica de muestra
+        con datos sintéticos, solo lectura; lo permanente o clínico pide crear una cuenta (TD-107)."""
+        with self.lock, self.db:
+            cur = self.db.execute("INSERT INTO guest (created_at) VALUES (?)", (now_iso(),))
+            token = self._token("guest", cur.lastrowid)
+        return 201, {"role": "guest", "token": token}
+
+    def _guest_sandbox(self) -> int:
+        """Consultorio de muestra compartido por todos los invitados (solo lectura): un fisioterapeuta, un paciente con
+        seudónimo, su plan y tres sesiones sintéticas (ADR-010). Se crea una vez y se reutiliza."""
+        with self.lock:
+            row = self.db.execute("SELECT value FROM app_meta WHERE key = 'guest_sandbox'").fetchone()
+            if row and self.db.execute("SELECT 1 FROM therapist WHERE id = ?", (int(row["value"]),)).fetchone():
+                return int(row["value"])
+            from agents import soap
+            now = datetime.now(timezone.utc)
+            at = lambda days, minutes=0: (now - timedelta(days=days, minutes=minutes)).isoformat()  # noqa: E731
+            with self.db:
+                tid = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)",
+                                      ("Muestra para invitados (datos sintéticos)", at(10))).lastrowid
+                pid = self.db.execute("INSERT INTO patient (therapist_id, alias, consent_given, joined_at, created_at) "
+                                      "VALUES (?, 'Paciente de muestra', 1, ?, ?)", (tid, at(9), at(10))).lastrowid
+                plan = [("sit-to-stand", 1, 10, 0, 3, json.dumps({"trunk_margin": 15, "valgus_margin": 10, "max_reps": 10})),
+                        ("half-squat", 2, 8, 0, 3, json.dumps({}))]
+                for ex_id, sets, reps, hold, per_week, env in plan:
+                    if ex_id in self.catalog:
+                        self.db.execute("INSERT INTO plan_exercise (patient_id, exercise_id, sets, reps, hold_seconds, per_week, "
+                                        "safety_envelope, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (pid, ex_id, sets, reps, hold, per_week, env, at(9)))
+                monitored = [{"index": i, "calibration": i <= 3, "kneeRom": 88.0 + (i % 3), "peakTrunk": 28.0 + (i == 5) * 20,
+                              "peakValgusL": 3.0 + (i == 7) * 14, "peakValgusR": 2.5, "romReached": i > 3} for i in range(1, 11)]
+                s1 = self.db.execute(
+                    "INSERT INTO session (patient_id, exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, reps, "
+                    "pain_score) VALUES (?, 'sit-to-stand', 'monitored', 'demo', ?, ?, 'completed', 10, ?, 2)",
+                    (pid, at(3, 6), at(3), json.dumps(monitored))).lastrowid
+                self.db.executemany("INSERT INTO compensation_event (session_id, rep, type, side, value, peak, threshold, severity, "
+                                    "alert_latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [(s1, 5, "trunk_flexion", None, 44.0, 48.0, 43.0, 1, 38),
+                                     (s1, 7, "knee_valgus", "left", 14.0, 17.0, 13.0, 1, 41)])
+                camera = [{"index": i, "side": None, "peak": 52.0 + i % 4, "seconds": 3.1} for i in range(1, 17)]
+                self.db.execute("INSERT INTO session (patient_id, exercise_id, mode, source, started_at, ended_at, end_reason, "
+                                "reps_done, reps, pain_score) VALUES (?, 'half-squat', 'guided', 'camera', ?, ?, 'completed', 16, ?, 3)",
+                                (pid, at(1, 9), at(1), json.dumps(camera)))
+                self.db.execute("INSERT INTO session (patient_id, exercise_id, mode, source, started_at, ended_at, end_reason, "
+                                "reps_done, reps, no_camera, no_camera_reason) VALUES (?, 'half-squat', 'guided', 'guided', ?, ?, "
+                                "'completed', 16, '[]', 1, 'declined')", (pid, at(0, 70), at(0, 60)))
+                self.db.execute("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('guest_sandbox', ?)", (str(tid),))
+                draft = soap.draft(None, self._report_input(self.db.execute("SELECT * FROM session WHERE id = ?", (s1,)).fetchone()))
+                self.db.execute("INSERT INTO clinical_report (session_id, soap_draft, facts, source, created_at) VALUES (?, ?, ?, ?, ?)",
+                                (s1, json.dumps(draft["soap"], ensure_ascii=False), json.dumps(draft["facts"], ensure_ascii=False),
+                                 draft["source"], at(2)))
+            return tid
+
+    def demo_run(self, _subject, data):
+        """Resultado de la demo pública del Prototipo (TD-108): solo números, sin video, puntos ni datos personales. Quien
+        lo manda no puede leerlo después; solo lo ve el Administrador. Con tope por hora contra el abuso."""
+        source = data.get("source")
+        if source not in ("demo", "camera"):
+            raise ApiError(400, "'source' debe ser demo o camera.")
+        if data.get("exercise_id") != "sit-to-stand":
+            raise ApiError(400, "La demo pública es solo de sentarse y pararse.")
+        end_reason = data.get("end_reason")
+        if end_reason not in END_REASONS:
+            raise ApiError(400, "'end_reason' no es válido.")
+        row = (source, "sit-to-stand", end_reason, self._int(data, "reps_done", 0, 50), self._int(data, "calibration_reps", 0, 10),
+               self._int(data, "duration_s", 0, 7200, 0) or None, self._int(data, "trunk_events", 0, 50, 0),
+               self._int(data, "valgus_events", 0, 100, 0), self._int(data, "low_confidence_reps", 0, 50, 0))
+        hour = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        with self.lock, self.db:
+            if self.db.execute("SELECT COUNT(*) FROM demo_run WHERE created_at >= ?", (hour,)).fetchone()[0] >= DEMO_RUNS_PER_HOUR:
+                raise ApiError(429, "Demasiadas demos en la última hora. Intenta más tarde.")
+            self.db.execute("INSERT INTO demo_run (source, exercise_id, end_reason, reps_done, calibration_reps, duration_s, "
+                            "trunk_events, valgus_events, low_confidence_reps, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (*row, now_iso()))
+        return 202, {"ok": True}
+
+    def admin_demo_runs(self, _admin_id, _data):
+        week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        with self.lock:
+            q = lambda sql, *a: self.db.execute(sql, a).fetchone()[0]  # noqa: E731
+            by_source = {r["source"]: r["n"] for r in self.db.execute("SELECT source, COUNT(*) AS n FROM demo_run GROUP BY source")}
+            by_end = {r["end_reason"]: r["n"] for r in self.db.execute("SELECT end_reason, COUNT(*) AS n FROM demo_run GROUP BY end_reason")}
+            recent = [dict(r) for r in self.db.execute(
+                "SELECT id, source, end_reason, reps_done, calibration_reps, duration_s, trunk_events, valgus_events, "
+                "low_confidence_reps, created_at FROM demo_run ORDER BY id DESC LIMIT 30")]
+            return 200, {"total": q("SELECT COUNT(*) FROM demo_run"), "last_7d": q("SELECT COUNT(*) FROM demo_run WHERE created_at >= ?", week),
+                         "by_source": by_source, "by_end_reason": by_end,
+                         "avg_reps": q("SELECT ROUND(AVG(reps_done), 1) FROM demo_run"),
+                         "with_trunk_events": q("SELECT COUNT(*) FROM demo_run WHERE trunk_events > 0"),
+                         "with_valgus_events": q("SELECT COUNT(*) FROM demo_run WHERE valgus_events > 0"),
+                         "guests": q("SELECT COUNT(*) FROM guest"), "recent": recent}
 
     # ------------------------------------------------------------------ Nivel 3: organizaciones (ADR-026)
     def _org(self, org_id: int) -> sqlite3.Row:
@@ -1221,6 +1349,12 @@ class StagingApi:
         if ended < started:
             raise ApiError(400, "La sesión termina antes de empezar.")
         reps_done = self._int(data, "reps_done", 0, 500)
+        # Sin cámara (TD-110/111): la bandera la pone el servidor según `source`, nunca el cliente; el motivo es opcional.
+        no_camera = source == "guided"
+        reason = data.get("no_camera_reason")
+        no_camera_reason = (reason if reason in NO_CAMERA_REASONS else "guided_view") if no_camera else None
+        if no_camera and (data.get("events") or any(isinstance(r, dict) and r.get("peak") is not None for r in data.get("reps") or [])):
+            raise ApiError(400, "Una sesión sin cámara no lleva métricas cinemáticas ni eventos.")
         reps = data.get("reps") or []
         events = data.get("events") or []
         if not isinstance(reps, list) or len(reps) > 100 or not isinstance(events, list) or len(events) > 200:
@@ -1247,10 +1381,11 @@ class StagingApi:
                                    (patient_id, ex_id)).fetchone():
                 raise ApiError(409, "Ese ejercicio no está en tu plan.")                  # I-9: sin sobre no hay sesión
             cur = self.db.execute("INSERT INTO session (patient_id, exercise_id, mode, source, started_at, ended_at, end_reason, "
-                                  "reps_done, baseline, reps, pain_reported) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                  "reps_done, baseline, reps, pain_reported, no_camera, no_camera_reason) "
+                                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                   (patient_id, ex_id, mode, source, started.isoformat(), ended.isoformat(), end_reason, reps_done,
                                    json.dumps(data.get("baseline")) if isinstance(data.get("baseline"), dict) else None,
-                                   json.dumps(reps), 1 if end_reason == "pain_stop" else 0))
+                                   json.dumps(reps), 1 if end_reason == "pain_stop" else 0, int(no_camera), no_camera_reason))
             self.db.executemany("INSERT INTO compensation_event (session_id, rep, type, side, value, peak, threshold, severity, "
                                 "alert_latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [(cur.lastrowid, *e) for e in clean_events])
@@ -1259,8 +1394,8 @@ class StagingApi:
                 self.db.execute(f"UPDATE symptom_report SET session_id = ? WHERE id IN ({marks}) AND patient_id = ? "
                                 "AND session_id IS NULL", (cur.lastrowid, *symptom_ids, patient_id))
         self.hub.publish(("therapist", patient_id), {"kind": "session_saved", "session_id": cur.lastrowid, "exercise_id": ex_id,
-                                                     "end_reason": end_reason, "at": now_iso()})
-        return 201, {"session_id": cur.lastrowid}
+                                                     "end_reason": end_reason, "no_camera": no_camera, "at": now_iso()})
+        return 201, {"session_id": cur.lastrowid, "no_camera": no_camera}
 
     def score_pain(self, patient_id, data, session_id):
         """EVA 0-10 que el paciente marca al terminar una sesión (ADR-025, TD-100). Una vez por sesión: es lo que sintió al

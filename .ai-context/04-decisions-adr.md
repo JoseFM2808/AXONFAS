@@ -28,11 +28,13 @@
 | 020 | 2026-10-17 | Aceptada | Despliegue: web estática en Vercel y servidor completo en la nube de AMD con Docker y HTTPS |
 | 021 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
 | 022 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
-| 023 | 2026-10-17 | Aceptada | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
+| 023 | 2026-10-17 | Aceptada (ajustada por ADR-028) | Nivel 1: descargo médico y triaje de banderas rojas antes de las rutinas de autogestión |
 | 024 | 2026-10-17 | Aceptada | El valgo se mide en un marco de la pelvis normalizado por el ancho de cadera |
 | 025 | 2026-10-17 | Aceptada | Nivel 2: meta de recorrido por paciente, plan del día y dolor al terminar (EVA) |
 | 026 | 2026-10-18 | Aceptada | Nivel 3: organizaciones con planes de licencias y un panel de empresa sin datos clínicos |
 | 027 | 2026-10-17 | Aceptada | Video de presentación generado con código: Remotion y voz local con Kokoro |
+| 028 | 2026-10-18 | Aceptada | Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador |
+| 029 | 2026-10-18 | Aceptada | Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base |
 
 ---
 
@@ -571,6 +573,56 @@
   - El primer render baja Chrome Headless Shell y usa Google Fonts: necesita internet.
   - Remotion es gratis para personas y equipos pequeños; una empresa grande necesitaría licencia comercial (TD-112).
   - Cambiar el guion obliga a correr `py video.py voice` y `py video.py render` de nuevo.
+
+## ADR-028 · Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - El owner pide equilibrar la captación (B2C) con la seguridad de los datos.
+  - La demo inicial queda abierta para cualquiera, y lo que genere solo lo ve el Administrador.
+  - Un invitado explora sin registrarse, y la cuenta se exige recién ante algo permanente o clínico.
+  - Hasta hoy, sin cuenta no había nada que ver del lado clínico. El triaje (ADR-023) tapaba la galería y el Prototipo
+    enteros, incluso el demo sintético, que no es ejercicio.
+- **Decisión:**
+  - Token `guest` (`POST /api/auth/guest`), sin datos personales.
+  - Con el token `guest`, las lecturas de fisioterapeuta (GET) se resuelven contra un consultorio de muestra compartido,
+    creado una vez con datos sintéticos. Cualquier otra ruta responde 401 `auth_required`.
+  - `auth-wall.js` muestra la barra del invitado y el diálogo del muro. `api-client.js` lo dispara ante `auth_required`,
+    y las páginas lo piden antes con `AxonWall.require(motivo)`.
+  - Sin cuenta, el seguimiento libre es una vista previa de una serie.
+  - La demo pública manda a `demo_run` solo números anónimos, con una casilla visible para no compartir y un tope de 500
+    por hora. Solo los lee `GET /api/admin/demo-runs`.
+  - El triaje de ADR-023 se pide donde se hace ejercicio: el seguimiento libre entero y la cámara del Prototipo
+    (`AxonTriage.ensure()`). La galería y el demo sintético quedan sin triaje.
+- **Consecuencias:**
+  - Ajusta ADR-023 en dónde se pide el triaje, no en qué pregunta ni en qué bloquea.
+  - Una persona sin cuenta ya no hace la rutina libre completa: la vista previa termina tras la primera serie.
+  - El consultorio de muestra cuenta en los totales del Administrador, y `guest` y `demo_run` crecen sin borrado: lo
+    resuelve TD-114.
+  - La vista previa de una serie y el tope por hora son valores de partida (TD-113).
+
+## ADR-029 · Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:**
+  - Sobre todo en celular, la persona necesita ver el ejercicio antes de intentarlo con la cámara.
+  - Quien no quiere o no puede usar la cámara no debe quedar bloqueado. Antes, un permiso negado dejaba el seguimiento
+    parado.
+  - El fisioterapeuta tiene que saber cuándo una sesión no tuvo medición.
+- **Decisión:**
+  - La primera vez que se usa la cámara con un ejercicio en ese equipo, va antes el tutorial con la figura de referencia
+    en grande (`practice.js`, `seguimiento.js`).
+  - Si la cámara falla o no se permite (`pose-camera.js` avisa el motivo con `onFail`), o si la persona elige "Hacer sin
+    cámara", la rutina sigue con la guía en grande y un conteo manual.
+  - Se guarda como sesión guiada. El servidor marca `session.no_camera = 1` con su motivo siempre que
+    `source = 'guided'` (I-20) y rechaza métricas cinemáticas o eventos en esa sesión.
+  - El panel, la nota SOAP (O) y la Observation FHIR (`camera-used: false`) lo dicen con el mismo texto fijo.
+- **Consecuencias:**
+  - La vista guiada de `paciente.html`, que ya era sin cámara, queda marcada igual (`guided_view`), también en las bases
+    anteriores.
+  - Una sesión sin cámara cuenta para el cumplimiento, pero no para la calidad ni para el recorrido medio, que salen de la
+    cámara. Si debe contar igual que una con cámara se valida con fisioterapeutas (TD-113).
+  - No cambia el alcance de ADR-009 ni agrega alertas: sin cámara no hay detección postural.
 
 ---
 
