@@ -1,4 +1,4 @@
-// Lectura estática del panel del fisioterapeuta (ADR-012, ADR-018).
+// Lectura estática del panel del fisioterapeuta (ADR-012, ADR-021).
 //   node --test "tests/validation-prototype/*.test.cjs"
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,7 +8,7 @@ const path = require('node:path');
 const SRC = path.join(__dirname, '..', '..', 'src', 'frontend', 'validation-prototype');
 const js = fs.readFileSync(path.join(SRC, 'doctor.js'), 'utf8');
 
-test('el editor del plan tiene el rango de rodilla opcional del sobre (ADR-018)', () => {
+test('el editor del plan tiene el rango de rodilla opcional del sobre (ADR-021)', () => {
   assert.ok(js.includes("'rom_min'") && js.includes("'rom_max'"));
   assert.ok(js.includes('deja los dos vacíos'));
 });
@@ -53,12 +53,12 @@ test('la nota abierta se vacía al cambiar de paciente, al cerrar o si falla la 
   assert.match(body("$('soap-close')"), /resetSoap\(\)/);
 });
 
-test('un código nuevo vuelve a pedir el consentimiento y el panel lo dice (TD-78)', () => {
+test('un código nuevo vuelve a pedir el consentimiento y el panel lo dice (TD-85)', () => {
   assert.ok(js.includes('el consentimiento se vuelve a pedir'));
   assert.ok(js.includes('Sin consentimiento'));
 });
 
-test('el panel muestra y anuncia las molestias del paciente (ADR-018)', () => {
+test('el panel muestra y anuncia las molestias del paciente (ADR-021)', () => {
   assert.ok(html.includes('p-symptoms-title'));
   assert.match(html, /id="p-symptom-alert"[^>]*role="status"|role="status"[^>]*id="p-symptom-alert"/);
   assert.ok(js.includes('symptom_reported'));

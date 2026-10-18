@@ -1,6 +1,6 @@
-/* AXONFAS · descanso recomendado entre series (ADR-019). Es una cuenta regresiva que el paciente puede saltar o alargar:
+/* AXONFAS · descanso recomendado entre series (ADR-022). Es una cuenta regresiva que el paciente puede saltar o alargar:
  * nunca bloquea el siguiente paso ni forma parte del sobre de seguridad. El valor lo recomienda el fisioterapeuta; sin
- * valor se sugiere 60 s, un valor de partida y no clínico (TD-80).
+ * valor se sugiere 60 s, un valor de partida y no clínico (TD-87).
  *
  *   createRest({ seconds, now })  → lógica pura (testeable): tick(t) → { left, done }, skip(), extend(s)
  *   text(rest)                    → frase del descanso, según sea el de partida, un valor o un rango

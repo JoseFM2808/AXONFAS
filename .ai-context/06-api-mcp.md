@@ -19,8 +19,8 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/therapists/me` | fisioterapeuta | → `{therapist, patients: [{id, alias, birth_year, consent_given, joined_at, invite_code, plan_size, metrics, live}]}`. Cada `metrics` suma `discomfort_30d` y `red_flags_30d` |
 | `POST /api/patients` | fisioterapeuta | `{alias, birth_year?}` → 201 `{patient}` con `invite_code` |
 | `GET /api/patients/{id}` | fisioterapeuta | → `{patient (con `profile`), plan (cada ítem con `since`, cuándo se indicó, y `rest`: `{min, max, default}`), sessions (30, cada una con `report_status`: `null`, `"draft"` o `"final"`), events (60), symptoms (30: `{id, session_id, exercise_id, reported_at, kind, category, text, action, adjustment}`), metrics (con `discomfort_30d` y `red_flags_30d`), live}`. Cada `metrics.per_exercise` suma `camera_first`, `camera_last` (`{session_id, ended_at, reps, peak, hold}`), `camera_sessions` y `camera_series` (TD-49) |
-| `PUT /api/patients/{id}/plan` | fisioterapeuta | `{exercises: [{exercise_id, sets, reps, hold_seconds, per_week, safety_envelope?, notes?, rest_min_seconds?, rest_max_seconds?}]}` → `{plan}`; reemplaza el plan activo. En monitoreados, `safety_envelope` = `{trunk_margin (5–35), valgus_margin (3–25), max_reps (4–20), rom_min?, rom_max?}`: `rom_min` y `rom_max` (10–140) van juntos y `rom_min < rom_max`; si no, 400. `rest_min_seconds` y `rest_max_seconds` (10–180, para todo ejercicio, fuera del sobre, ADR-019): si viene uno solo, el otro toma el mismo valor; mínimo mayor que máximo → 400 |
-| `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code, revoked_devices}`: código nuevo; borra los tokens del paciente (tendrá que volver a afiliarse y aceptar el consentimiento) y pone `consent_given = 0` (TD-78) |
+| `PUT /api/patients/{id}/plan` | fisioterapeuta | `{exercises: [{exercise_id, sets, reps, hold_seconds, per_week, safety_envelope?, notes?, rest_min_seconds?, rest_max_seconds?}]}` → `{plan}`; reemplaza el plan activo. En monitoreados, `safety_envelope` = `{trunk_margin (5–35), valgus_margin (3–25), max_reps (4–20), rom_min?, rom_max?}`: `rom_min` y `rom_max` (10–140) van juntos y `rom_min < rom_max`; si no, 400. `rest_min_seconds` y `rest_max_seconds` (10–180, para todo ejercicio, fuera del sobre, ADR-022): si viene uno solo, el otro toma el mismo valor; mínimo mayor que máximo → 400 |
+| `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code, revoked_devices}`: código nuevo; borra los tokens del paciente (tendrá que volver a afiliarse y aceptar el consentimiento) y pone `consent_given = 0` (TD-85) |
 | `POST /api/patients/{id}/highlight` | fisioterapeuta | `{muscle?, exercise_id?, note?}` → 202 `{delivered_to}` |
 | `GET /api/patients/{id}/live` | fisioterapeuta | Server-Sent Events con lo que publica ese paciente |
 | `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir |
@@ -29,7 +29,7 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
 | `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`), `plan_updated` y `profile_updated` |
 | `PUT /api/me/profile` | paciente | `{limitations: [...], pain_areas: [...], note?}` → `{profile}`; ids desconocidos → 400; avisa `profile_updated` al fisioterapeuta (ADR-017) |
-| `POST /api/me/discomfort` | paciente | `{exercise_id?, option?, text?, in_session, current?: {rom_target?, reps?}}` → 201 `{report, action, adjustment, stop, message}`. `option` ∈ `pain_mild`, `fatigue`, `cramp`, `stiffness`, `red_flag`; `text` hasta 200. Sin `option` ni `text`, opción desconocida o tipos equivocados → 400; sin consentimiento → 403; ejercicio fuera del plan → 409. Decide con reglas, sin LLM (ADR-018): `session_stopped` (alarma), `demand_lowered` (con `adjustment {param, old, new}`, dentro del sobre), `paused` o `logged`. `message` es la frase para el paciente. Avisa `symptom_reported` al fisioterapeuta |
+| `POST /api/me/discomfort` | paciente | `{exercise_id?, option?, text?, in_session, current?: {rom_target?, reps?}}` → 201 `{report, action, adjustment, stop, message}`. `option` ∈ `pain_mild`, `fatigue`, `cramp`, `stiffness`, `red_flag`; `text` hasta 200. Sin `option` ni `text`, opción desconocida o tipos equivocados → 400; sin consentimiento → 403; ejercicio fuera del plan → 409. Decide con reglas, sin LLM (ADR-021): `session_stopped` (alarma), `demand_lowered` (con `adjustment {param, old, new}`, dentro del sobre), `paused` o `logged`. `message` es la frase para el paciente. Avisa `symptom_reported` al fisioterapeuta |
 | `PUT /api/patients/{id}/profile` | fisioterapeuta | Igual, para completar el perfil tras su evaluación; avisa al paciente |
 | `GET /api/ai/status` | fisioterapeuta | → `{available, reason}`: hay LLM solo con el túnel a la GPU y `AXONFAS_LLM_KEY` (ADR-016) |
 | `POST /api/patients/{id}/advice` | fisioterapeuta | `{suggestions: [{title, detail, because, priority}]}` (1–20) → `{text, source: 'llm'}` o `{text: null, source: 'rejected', reason}`; sin LLM → 503. Resume, no agrega sugerencias (ADR-017) |
@@ -81,7 +81,7 @@ Corren en el droplet MI300X y solo se usan por el túnel SSH (`axonfas-cloud.ps1
 
 **Respuesta del agente clínico** (lo que pide el prompt): `{"action": "adjust", "param", "old", "new", "reason"}` o
 `{"action": "none", "reason"}`. `param` ∈ `rom_target` (grados), `reps`, `rest_seconds`. La decisión que devuelve
-`clinical.propose` suma `within_envelope`, `outcome`, `note` y `source` (`llm` o `rules`), con la forma de `agent_decision`. Ante una molestia sin baja válida del LLM, el motor de reglas propone la baja (`source: "rules"`, con `llm_outcome` y `llm_proposal`) o, sin nada que bajar, agrega `paused: true` (ADR-018). `run_turn` devuelve además `symptom` (`{kind, category, text, action, adjustment}` o `null`).
+`clinical.propose` suma `within_envelope`, `outcome`, `note` y `source` (`llm` o `rules`), con la forma de `agent_decision`. Ante una molestia sin baja válida del LLM, el motor de reglas propone la baja (`source: "rules"`, con `llm_outcome` y `llm_proposal`) o, sin nada que bajar, agrega `paused: true` (ADR-021). `run_turn` devuelve además `symptom` (`{kind, category, text, action, adjustment}` o `null`).
 
 ## Interfaces previstas
 
@@ -89,7 +89,7 @@ Corren en el droplet MI300X y solo se usan por el túnel SSH (`axonfas-cloud.ps1
 |---|---|---|---|---|
 | WebSocket de sesión | Navegador del paciente ↔ gateway FastAPI | Coordenadas 2D por frame (33 puntos de MediaPipe) y audio de voz en streaming. Nunca video (ADR-003) | Alertas del bucle rápido (color + frase corta pregrabada), audio TTS, metas nuevas en pantalla | TD-07 |
 | API del panel | Panel del fisioterapeuta ↔ backend | Sobre de seguridad por `plan_exercise`, aprobación del borrador SOAP | Sesiones, métricas por repetición, eventos de compensación, decisiones del agente, borrador SOAP | Hecho en Staging (TD-09); en la nube, con TD-45 |
-| Export clínico | Backend → sistemas externos | `clinical_report` revisado | `Observation` FHIR R4 + PDF. Fuera de Staging, solo si `reviewed_by` no es null | Observation hecha en Staging; falta el validador de HL7 (TD-10) y el PDF (TD-77) |
+| Export clínico | Backend → sistemas externos | `clinical_report` revisado | `Observation` FHIR R4 + PDF. Fuera de Staging, solo si `reviewed_by` no es null | Observation hecha en Staging; falta el validador de HL7 (TD-10) y el PDF (TD-84) |
 | LLM | Orquestador ↔ vLLM | Prompt con contexto de la sesión | Propuesta estructurada o texto para voz / SOAP | Hecho por línea de comandos (ADR-016); falta conectarlo al Prototipo (TD-61) |
 
 ## Contratos ya fijados
@@ -104,7 +104,7 @@ Vienen del modelo de datos y no cambian sin actualizar [03 · Base de datos](03-
 Lo escribe solo el panel del terapeuta; el agente lo lee y nunca lo modifica. Tipos y unidades exactas se fijan al
 validar el sobre con fisioterapeutas (TD-06).
 
-En Staging el sobre se guarda como `{trunk_margin, valgus_margin, max_reps, rom_min?, rom_max?}` y `safety.agent_envelope` lo pasa al agente como `{rom_min?, rom_max?, max_reps, trunk_margin, valgus_margin, pain_stop: true}`. Sin `rom_min`/`rom_max` el agente no ajusta el rango; tras una molestia solo baja la exigencia (ADR-018, Propuesta).
+En Staging el sobre se guarda como `{trunk_margin, valgus_margin, max_reps, rom_min?, rom_max?}` y `safety.agent_envelope` lo pasa al agente como `{rom_min?, rom_max?, max_reps, trunk_margin, valgus_margin, pain_stop: true}`. Sin `rom_min`/`rom_max` el agente no ajusta el rango; tras una molestia solo baja la exigencia (ADR-021, Propuesta).
 
 **Evento de compensación** (`compensation_event`): `type` (`trunk_flexion` | `knee_valgus` | `heel_lift` |
 `pelvic_rotation` | `asymmetry`), `severity` (1–3), repetición donde ocurrió y `alert_latency_ms`. El demo solo emite

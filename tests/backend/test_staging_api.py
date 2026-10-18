@@ -300,7 +300,7 @@ class StagingApiTest(unittest.TestCase):
         self.assertIn("5 de 10", report["report"]["soap"]["O"])
         self.assertNotIn("None", report["report"]["soap"]["O"])
 
-    # ------------------------------------------------------------------ molestias del paciente (ADR-018)
+    # ------------------------------------------------------------------ molestias del paciente (ADR-021)
     def symptom(self, patient, **body):
         return patient.call("POST", "/api/me/discomfort", body)
 

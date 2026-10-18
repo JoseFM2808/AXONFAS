@@ -125,7 +125,7 @@
         because: 'El perfil está vacío.' });
     }
 
-    // Molestias que el paciente reportó en los últimos 14 días (ADR-018): una propuesta por ejercicio, que el fisioterapeuta revisa.
+    // Molestias que el paciente reportó en los últimos 14 días (ADR-021): una propuesta por ejercicio, que el fisioterapeuta revisa.
     const recentSymptoms = (data.symptoms || []).filter((x) => now - Date.parse(x.reported_at) <= 14 * 864e5);
     const symptomsBy = {};
     recentSymptoms.forEach((x) => { (symptomsBy[x.exercise_id || ''] = symptomsBy[x.exercise_id || ''] || []).push(x); });

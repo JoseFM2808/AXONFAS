@@ -92,8 +92,8 @@ PROFILE_LIMITS = {"no_floor", "no_kneel", "no_standing", "balance", "walking_aid
 PAIN_AREAS = {"knee", "hip", "back", "neck", "shoulder"}
 # Opciones rápidas del formulario de molestia (symptom-form.js) y su categoría. Dato de salud: solo Staging (ADR-010).
 SYMPTOM_OPTIONS = {"pain_mild": "pain", "fatigue": "fatigue", "cramp": "cramp", "stiffness": "stiffness", "red_flag": "red_flag"}
-# Descanso entre series (ADR-019): una RECOMENDACIÓN del fisioterapeuta, no un límite ni parte del sobre. Sin dato, 60 s
-# como valor de partida, no clínico (TD-80). Los límites son los fijos de `rest_seconds` del agente.
+# Descanso entre series (ADR-022): una RECOMENDACIÓN del fisioterapeuta, no un límite ni parte del sobre. Sin dato, 60 s
+# como valor de partida, no clínico (TD-87). Los límites son los fijos de `rest_seconds` del agente.
 REST_DEFAULT_SECONDS = 60
 REST_LIMITS = (PARAMS["rest_seconds"]["min"], PARAMS["rest_seconds"]["max"])
 MAX_BODY = 256 * 1024
@@ -292,7 +292,7 @@ class StagingApi:
         plan_columns = {r["name"] for r in self.db.execute("PRAGMA table_info(plan_exercise)")}
         for column in ("rest_min_seconds", "rest_max_seconds"):
             if column not in plan_columns:
-                self.db.execute(f"ALTER TABLE plan_exercise ADD COLUMN {column} INTEGER")      # bases anteriores a ADR-019
+                self.db.execute(f"ALTER TABLE plan_exercise ADD COLUMN {column} INTEGER")      # bases anteriores a ADR-022
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
@@ -512,7 +512,7 @@ class StagingApi:
                 envelope = {"trunk_margin": self._int(env, "trunk_margin", 5, 35, 15),
                             "valgus_margin": self._int(env, "valgus_margin", 3, 25, 10),
                             "max_reps": self._int(env, "max_reps", 4, 20, 10)}
-                if "rom_min" in env or "rom_max" in env:      # rango de rodilla para los ajustes del agente (ADR-018)
+                if "rom_min" in env or "rom_max" in env:      # rango de rodilla para los ajustes del agente (ADR-021)
                     if env.get("rom_min") is None or env.get("rom_max") is None:
                         raise ApiError(400, "Indica rom_min y rom_max juntos.")
                     lo, hi = PARAMS["rom_target"]["min"], PARAMS["rom_target"]["max"]
@@ -549,7 +549,7 @@ class StagingApi:
             code = self._new_code()
             self.db.execute("UPDATE patient SET invite_code = ?, joined_at = NULL, consent_given = 0 WHERE id = ?",
                             (code, patient_id))
-            # Un código nuevo corta los dispositivos anteriores (TD-41). TD-78: el consentimiento se vuelve a pedir al afiliarse.
+            # Un código nuevo corta los dispositivos anteriores (TD-41). TD-85: el consentimiento se vuelve a pedir al afiliarse.
             revoked = self.db.execute("DELETE FROM token WHERE role = 'patient' AND subject_id = ?", (patient_id,)).rowcount
         return 200, {"invite_code": code, "revoked_devices": revoked}
 
@@ -826,7 +826,7 @@ class StagingApi:
             self.db.executemany("INSERT INTO compensation_event (session_id, rep, type, side, value, peak, threshold, severity, "
                                 "alert_latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [(cur.lastrowid, *e) for e in clean_events])
-            if symptom_ids:       # por id y no por hora: el reloj del dispositivo puede estar corrido (TD-72)
+            if symptom_ids:       # por id y no por hora: el reloj del dispositivo puede estar corrido (TD-79)
                 marks = ",".join("?" * len(symptom_ids))
                 self.db.execute(f"UPDATE symptom_report SET session_id = ? WHERE id IN ({marks}) AND patient_id = ? "
                                 "AND session_id IS NULL", (cur.lastrowid, *symptom_ids, patient_id))
@@ -834,7 +834,7 @@ class StagingApi:
                                                      "end_reason": end_reason, "at": now_iso()})
         return 201, {"session_id": cur.lastrowid}
 
-    # ------------------------------------------------------------------ molestias del paciente (ADR-018)
+    # ------------------------------------------------------------------ molestias del paciente (ADR-021)
     def _assess_symptom(self, patient_id: int, exercise_id: str | None, option: str | None, text: str | None,
                         in_session: bool, current: dict) -> dict:
         """Decisión determinista, sin LLM, sobre una molestia. La reutilizará el turno de voz (TD-61, source 'voice_turn').
@@ -875,7 +875,7 @@ class StagingApi:
         return report
 
     def report_discomfort(self, patient_id, data):
-        """El paciente avisa de una molestia con el formulario, sin GPU (ADR-018). Se registra, se avisa al fisioterapeuta y,
+        """El paciente avisa de una molestia con el formulario, sin GPU (ADR-021). Se registra, se avisa al fisioterapeuta y,
         en sesión, solo se baja la exigencia dentro del sobre; una alarma detiene la sesión (I-7)."""
         text = self._text(data, "text", 200, required=False)
         option = data.get("option")

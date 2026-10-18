@@ -1,4 +1,4 @@
-/* AXONFAS · formulario "Tengo una molestia" del paciente (ADR-018). Sin GPU y sin IA: lo que se elige o se escribe viaja a
+/* AXONFAS · formulario "Tengo una molestia" del paciente (ADR-021). Sin GPU y sin IA: lo que se elige o se escribe viaja a
  * POST /api/me/discomfort, y el motor de reglas decide (alarma → detener; molestia → registrar y bajar la exigencia dentro
  * del sobre, o pausar). El mensaje que se muestra lo trae la API; aquí no se decide nada clínico.
  * Se usa en paciente.html (plan y vista guiada), seguimiento.html e index.html?plan=. Nunca bloquea "Dolor: detener".

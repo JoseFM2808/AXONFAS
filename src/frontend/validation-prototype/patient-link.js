@@ -106,7 +106,7 @@
       back.className = 'link';
       back.textContent = 'Volver a mi plan';
       $('pl-text').append(p, back);
-      // Molestia en plena sesión (ADR-018): el servidor decide con reglas; aquí se aplica la baja o se detiene (I-7).
+      // Molestia en plena sesión (ADR-021): el servidor decide con reglas; aquí se aplica la baja o se detiene (I-7).
       if (window.AxonSymptom) {
         AxonSymptom.render($('symptom-index'), { exerciseId, inSession: () => Boolean(window.AxonApp && AxonApp.current()),
           current: () => (window.AxonApp ? AxonApp.current() : null),

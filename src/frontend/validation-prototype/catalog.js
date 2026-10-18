@@ -365,7 +365,7 @@
   ];
 
   const byId = Object.fromEntries(EXERCISES.map((e) => [e.id, e]));
-  // Descanso sugerido cuando el fisioterapeuta no fija uno: valor de partida, no clínico (ADR-019, TD-80). Mismo valor que la API.
+  // Descanso sugerido cuando el fisioterapeuta no fija uno: valor de partida, no clínico (ADR-022, TD-87). Mismo valor que la API.
   const REST_DEFAULT_SECONDS = 60;
 
   return { SOURCES, THEMES, EXERCISES, byId, REST_DEFAULT_SECONDS, get: (id) => byId[id] || null };

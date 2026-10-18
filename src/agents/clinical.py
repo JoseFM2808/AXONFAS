@@ -3,7 +3,7 @@
 Lee lo que dijo el paciente y cómo van las repeticiones, y puede proponer UN ajuste {param, old, new, reason}. No aplica
 nada: la propuesta pasa por safety.validate(), que es determinista. Si el LLM falla o responde algo inválido, no hay
 cambio y queda registrado. Ante una molestia del paciente, si el LLM no propone una baja válida, la propone el motor de
-reglas (safety.reduce_demand) dentro del sobre; sin nada que bajar se pausa y se avisa (ADR-018).
+reglas (safety.reduce_demand) dentro del sobre; sin nada que bajar se pausa y se avisa (ADR-021).
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def build_messages(utterance: str, ctx: dict) -> list[dict]:
 
 
 def propose(llm, utterance: str, ctx: dict) -> dict:
-    """Pide una propuesta al LLM y la valida; ante una molestia, el motor de reglas respalda al LLM (ADR-018).
+    """Pide una propuesta al LLM y la valida; ante una molestia, el motor de reglas respalda al LLM (ADR-021).
     Devuelve la decisión (forma de `agent_decision`) más tiempos y texto crudo."""
     return _protect(_ask(llm, utterance, ctx), utterance, ctx)
 

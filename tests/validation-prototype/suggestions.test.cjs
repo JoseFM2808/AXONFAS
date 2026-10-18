@@ -97,7 +97,7 @@ test('las páginas cargan el módulo y marcan regiones, saltos y estados para le
   assert.ok(tokens.includes('--alert-ink') && tokens.includes('--alert-strong'));
 });
 
-test('una molestia reciente propone revisar la dosis, sin aplicarla (ADR-018, I-13)', () => {
+test('una molestia reciente propone revisar la dosis, sin aplicarla (ADR-021, I-13)', () => {
   const now = Date.parse('2026-10-17T12:00:00Z');
   const day = 864e5;
   const calf = [{ exercise_id: 'calf-raises', sets: 2, reps: 10, per_week: 6 }];

@@ -581,7 +581,7 @@
     }
   }
 
-  // ---------------------------------------------------------------- ajuste por molestia (ADR-018)
+  // ---------------------------------------------------------------- ajuste por molestia (ADR-021)
   // patient-link.js lo usa cuando el paciente avisa de una molestia en plena sesión: el motor de reglas del servidor ya
   // validó el cambio contra el sobre del fisioterapeuta; aquí solo se aplica. Solo baja la exigencia.
   window.AxonApp = {

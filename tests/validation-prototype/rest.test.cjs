@@ -1,4 +1,4 @@
-// Descanso recomendado entre series (ADR-019). Solo datos sintéticos (ADR-010).
+// Descanso recomendado entre series (ADR-022). Solo datos sintéticos (ADR-010).
 //   node --test "tests/validation-prototype/*.test.cjs"
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,7 +36,7 @@ test('el valor por defecto es el mismo en el catálogo, el temporizador y la API
   assert.equal(R.DEFAULT_SECONDS, C.REST_DEFAULT_SECONDS);
 });
 
-test('las páginas cargan el temporizador y lo usan sin bloquear (ADR-019)', () => {
+test('las páginas cargan el temporizador y lo usan sin bloquear (ADR-022)', () => {
   assert.ok(read('paciente.html').includes('rest-timer.js'));
   assert.ok(read('seguimiento.html').includes('rest-timer.js'));
   assert.ok(read('rest-timer.js').includes('Saltar descanso'));

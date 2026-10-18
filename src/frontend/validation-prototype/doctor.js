@@ -251,7 +251,7 @@
     renderSuggestions(d);
   }
 
-  // ------------------------------------------------------------------ molestias del paciente (ADR-018)
+  // ------------------------------------------------------------------ molestias del paciente (ADR-021)
   const SYMPTOM_CATEGORY = { pain: 'dolor o molestia', cramp: 'calambre', fatigue: 'cansancio', stiffness: 'rigidez', other: 'otra molestia',
     red_flag: 'señal de alarma' };
   const PARAM_NAME = { rom_target: 'el rango', reps: 'las repeticiones', rest_seconds: 'el descanso' };

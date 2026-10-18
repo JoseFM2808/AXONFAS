@@ -86,7 +86,7 @@
     return `${what}${d.hold ? ` · sostener ${d.hold} s` : ''} · descanso ${rest} (${tg.total} en total)`;
   }
 
-  /** Descanso recomendado al terminar una serie (ADR-019): es una guía, el conteo sigue activo y no bloquea nada. */
+  /** Descanso recomendado al terminar una serie (ADR-022): es una guía, el conteo sigue activo y no bloquea nada. */
   let restView = null;
   function startRest() {
     stopRest();

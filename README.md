@@ -21,8 +21,8 @@ Toda la parte pesada (pose 3D, LLM, voz) corre junta en **una sola GPU AMD Insti
 | Agentes y pila de la GPU (ADR-016): lista para correr, sin GPU todavía | ⏳ hackathon |
 | Sugerencias por rol, perfil del paciente y accesibilidad WCAG 2.2 AA (ADR-017) | ✅ prototipo |
 | Nota SOAP (borrador y firma) y export FHIR R4 desde el panel, en Staging local | ✅ prototipo (falta validar con el validador de HL7) |
-| Aviso de molestias del paciente: baja la exigencia con reglas, registra y avisa al fisioterapeuta, sin GPU (ADR-018) | ✅ prototipo (Staging) |
-| Descanso recomendado entre series, que se puede saltar o alargar (ADR-019) | ✅ prototipo |
+| Aviso de molestias del paciente: baja la exigencia con reglas, registra y avisa al fisioterapeuta, sin GPU (ADR-021) | ✅ prototipo (Staging) |
+| Descanso recomendado entre series, que se puede saltar o alargar (ADR-022) | ✅ prototipo |
 | Panel del fisioterapeuta en la nube | ⏳ hackathon |
 
 ## Estructura
@@ -51,7 +51,7 @@ AXONFAS/
 ## Documentación
 
 Todo lo técnico vive en [`.ai-context/`](.ai-context/llms.txt): lógica de los dos bucles, arquitectura, modelo de
-datos, decisiones (ADRs, hasta el ADR-019 aceptado) y pendientes. Los agentes de IA empiezan por [`CLAUDE.md`](CLAUDE.md).
+datos, decisiones (ADRs, hasta el ADR-022 aceptado) y pendientes. Los agentes de IA empiezan por [`CLAUDE.md`](CLAUDE.md).
 
 ## Licencias
 
@@ -72,7 +72,7 @@ de cada modelo o proyecto, revisado 2026-10-17; pendiente de confirmar en las fi
 | react-body-highlighter (polígonos del mapa muscular) | Mapa muscular | MIT | `body-map-data.js` |
 | qrcode-generator 1.4.4 | QR para afiliar y abrir en otro equipo | MIT | `share.js`, `doctor.html`, `index.html` |
 | Space Grotesk, Outfit y JetBrains Mono (Google Fonts) | Tipografía | SIL OFL-1.1 | `<head>` de las páginas |
-| espeak-ng | Fonemas del TTS en español; se instala con `apt` dentro del contenedor de la GPU y no se distribuye con el repo | **GPL-3.0** (decisión documentada: se deja así, TD-76) | `bootstrap.sh` |
+| espeak-ng | Fonemas del TTS en español; se instala con `apt` dentro del contenedor de la GPU y no se distribuye con el repo | **GPL-3.0** (decisión documentada: se deja así, TD-83) | `bootstrap.sh` |
 | Lifter 2D a 3D | Pose 3D | Por elegir (TD-05; licencias de pesos en TD-29) | - |
 
 Los ejercicios citan AAOS OrthoInfo, NHS WWL y CDC STEADI; las descripciones y las figuras son propias (ADR-011).

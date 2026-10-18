@@ -260,7 +260,7 @@
   - El perfil es un dato de salud: solo en Staging, con seudónimo y consentimiento (ADR-010); entra en la revisión de
     protección de datos (TD-14).
 
-## ADR-018 · Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta — Aceptada
+## ADR-021 · Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta — Aceptada
 
 - **Fecha:** 2026-10-17 (propuesta y aceptada el mismo día, con la ampliación del equipo).
 - **Contexto:** con ADR-005, un ajuste que cabía en el sobre se aplicaba siempre. Si el paciente decía "me molesta" y el
@@ -275,7 +275,7 @@
     exige `max_reps` (I-3).
   - **Reducción determinista** (`safety.reduce_demand`): primero el rango, 10° menos hacia `rom_min`; si no se puede, las
     repeticiones × 0,7, nunca más que `max_reps`. Siempre dentro del sobre: pasa por `validate` antes de usarse. Nunca
-    toca el descanso (ADR-019).
+    toca el descanso (ADR-022).
   - **Respaldo del agente.** Con molestia, si el LLM no propone una baja válida (falla, no propone o propone subir), la
     baja la propone el motor de reglas. La decisión lleva `source: "rules"` y guarda `llm_outcome` y `llm_proposal`.
     Sin límites o sin nada que bajar: pausa y aviso (`paused: true`).
@@ -291,15 +291,15 @@
   - Con una molestia, la exigencia nunca queda igual si el sobre permite bajarla.
   - El escalado deja de ser el camino principal: una propuesta del LLM que sube la exigencia ya no pausa el ejercicio;
     se baja con reglas y se avisa.
-  - Los valores 10° y × 0,7 son de partida, no clínicos (TD-80). Las palabras y categorías se validan con
-    fisioterapeutas (TD-73).
+  - Los valores 10° y × 0,7 son de partida, no clínicos (TD-87). Las palabras y categorías se validan con
+    fisioterapeutas (TD-80).
   - La molestia es un dato de salud: solo Staging, seudónimo y consentimiento (ADR-010).
   - Invariante I-14 en [01](01-logic.md).
 
-## ADR-019 · Descanso entre series como recomendación del fisioterapeuta, no como límite — Aceptada
+## ADR-022 · Descanso entre series como recomendación del fisioterapeuta, no como límite — Aceptada
 
 - **Fecha:** 2026-10-17
-- **Contexto:** TD-74 preguntaba si `rest_seconds` debía tener un límite del fisioterapeuta en el sobre. Un descanso más
+- **Contexto:** TD-81 preguntaba si `rest_seconds` debía tener un límite del fisioterapeuta en el sobre. Un descanso más
   largo nunca es inseguro, y el paciente necesita poder seguir cuando esté listo.
 - **Decisión:**
   - El fisioterapeuta recomienda un descanso por ejercicio en el plan: `rest_min_seconds` y `rest_max_seconds`
@@ -311,10 +311,10 @@
     saltarla o sumar 30 s. Nunca bloquea el siguiente paso.
   - El agente: el `current.rest_seconds` que reciba con TD-61 será `rest.min`; se valida solo con los límites fijos
     10–180; tras una molestia solo puede subirlo (`LESS_DEMAND`). Un `rest_seconds` aplicado cambia la cuenta de esa
-    sesión, nunca el plan. La reducción determinista de ADR-018 nunca lo usa.
+    sesión, nunca el plan. La reducción determinista de ADR-021 nunca lo usa.
 - **Consecuencias:**
-  - Resuelve TD-74 sin extender el contrato del sobre.
-  - El valor de 60 s se valida con fisioterapeutas (TD-80).
+  - Resuelve TD-81 sin extender el contrato del sobre.
+  - El valor de 60 s se valida con fisioterapeutas (TD-87).
 
 ---
 

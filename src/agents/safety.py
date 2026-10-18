@@ -7,9 +7,9 @@ Nada de este módulo usa un LLM:
   `applied` con `within_envelope = True` (I-2); fuera del sobre se pausa y se escala al terapeuta. Sin el límite del
   fisioterapeuta para ese parámetro (rom_min y rom_max para el rango, max_reps para las repeticiones) no se ajusta
   nada (I-3). `rest_seconds` es la excepción: el contrato del sobre no tiene descanso y solo rigen los límites fijos.
-  Tras una molestia del paciente, solo se acepta bajar la exigencia; lo contrario se escala (ADR-018).
+  Tras una molestia del paciente, solo se acepta bajar la exigencia; lo contrario se escala (ADR-021).
 - classify_symptom(), reduce_demand(), symptom_record(): ante una molestia, el motor de reglas baja la exigencia por su
-  cuenta, siempre dentro del sobre, y deja el registro que Staging guarda y avisa al fisioterapeuta (ADR-018).
+  cuenta, siempre dentro del sobre, y deja el registro que Staging guarda y avisa al fisioterapeuta (ADR-021).
 - agent_envelope(): traduce el sobre que guarda la API de Staging al contrato del agente.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ RED_FLAGS = [
 
 
 # Palabras de molestia (sin tildes). Con una de ellas en lo que dijo el paciente, el agente solo puede bajar la exigencia
-# (ADR-018). No son alarmas: no detienen la sesión; solo cierran la puerta a subir la carga.
+# (ADR-021). No son alarmas: no detienen la sesión; solo cierran la puerta a subir la carga.
 DISCOMFORT = [r"molest", r"duel", r"dolor", r"pinchaz", r"punzad", r"tiron", r"ardor", r"calambre", r"cansa(d|ncio)", r"fatig",
               r"agotad", r"me cuesta", r"no aguanto", r"rigid", r"incomod"]
 # Categoría del registro de molestia según la palabra (mismas claves que DISCOMFORT).
@@ -53,7 +53,7 @@ DISCOMFORT_CATEGORY = {r"molest": "pain", r"duel": "pain", r"dolor": "pain", r"p
                        r"tiron": "pain", r"ardor": "pain", r"calambre": "cramp", r"cansa(d|ncio)": "fatigue",
                        r"fatig": "fatigue", r"agotad": "fatigue", r"me cuesta": "fatigue", r"no aguanto": "fatigue",
                        r"rigid": "stiffness", r"incomod": "other"}
-# Valores de partida, no clínicos (TD-80): cuánto baja la reducción determinista.
+# Valores de partida, no clínicos (TD-87): cuánto baja la reducción determinista.
 ROM_STEP_DEG = 10
 REPS_FACTOR = 0.7
 # Signo en que cambia la exigencia al subir el valor: bajar el rango o las repeticiones, o subir el descanso, la baja.
@@ -102,7 +102,7 @@ def reduce_demand(envelope: dict, current: dict) -> dict | None:
     """Propuesta {param, old, new, reason} que baja la exigencia dentro del sobre, o None si no hay nada que bajar.
 
     Primero el rango (−ROM_STEP_DEG hacia rom_min), si no las repeticiones (× REPS_FACTOR, nunca más que max_reps). Nunca
-    toca el descanso (es una recomendación, ADR-019) y nunca sale del sobre: pasa por validate() antes de devolverse."""
+    toca el descanso (es una recomendación, ADR-022) y nunca sale del sobre: pasa por validate() antes de devolverse."""
     envelope, current = envelope or {}, current or {}
     proposal = None
     rom = current.get("rom_target")
@@ -110,13 +110,13 @@ def reduce_demand(envelope: dict, current: dict) -> dict | None:
         new = min(envelope["rom_max"], max(envelope["rom_min"], rom - ROM_STEP_DEG))
         if new < rom:
             proposal = {"param": "rom_target", "old": rom, "new": new,
-                        "reason": "molestia del paciente: se baja el rango (regla determinista, ADR-018)"}
+                        "reason": "molestia del paciente: se baja el rango (regla determinista, ADR-021)"}
     reps = current.get("reps")
     if proposal is None and _number(reps) and reps >= 2 and _number(envelope.get("max_reps")):
         new = max(1, min(envelope["max_reps"], math.floor(reps * REPS_FACTOR)))
         if new < reps:
             proposal = {"param": "reps", "old": reps, "new": new,
-                        "reason": "molestia del paciente: se bajan las repeticiones (regla determinista, ADR-018)"}
+                        "reason": "molestia del paciente: se bajan las repeticiones (regla determinista, ADR-021)"}
     if proposal is None or validate(proposal, envelope, current, "molestia")["outcome"] != "applied":
         return None
     return proposal
@@ -177,7 +177,7 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
     - Forma inválida, parámetro desconocido o `old` que no coincide con el valor actual → `rejected`.
     - Valor nuevo fuera del sobre → `escalated_to_therapist` (se pausa el ejercicio).
     - Dentro del sobre → `applied`, salvo que el paciente se haya quejado (`utterance`) y la propuesta suba la exigencia:
-      entonces `escalated_to_therapist` (ADR-018). El valor cabe en el sobre, así que `within_envelope` sigue en True.
+      entonces `escalated_to_therapist` (ADR-021). El valor cabe en el sobre, así que `within_envelope` sigue en True.
     """
     decision = {"proposal": proposal, "within_envelope": False, "outcome": "rejected", "note": ""}
     if not envelope:
@@ -218,7 +218,7 @@ def validate(proposal: dict, envelope: dict, current: dict, utterance: str | Non
             return decision
         if discomfort(utterance) and (float(new) - float(old)) * LESS_DEMAND[param] < 0:
             decision.update(within_envelope=True, outcome="escalated_to_therapist",
-                            note="tras una molestia solo se baja la exigencia (ADR-018): lo revisa el fisioterapeuta")
+                            note="tras una molestia solo se baja la exigencia (ADR-021): lo revisa el fisioterapeuta")
             return decision
         decision.update(within_envelope=True, outcome="applied", note=f"dentro del sobre [{lo:g}, {hi:g}]")
     else:

@@ -78,7 +78,7 @@
       + `${plural(item.per_week, 'vez', 'veces')} por semana · esta semana: ${item.done_7d} de ${item.per_week}`;
   }
 
-  /** Descanso recomendado (ADR-019): cuenta regresiva que se puede saltar o alargar; nunca bloquea nada. */
+  /** Descanso recomendado (ADR-022): cuenta regresiva que se puede saltar o alargar; nunca bloquea nada. */
   function startRest() {
     const g = state.guided;
     if (!g || !window.AxonRest) return;

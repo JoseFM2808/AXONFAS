@@ -1,4 +1,4 @@
-// Formulario de molestia del paciente y ajuste en caliente del motor (ADR-018). Solo datos sintéticos (ADR-010).
+// Formulario de molestia del paciente y ajuste en caliente del motor (ADR-021). Solo datos sintéticos (ADR-010).
 //   node --test "tests/validation-prototype/*.test.cjs"
 const test = require('node:test');
 const assert = require('node:assert/strict');
