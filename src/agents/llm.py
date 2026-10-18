@@ -34,13 +34,26 @@ class OpenAICompatible:
         headers = {"Content-Type": "application/json"}
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
-        req = urllib.request.Request(f"{self.url}/chat/completions", data=json.dumps(body).encode(), headers=headers)
         t0 = time.perf_counter()
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read())
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err:
-            raise LLMError(f"el LLM no respondió: {err}") from err
+        busy = 0
+        while True:
+            try:
+                data = self._post(body, headers)
+                break
+            except urllib.error.HTTPError as err:
+                # Algunos servicios (por ejemplo, un catálogo hospedado) no aceptan response_format: se repite sin él y
+                # parse_json() rescata el JSON del texto.
+                if "response_format" in body and err.code in (400, 422):
+                    body.pop("response_format")
+                    continue
+                # Token Factory limita por clave (compartida por el equipo): ante 429 se espera y se reintenta poco.
+                if err.code == 429 and busy < self.RETRIES_429:
+                    busy += 1
+                    time.sleep(self._retry_after(err, busy))
+                    continue
+                raise LLMError(f"el LLM respondió {err.code}: {err.reason}") from err
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err:
+                raise LLMError(f"el LLM no respondió: {err}") from err
         ms = round((time.perf_counter() - t0) * 1000)
         try:
             text = data["choices"][0]["message"]["content"] or ""
@@ -48,6 +61,35 @@ class OpenAICompatible:
             raise LLMError("respuesta del LLM sin contenido") from err
         usage = data.get("usage") or {}
         return {"text": text, "ms": ms, "completion_tokens": usage.get("completion_tokens"), "prompt_tokens": usage.get("prompt_tokens")}
+
+    RETRIES_429 = 2
+    MAX_WAIT_429 = 5.0
+
+    def _retry_after(self, err: urllib.error.HTTPError, attempt: int) -> float:
+        try:
+            wait = float(err.headers.get("Retry-After") or 0)
+        except (TypeError, ValueError):
+            wait = 0.0
+        return min(wait or 1.5 * attempt, self.MAX_WAIT_429)
+
+    def _post(self, body: dict, headers: dict) -> dict:
+        req = urllib.request.Request(f"{self.url}/chat/completions", data=json.dumps(body).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read())
+
+    def models(self) -> list[str]:
+        """IDs del catálogo de modelos (GET /models). Sirve para comprobar la clave y elegir modelo."""
+        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+        req = urllib.request.Request(f"{self.url}/models", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=min(self.timeout, 10)) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as err:
+            raise LLMError(f"el catálogo respondió {err.code}: {err.reason}") from err
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as err:
+            raise LLMError(f"sin respuesta del catálogo: {err}") from err
+        items = data.get("data") if isinstance(data, dict) else data
+        return [m.get("id") for m in (items or []) if isinstance(m, dict) and m.get("id")]
 
 
 class FakeLLM:

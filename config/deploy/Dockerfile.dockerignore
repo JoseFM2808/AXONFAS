@@ -1,0 +1,10 @@
+# Contexto mínimo para la imagen (BuildKit usa este archivo junto al Dockerfile).
+**
+!src/backend/**
+!src/agents/**
+!src/frontend/validation-prototype/**
+!docs/design-system/**
+**/__pycache__
+**/results
+src/backend/cloud
+src/backend/gpu

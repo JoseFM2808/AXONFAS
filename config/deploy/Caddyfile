@@ -1,0 +1,16 @@
+# AXONFAS · proxy con HTTPS automático (ADR-020). AXONFAS_DOMAIN puede ser un dominio propio o, sin dominio,
+# <ip-con-guiones>.sslip.io (por ejemplo 203-0-113-7.sslip.io), que apunta a la IP del droplet.
+{$AXONFAS_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8091 {
+		flush_interval -1          # el canal en vivo (Server-Sent Events) sale sin esperar
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
+		Cross-Origin-Opener-Policy same-origin-allow-popups
+		-Server
+	}
+}

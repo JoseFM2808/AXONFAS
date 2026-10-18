@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Administración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon" aria-hidden="true">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Administración</span></h1>
+      <p>Vista de control del equipo: configuración, IA de AMD y cuentas. Sin datos clínicos de pacientes.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html">Galería</a>
+    <a href="doctor.html">Fisioterapeuta</a>
+    <a href="paciente.html">Paciente</a>
+    <a href="admin.html" aria-current="page">Admin</a>
+  </nav>
+</header>
+
+<div class="wrap">
+<main id="main" tabindex="-1">
+  <section id="denied" class="panel-card" hidden>
+    <h2>Solo para el equipo</h2>
+    <p class="muted">Esta vista es del Administrador maestro. Entra con una cuenta de Google cuyo correo esté en
+      <code>AXONFAS_ADMIN_EMAILS</code> del servidor.</p>
+    <a class="btn primary" href="login.html" style="margin-top:12px;">Ir a iniciar sesión</a>
+  </section>
+
+  <section id="panel" hidden class="stack">
+    <div class="row-between">
+      <div>
+        <h2 class="page-title">Control del sistema</h2>
+        <p class="muted" id="who"></p>
+      </div>
+      <div class="chips">
+        <button class="btn" id="btn-refresh" type="button">Actualizar</button>
+        <button class="btn" id="btn-logout" type="button">Cerrar sesión</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis" aria-label="Resumen"></div>
+
+    <div class="detail-grid admin-grid">
+      <section class="panel-card stack" aria-labelledby="cfg-title">
+        <h2 id="cfg-title">Configuración</h2>
+        <ul class="check-list" id="config"></ul>
+      </section>
+
+      <section class="panel-card stack" aria-labelledby="ai-title">
+        <h2 id="ai-title">IA: AMD Token Factory</h2>
+        <p id="ai-status" role="status"></p>
+        <div class="facts" id="ai-usage"></div>
+        <details>
+          <summary>Modelos del catálogo</summary>
+          <ul class="facts" id="ai-models" style="margin-top:8px;"></ul>
+        </details>
+        <form id="ai-test" class="stack" style="gap:8px;">
+          <div class="field">
+            <label for="ai-prompt">Probar el modelo con una pregunta</label>
+            <input id="ai-prompt" type="text" maxlength="300" placeholder="¿Qué es la fisioterapia en casa?">
+          </div>
+          <button class="btn primary" type="submit">Preguntar al modelo de AMD</button>
+          <p class="status-line" id="ai-answer" role="status"></p>
+        </form>
+      </section>
+    </div>
+
+    <section class="panel-card" aria-labelledby="users-title">
+      <h2 id="users-title">Cuentas de Google</h2>
+      <p class="muted" style="margin-bottom:10px;">El rol de Administrador sale solo de <code>AXONFAS_ADMIN_EMAILS</code>. Aquí
+        puedes dejar una cuenta como pendiente o fisioterapeuta, o desactivarla. Un paciente se afilia con el código de su
+        fisioterapeuta.</p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de cuentas">
+        <table>
+          <thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Último ingreso</th><th>Estado</th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+      <p class="status-line" id="users-status" role="status" style="margin-top:10px;"></p>
+    </section>
+  </section>
+</main>
+
+  <footer>
+    AXONFAS · Staging (ADR-010). La vista de administración no muestra datos clínicos: solo conteos, configuración y cuentas.
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script src="api-client.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

@@ -23,7 +23,15 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `POST /api/patients/{id}/invite` | fisioterapeuta | → `{invite_code, revoked_devices}`: código nuevo; borra los tokens del paciente (tendrá que volver a afiliarse y aceptar el consentimiento) y pone `consent_given = 0` (TD-85) |
 | `POST /api/patients/{id}/highlight` | fisioterapeuta | `{muscle?, exercise_id?, note?}` → 202 `{delivered_to}` |
 | `GET /api/patients/{id}/live` | fisioterapeuta | Server-Sent Events con lo que publica ese paciente |
-| `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir |
+| `POST /api/join` | — | `{code, consent: true}` → 201 `{token, patient, therapist}`; el código deja de servir. Con `AXONFAS_DEMO_ACCOUNTS=0` → 403 (se entra con Google) |
+| `GET /api/auth/config` | — | → `{google_client_id, demo_accounts, ai_provider}` (público; ADR-019) |
+| `POST /api/auth/google` | — | `{credential}` (ID token de Google) → `{role, token, user}`. `role` = `admin` si el correo está en `AXONFAS_ADMIN_EMAILS`, el rol ya elegido, o `user` si es una cuenta nueva. Token inválido → 401; cuenta desactivada → 403 |
+| `POST /api/auth/role` | user | `{role: "therapist", name?}` → 201 `{role, token, therapist}`; `{role: "patient", code, consent: true}` → 201 `{role, token, patient, therapist}`; ya con rol → 409 |
+| `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración) |
+| `POST /api/auth/logout` | cualquiera | Borra ese token |
+| `GET /api/admin/overview` | admin | → conteos (cuentas por rol, fisioterapeutas, pacientes, sesiones, detenciones por dolor), `config` (qué falta, sin la lista de correos) y `ai_usage` |
+| `GET /api/admin/users` · `PUT /api/admin/users/{id}` | admin | Lista de cuentas de Google · `{role: "pending" \| "therapist"}` o `{disabled: bool}`; no a sí mismo ni a otro admin; revoca los tokens |
+| `GET /api/admin/ai` · `POST /api/admin/ai/test` | admin | Estado del proveedor (catálogo `/models`, modelo en uso, qué variables faltan) y uso · `{prompt?}` → `{model, text, ms}`; sin proveedor → 503 (ADR-018) |
 | `GET /api/me` | paciente | → `{patient, therapist, plan: [... , done_7d]}` |
 | `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?, symptom_report_ids?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds`, ver [03](03-database.md)); lo demás se descarta. En `events`, `value`, `peak` y `threshold` son números finitos o faltan (si no, 400); `alertLatencyMs` fuera de 0–60000 se guarda vacío. `symptom_report_ids` (hasta 20 enteros) une las molestias a la sesión; los de otro paciente o ya unidos se ignoran |
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |

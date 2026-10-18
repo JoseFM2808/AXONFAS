@@ -1,0 +1,17 @@
+#cloud-config
+# AXONFAS · prepara un droplet pequeño (sin GPU) de AMD Developer Cloud para la web (ADR-020).
+# Lo usa `axonfas-cloud.ps1 web-up -Yes`. No lleva secretos: config/.env.web se copia después con `web-deploy`.
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - ufw
+runcmd:
+  - systemctl enable --now docker
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - git clone --depth 1 https://github.com/JoseFM2808/AXONFAS.git /opt/axonfas
+  - touch /opt/axonfas/.cloud-init-done

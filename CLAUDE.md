@@ -31,6 +31,13 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 
 - **Demo = 1 ejercicio (sentarse-pararse) y 2 compensaciones (flexión de tronco y valgo de rodilla), ADR-009.** Ampliar
   el alcance requiere un ADR nuevo; lo demás va a `05-tech-debt.md`.
+- **IA solo de AMD (ADR-018, I-15):** el hackathon exige la API de AMD Token Factory. Todo LLM pasa por
+  `src/agents/providers.py` (Token Factory primero, vLLM propio en MI300X como alternativa); nunca otro proveedor. La
+  clave va en el entorno o en `~/.axonfas/axonfas.env`: nunca la pidas pegada en el chat ni la escribas en el repo.
+- **Cuentas (ADR-019):** Google se verifica en el servidor (`google_auth.py`); el Administrador maestro sale solo de
+  `AXONFAS_ADMIN_EMAILS` (nunca en el repo) y su vista no muestra datos clínicos (I-14).
+- **Despliegue (ADR-020):** nube de AMD con Docker y Caddy (`axonfas-cloud.ps1 web-up -Yes` / `web-deploy` /
+  `web-down -Yes`, con visto bueno del owner) y web opcional en Vercel (`vercel.json`). Guía en `config/deploy/README.md`.
 - Cómputo: 1× AMD Instinct MI300X en AMD Developer Cloud, con vLLM y PyTorch sobre ROCm (ADR-006). No
   elijas dependencias de GPU que solo existan para CUDA: todo tiene que correr sobre ROCm.
 - Arquitectura: 3 agentes LLM (clínico, conversacional, reporte) + 1 motor de reglas + 1 servicio de pose (ADR-007).
@@ -47,7 +54,8 @@ quede ningún `FAIL`. Empieza siempre por `.ai-context/llms.txt`.
 
 ### Estructura
 
-- Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `.gitignore` y `.gitattributes`. Repo público:
+- Archivos raíz permitidos: `README.md`, `CLAUDE.md`, `.gitignore`, `.gitattributes` y `vercel.json` (Vercel lo exige
+  en la raíz, ADR-020). Repo público:
   https://github.com/JoseFM2808/AXONFAS (rama `main`); antes de cada push, revisar que no haya secretos ni datos personales.
   Carpetas raíz: `.ai-context/`, `docs/`, `data/`, `notebooks/`, `src/`, `tests/`, `config/` (estructura de
   `_Plantilla Proyecto IA`).

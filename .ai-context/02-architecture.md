@@ -135,7 +135,7 @@ Estructura de `_Plantilla Proyecto IA`. Cada componente del diagrama tiene una c
 | `tests/agents/` | Tests de los agentes sin GPU: alarmas, sobre (límites del fisioterapeuta y regla de dirección tras una molestia), traducción del sobre de Staging, clasificación de molestias, reducción determinista y respaldo del motor de reglas, propuestas rotas, números inventados (en cifras y en letras), nota SOAP y la conexión HTTP contra servidores de mentira con la forma de vLLM y del servidor de voz |
 | `src/frontend/context-panel/` | Generador del panel de contexto: `build_panel.py` (solo biblioteca estándar) convierte estas seis pestañas en una página HTML con `template.html` (tema claro y oscuro; tablas con borde y cabecera de contraste ≥ 3:1 y filas alternadas, TD-60). La salida va a `dist/` (no se versiona) y se publica como artifact |
 | `src/backend/` | Hoy: `staging_api.py`, la API de Staging (cuentas de demostración, planes, sesiones, indicadores, canal en vivo y nota SOAP con borrador y firma; ADR-012/013, TD-09); `fhir.py`, la `Observation` FHIR R4 de cada sesión (función pura, sin estado; TD-10); `gpu/`, lo que corre en la MI300X (ADR-016): `bootstrap.sh` (prepara el contenedor `rocm` y arranca vLLM y la voz), `run.sh`, `voice_server.py` (Whisper y Kokoro en PyTorch sobre ROCm), `smoke.py` (prueba de humo) y `bench.py` (sesiones concurrentes); `cloud/axonfas-cloud.ps1`, el ciclo del droplet con `doctl`. Planificado: gateway FastAPI + WebSocket, servicio de pose (lifter 3D), motor biomecánico de reglas, servicios STT/TTS, acceso a PostgreSQL y el PDF de la nota (TD-84) |
-| `src/agents/` | Los tres agentes LLM y sus reglas deterministas, solo biblioteca estándar (ADR-016): `safety.py` (frases de alarma, validación contra el sobre, regla de dirección tras una molestia, `classify_symptom`, `reduce_demand` y `symptom_record` (ADR-021) y `agent_envelope`, que traduce el sobre de Staging), `clinical.py`, `coach.py`, `soap.py`, `turn.py` (turno de voz completo y demo con `--fake`), `llm.py` (cliente de vLLM compatible con OpenAI y LLM de mentira) y `voice.py` (cliente del servidor de voz), `advisor.py` (resumen con IA de las sugerencias para el fisioterapeuta, con controles de cifras y ejercicios; ADR-017) |
+| `src/agents/` | Los tres agentes LLM y sus reglas deterministas, solo biblioteca estándar (ADR-016): `safety.py` (frases de alarma, validación contra el sobre, regla de dirección tras una molestia, `classify_symptom`, `reduce_demand` y `symptom_record` (ADR-021) y `agent_envelope`, que traduce el sobre de Staging), `clinical.py`, `coach.py`, `soap.py`, `turn.py` (turno de voz completo y demo con `--fake`), `llm.py` (cliente de vLLM compatible con OpenAI y LLM de mentira) y `voice.py` (cliente del servidor de voz), `advisor.py` (resumen con IA de las sugerencias para el fisioterapeuta, con controles de cifras y ejercicios; ADR-017), `providers.py` (proveedor de IA de AMD: Token Factory o vLLM propio, con contador de uso; ADR-018) |
 | `tests/` | Pruebas del motor de reglas y del sobre de seguridad, benchmark de latencia y concurrencia, validación FHIR |
 | `config/` | Plantillas de entorno sin valores: `config/.env.staging.example` y `config/.env.prod.example` |
 | `data/` | Solo datos sintéticos o del equipo con consentimiento (`raw/`, `processed/`, `vector_store/`). Nunca se versiona |
@@ -185,6 +185,36 @@ flowchart LR
   se reinicia, se reconectan solos.
 - **En la nube** (fase siguiente), el gateway FastAPI en AMD Developer Cloud ocupa el lugar de `serve.py`, PostgreSQL el
   de SQLite y el canal en vivo pasa por WebSocket. Las páginas y el contrato de datos no cambian.
+
+## Cuentas, IA y despliegue (ADR-018, ADR-019, ADR-020)
+
+```mermaid
+flowchart LR
+    B[Navegador] -->|ID token de Google| API[serve.py + staging_api.py]
+    API -->|verifica la firma| G[Claves públicas de Google]
+    API -->|/chat/completions| TF[AMD Token Factory]
+    subgraph amd [Nube de AMD · droplet s-1vcpu-1gb]
+        C[Caddy · HTTPS] --> API
+        API --> DB[(SQLite en volumen)]
+    end
+    V[Vercel · web estática opcional] -.->|AXONFAS_API_BASE + CORS| C
+```
+
+- **IA:** Token Factory expone `https://developer.amd.com.cn/radeon/api/v1` (compatible con OpenAI). La clave es una
+  por equipo con límites por clave, así que `llm.py` reintenta dos veces ante 429 (respeta `Retry-After`, máximo 5 s) y
+  `providers.py` nunca elige solo un modelo que no conversa (OCR, embeddings). Modelo sugerido: `DeepSeek-V4-Flash`.
+- **Configuración:** `src/backend/settings.py` lee variables de entorno y, en una PC, `~/.axonfas/axonfas.env`.
+  Plantillas en `config/.env.web.example` (servidor) y `config/.env.vercel.example` (web). Los secretos nunca van al
+  repo.
+- **Inicio de sesión:** `src/backend/google_auth.py`, que verifica el token con RS256 y las claves de Google en caché.
+  Páginas `login.html` y `admin.html`. `config.js` dice dónde está la API (vacío = el mismo servidor).
+- **Despliegue:**
+  - `config/deploy/`: Dockerfile, docker-compose (API más Caddy), Caddyfile, cloud-init y `vercel-build.mjs`; en la
+    raíz, `vercel.json`.
+  - `serve.py --cloud` escucha en `$PORT` sin HTTPS propio ni QR, y responde a CORS para los orígenes de
+    `AXONFAS_CORS_ORIGINS`.
+  - El ciclo del droplet web lo hace `axonfas-cloud.ps1` (`web-up -Yes`, `web-deploy`, `web-down -Yes`).
+  - Guía paso a paso en `config/deploy/README.md`.
 
 ## Entornos
 

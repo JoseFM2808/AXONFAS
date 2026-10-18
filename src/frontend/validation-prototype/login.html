@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AXONFAS · Entrar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;900&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="../../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<header class="top-header">
+  <div class="header-brand">
+    <div class="brand-icon" aria-hidden="true">AX</div>
+    <div class="brand-info">
+      <h1>AXONFAS <span>· Entrar</span></h1>
+      <p>Staging: solo datos de prueba. No es un dispositivo médico.</p>
+    </div>
+  </div>
+  <nav class="top-nav" aria-label="Secciones">
+    <a href="index.html">Prototipo</a>
+    <a href="galeria.html">Galería</a>
+    <a href="doctor.html">Fisioterapeuta</a>
+    <a href="paciente.html">Paciente</a>
+    <a href="login.html" aria-current="page">Entrar</a>
+  </nav>
+</header>
+
+<div class="wrap">
+<main id="main" tabindex="-1" class="auth-wrap">
+  <!-- 1 · INICIAR SESIÓN -->
+  <section class="panel-card auth-card" id="signin" aria-labelledby="signin-title">
+    <h2 id="signin-title">Iniciar sesión</h2>
+    <p class="muted">Entra con tu cuenta de Google. Solo guardamos tu correo y tu nombre para identificarte; tus datos de
+      salud se ven con un seudónimo.</p>
+    <div id="google-area" class="auth-google" aria-live="polite"></div>
+    <p class="status-line" id="signin-status" role="status"></p>
+    <div id="demo-area" hidden>
+      <hr class="auth-sep">
+      <p class="muted">¿Solo quieres probar? Usa una cuenta de demostración, sin contraseña ni datos reales:</p>
+      <div class="chips">
+        <a class="btn" href="doctor.html">Demo: fisioterapeuta</a>
+        <a class="btn" href="paciente.html">Demo: paciente con código</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · ELEGIR ROL (cuenta nueva) -->
+  <section class="panel-card auth-card" id="choose" hidden aria-labelledby="choose-title">
+    <h2 id="choose-title">¿Cómo vas a usar AXONFAS?</h2>
+    <p class="muted" id="choose-hello"></p>
+    <div class="auth-roles">
+      <form class="auth-role" id="as-therapist">
+        <h3>Soy fisioterapeuta</h3>
+        <p class="muted">Afilias pacientes con un código, armas su plan y ves sus sesiones.</p>
+        <div class="field">
+          <label for="t-name">Nombre que verán tus pacientes</label>
+          <input id="t-name" type="text" maxlength="80" autocomplete="name">
+        </div>
+        <button class="btn primary" type="submit">Entrar como fisioterapeuta</button>
+      </form>
+      <form class="auth-role" id="as-patient">
+        <h3>Soy paciente</h3>
+        <p class="muted">Tu fisioterapeuta te da un código de 6 caracteres.</p>
+        <div class="field">
+          <label for="p-code">Código de afiliación</label>
+          <input id="p-code" type="text" maxlength="12" required autocomplete="off" class="code-input">
+        </div>
+        <label class="check" style="align-items:flex-start;">
+          <input type="checkbox" id="p-consent" required>
+          <span>Entiendo que es un <strong>prototipo de prueba</strong>, no un dispositivo médico, y acepto que mis
+            repeticiones, ángulos y alertas se compartan con mi fisioterapeuta. El video de mi cámara nunca sale de mi
+            equipo.</span>
+        </label>
+        <button class="btn primary" type="submit">Entrar como paciente</button>
+      </form>
+    </div>
+    <p class="status-line" id="choose-status" role="status"></p>
+  </section>
+
+  <!-- 3 · YA CON SESIÓN -->
+  <section class="panel-card auth-card" id="signed" hidden aria-labelledby="signed-title">
+    <h2 id="signed-title">Ya iniciaste sesión</h2>
+    <p id="signed-text"></p>
+    <div class="chips">
+      <a class="btn primary" id="signed-go" href="#">Ir a mi página</a>
+      <button class="btn" id="signed-out" type="button">Cerrar sesión</button>
+    </div>
+  </section>
+</main>
+
+  <footer>
+    AXONFAS · Staging con datos de prueba (ADR-010). El inicio de sesión usa Google Identity Services; el servidor verifica
+    cada token con las claves públicas de Google.
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script src="api-client.js"></script>
+<script src="login.js"></script>
+</body>
+</html>

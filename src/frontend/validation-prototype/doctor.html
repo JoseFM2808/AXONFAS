@@ -50,6 +50,7 @@
     <a href="galeria.html">Galería</a>
     <a href="doctor.html" aria-current="page">Fisioterapeuta</a>
     <a href="paciente.html">Paciente</a>
+    <a href="login.html">Entrar</a>
   </nav>
 </header>
 
@@ -57,7 +58,10 @@
 <main id="main" tabindex="-1">
   <!-- CUENTA DE DEMOSTRACIÓN -->
   <section id="login" class="panel-card" hidden style="max-width:34rem;">
-    <h2>Cuenta de demostración</h2>
+    <h2>Entrar</h2>
+    <p style="margin-bottom:14px;"><a class="btn primary" href="login.html">Entrar con Google</a></p>
+    <div id="demo-login">
+    <h3 class="muted" style="margin-bottom:8px;">O con una cuenta de demostración</h3>
     <p class="notice" style="margin-bottom:14px;">Staging: sin contraseña y solo datos de prueba (seudónimos, nada de nombres
       reales). La cuenta queda guardada en este navegador.</p>
     <form id="login-form">
@@ -68,6 +72,7 @@
       <button class="btn primary" type="submit">Crear cuenta de demostración</button>
       <p class="status-line" id="login-error" role="status" style="margin-top:10px;"></p>
     </form>
+    </div>
   </section>
 
   <!-- TABLERO -->
@@ -248,6 +253,7 @@
 <script src="guide-figure.js"></script>
 <script src="tracker.js"></script>
 <script src="camera-setup.js"></script>
+<script src="config.js"></script>
 <script src="api-client.js"></script>
 <script src="doctor.js"></script>
 </body>

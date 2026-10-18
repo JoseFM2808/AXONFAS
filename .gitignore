@@ -107,3 +107,7 @@ logs/
 
 # ─── Resultados de la GPU (se traen a ~/.axonfas/results; nunca al repo) ─────
 src/backend/results/
+
+# ─── Despliegue (ADR-020): la web armada para Vercel y su enlace local ──────────
+.vercel-out/
+.vercel/

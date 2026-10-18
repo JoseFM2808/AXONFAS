@@ -74,7 +74,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--voice", action="store_true", help="usa el servidor de voz de la GPU (Whisper y TTS)")
     p.add_argument("--save", type=Path, help="guarda la respuesta hablada en este WAV")
     args = p.parse_args(argv)
-    llm = DEMO_LLM if args.fake else OpenAICompatible()
+    if args.fake:
+        llm = DEMO_LLM
+    else:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+        import settings                                          # ~/.axonfas/axonfas.env (ADR-018)
+        settings.load_env_file()
+        from . import providers
+        llm = providers.client("cli") or OpenAICompatible()
     voice = VoiceClient() if (args.voice or args.audio) and not args.fake else None
     audio = args.audio.read_bytes() if args.audio else None
     result = run_turn(llm, args.text, DEMO_CTX, voice=voice, audio=audio)

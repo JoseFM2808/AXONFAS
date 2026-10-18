@@ -11,7 +11,7 @@
 | 003 | 2026-09-28 | Aceptada | El video no sale de casa: el navegador envía solo coordenadas 2D |
 | 004 | 2026-09-28 | Aceptada | Dos bucles: reglas deterministas para seguridad y LLM para adaptar la sesión |
 | 005 | 2026-09-28 | Aceptada | Sobre de seguridad definido por el terapeuta en cada `plan_exercise` |
-| 006 | 2026-09-28 | Aceptada | Todos los modelos en 1× MI300X con vLLM + PyTorch en ROCm |
+| 006 | 2026-09-28 | Aceptada (ajustada por ADR-018) | Todos los modelos en 1× MI300X con vLLM + PyTorch en ROCm |
 | 007 | 2026-09-28 | Aceptada | De 5 agentes LLM a 3 agentes + 1 motor de reglas + 1 servicio de pose |
 | 008 | 2026-09-28 | Aceptada | Salida clínica en FHIR R4 (Observation) + borrador SOAP |
 | 009 | 2026-09-28 | Aceptada | Alcance del demo: 1 ejercicio y 2 compensaciones |
@@ -19,12 +19,15 @@
 | 011 | 2026-10-11 | Aceptada | Galería de ejercicios desde fuentes documentadas; solo sentarse-pararse con monitoreo automático |
 | 012 | 2026-10-11 | Aceptada | Cuentas de demostración de fisioterapeuta y paciente en Staging, con API local y SQLite fuera del repo |
 | 013 | 2026-10-11 | Aceptada | Vista corporal 2D en vivo con carga muscular estimada; el modelo 3D anatómico queda para la nube |
-| 014 | 2026-10-11 | Aceptada | Seguimiento con cámara y conteo en todos los ejercicios de la galería |
+| 014 | 2026-10-11 | Aceptada | Seguimiento con cámara y conteo para los 24 ejercicios de la galería, sin alertas |
 | 015 | 2026-10-11 | Aceptada | Preparar la cámara antes de cada sesión y no evaluar lo que no se ve bien |
-| 016 | 2026-10-15 | Aceptada | Pila de la GPU lista para correr: modelos, acceso por túnel y un script para el ciclo del droplet |
+| 016 | 2026-10-15 | Aceptada | Pila de la GPU lista para correr: modelos, acceso por túnel y ciclo del droplet |
 | 017 | 2026-10-15 | Aceptada | Sugerencias por rol, perfil del paciente y accesibilidad WCAG 2.2 AA |
-| 018 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
-| 019 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
+| 018 | 2026-10-17 | Aceptada | La IA sale de AMD Token Factory (regla del hackathon); el vLLM propio en MI300X queda como alternativa |
+| 019 | 2026-10-17 | Aceptada | Inicio de sesión con Google, roles y Administrador maestro definido por el entorno |
+| 020 | 2026-10-17 | Aceptada | Despliegue: web estática en Vercel y servidor completo en la nube de AMD con Docker y HTTPS |
+| 021 | 2026-10-17 | Aceptada | Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta |
+| 022 | 2026-10-17 | Aceptada | Descanso entre series como recomendación del fisioterapeuta, no como límite |
 
 ---
 
@@ -259,6 +262,88 @@
   - Las reglas de encaje y las sugerencias son valores de partida que se validan con fisioterapeutas (TD-65).
   - El perfil es un dato de salud: solo en Staging, con seudónimo y consentimiento (ADR-010); entra en la revisión de
     protección de datos (TD-14).
+
+## ADR-018 · La IA sale de AMD Token Factory — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:** las reglas del hackathon (comunicadas por el owner) piden usar **exclusivamente** la API de AMD de
+  Token Factory (https://notebooks.amd.com/tokenfactory): un catálogo de modelos hospedado por AMD, sin facturación ni
+  tarjeta. La MI300X propia (ADR-006, ADR-016) sigue sin aprobarse (TD-04).
+- **Decisión:**
+  - `src/agents/providers.py` elige el proveedor, siempre de AMD:
+    1. **AMD Token Factory**, con `AMD_TOKENFACTORY_BASE_URL`, `AMD_TOKENFACTORY_API_KEY` y `AMD_TOKENFACTORY_MODEL`
+       (vacío = el primero de `GET /models`).
+    2. **vLLM propio en una MI300X**, si algún día se aprueba (ADR-016).
+    3. **Sin IA** si no hay ninguno: la interfaz lo dice y siguen las reglas (TD-34). Nunca se usa otro proveedor.
+  - **Contrato:** API compatible con OpenAI (`/chat/completions`, `/models`). Como la documentación está detrás del
+    inicio de sesión de AMD, el cliente es configurable y, si el servicio no acepta `response_format`, repite la
+    llamada sin él y rescata el JSON del texto.
+  - **Contador de uso:** cada llamada queda registrada (llamadas, errores, tokens, tiempo y propósito) y la ve el
+    Administrador.
+  - **La clave nunca entra al repo:** va en variables de entorno, en `~/.axonfas/axonfas.env` en la PC o en
+    `config/.env.web` en el droplet.
+- **Consecuencias:**
+  - Los tres agentes, el resumen para el fisioterapeuta (ADR-017) y la prueba de la vista de control usan Token
+    Factory en cuanto haya clave, sin cambiar código.
+  - El benchmark de sesiones concurrentes en una MI300X (TD-08) queda como trabajo opcional.
+  - ADR-006 se ajusta: la tesis "toda la clínica en una GPU" se mantiene para Producción. Para el hackathon, la IA
+    corre en la infraestructura hospedada de AMD.
+
+## ADR-019 · Inicio de sesión con Google, roles y Administrador maestro — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:** para el despliegue público hacen falta cuentas reales (las de demostración no tienen contraseña) y una
+  vista de control para el equipo.
+- **Decisión:**
+  - **Google Identity Services en el navegador:** entrega un ID token, que el servidor verifica con la biblioteca
+    estándar (`google_auth.py`). Revisa:
+    - la firma RS256 contra las claves públicas de Google (en caché según `Cache-Control`);
+    - el emisor, que el destinatario sea nuestro `GOOGLE_CLIENT_ID` y la vigencia, con 60 s de tolerancia;
+    - que el correo esté verificado.
+
+    No se usa el client secret.
+  - **Roles** (tabla `app_user`):
+    - **Administrador:** solo si el correo está en `AXONFAS_ADMIN_EMAILS`. Se da y se quita en cada inicio de sesión;
+      nunca desde la interfaz.
+    - **Fisioterapeuta.**
+    - **Paciente:** se afilia con el código y el consentimiento, igual que antes.
+    - **Pendiente:** cuenta nueva que todavía elige su rol.
+  - **Vista del Administrador** (`admin.html`):
+    - conteos, configuración con lo que falta, estado del catálogo de Token Factory, uso y una prueba del modelo;
+    - cuentas: dejar como pendiente o fisioterapeuta y desactivar, lo que revoca sus tokens.
+    - No muestra datos clínicos.
+  - **Cuentas de demostración:** siguen, pero se apagan con `AXONFAS_DEMO_ACCOUNTS=0`. Así un despliegue público solo
+    acepta Google.
+- **Consecuencias:**
+  - El servidor guarda correo y nombre de quien entra con Google: datos personales del equipo y de los jueces. Viven
+    solo en la base de Staging, fuera del repo; el paciente sigue con seudónimo.
+  - Los tokens siguen siendo bearer, guardados en el navegador. Para Producción falta expiración y revocación (TD-41).
+  - Falta limitar los intentos de inicio de sesión (TD-73).
+
+## ADR-020 · Despliegue en Vercel y en la nube de AMD — Aceptada
+
+- **Fecha:** 2026-10-17
+- **Contexto:** hace falta una URL pública para los jueces (TD-23). El servidor tiene estado: SQLite, canal en vivo con
+  Server-Sent Events y sesiones. Eso no cabe en funciones sin estado como las de Vercel.
+- **Decisión:**
+  - **Nube de AMD (servidor completo):** un droplet pequeño sin GPU (`s-1vcpu-1gb`, unos USD 0,009 por hora) con
+    Docker Compose:
+    - `config/deploy/Dockerfile`: Python 3.13 slim, sin dependencias, usuario sin privilegios y la base en un volumen;
+    - Caddy, con HTTPS automático (lo exigen Google y la cámara) y sin acumular el canal en vivo.
+
+    Sin dominio propio se usa `<ip>.sslip.io`. Lo maneja `axonfas-cloud.ps1` (`web-up -Yes`, `web-deploy`,
+    `web-down -Yes`, que respalda la base antes de destruir). `serve.py --cloud` escucha en `$PORT`.
+  - **Vercel (opcional, solo la web):** `vercel.json` en la raíz y `config/deploy/vercel-build.mjs`, que copia la web
+    pública y escribe `config.js` con `AXONFAS_API_BASE`.
+    - La web llama a la API del droplet; el servidor acepta ese origen con `AXONFAS_CORS_ORIGINS`.
+    - Lleva cabeceras de seguridad, con la cámara permitida solo en el propio sitio.
+  - **No hay `next.config.js`:** el proyecto no usa Next.js. La web es HTML estático y `vercel.json` cubre lo que haría
+    falta.
+  - Se agrega `vercel.json` a los archivos permitidos en la raíz (Vercel lo exige ahí).
+- **Consecuencias:**
+  - Una sola URL con todo en la nube de AMD, o la web en Vercel y la API en AMD.
+  - Crear el droplet gasta créditos: pide `-Yes` y el visto bueno del owner.
+  - La imagen se compiló y se probó en local con Docker: web, API, volumen, usuario sin privilegios y healthcheck (TD-72).
 
 ## ADR-021 · Ante una molestia, el sistema baja la exigencia, la registra y avisa al fisioterapeuta — Aceptada
 
