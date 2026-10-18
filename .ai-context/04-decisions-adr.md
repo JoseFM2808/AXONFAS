@@ -562,8 +562,9 @@
   - **Remotion 4** (React + TypeScript, versiones fijadas) en `src/axonfas-video-presentation/`: emula el HUD del
     prototipo con SVG propio y los tokens de `docs/design-system/tokens.css`, que se copian al compilar (no se duplican).
   - **Voz en off con Kokoro-82M** (Apache-2.0, el TTS de ADR-016) en ONNX sobre la CPU con `kokoro-onnx`: local, sin
-    claves. Si no está instalado, las voces en inglés de Windows (SAPI). Cada escena dura lo que su audio, con la duración
-    base del guion como mínimo.
+    claves. Si no está instalado, las voces en inglés de Windows (SAPI). Cada escena dura lo que su audio, más la entrada, una
+    pausa fija de 0,45 s entre frases y la salida; la última sostiene el logo 2 s. Actualizado el 2026-10-18 tras la
+    revisión del owner: antes cada fase se estiraba hasta la duración base del guion y quedaban pausas largas entre frases.
   - Un solo guion, `script/voiceover.json`, para los subtítulos y el TTS. La fase 3 se reescribe en tres frases
     alineadas con los ADRs; la original queda en el JSON.
   - `video.py` (solo biblioteca estándar) copia el proyecto a `~/.axonfas/video-presentation`, fuera de Drive y del

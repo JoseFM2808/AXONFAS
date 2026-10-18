@@ -1,11 +1,12 @@
 {
-  "$comment": "Single source of the narration: Remotion reads it for the captions and tts/narrate.py for the voice. Phases and base timings come from the strategy document 'Investigacion_y_Guion_Video_AXONFAS' (Google Docs, section 5). 'text' is what the captions show; 'say' (optional) is what the TTS pronounces. 'original' keeps the document's voiceover when a line had to change to match the ADRs.",
+  "$comment": "Single source of the narration: Remotion reads it for the captions and tts/narrate.py for the voice. Phases and base timings come from the strategy document 'Investigacion_y_Guion_Video_AXONFAS' (Google Docs, section 5). 'text' is what the captions show; 'say' (optional) is what the TTS pronounces. 'original' keeps the document's voiceover when a line had to change to match the ADRs. baseStart/baseEnd are the document's reference timings: phases are no longer stretched to them (owner review, 2026-10-18: no unnecessary pauses), each phase lasts its voice plus leadIn, a fixed gap between lines and tail; the last phase holds finalHoldSeconds on the logo.",
   "fps": 30,
   "width": 1920,
   "height": 1080,
-  "leadInSeconds": 0.6,
-  "gapSeconds": 0.35,
-  "tailSeconds": 0.9,
+  "leadInSeconds": 0.5,
+  "gapSeconds": 0.45,
+  "tailSeconds": 0.6,
+  "finalHoldSeconds": 2.0,
   "phases": [
     {
       "id": "problem",

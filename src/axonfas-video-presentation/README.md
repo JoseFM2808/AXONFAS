@@ -13,12 +13,14 @@ de ahí.
 
 | Fase | Base del guion | Qué se ve |
 |---|---|---|
-| 1 · The Problem | 0:00–0:15 | Rehabilitación tradicional en gris: sensores con cables, notas a mano, "?°". Barrido cian hacia la interfaz limpia |
-| 2 · The Capture | 0:15–0:35 | Logo de AXONFAS; HUD de la cámara con el esqueleto de sentarse y pararse, contador, ángulos de rodilla y tronco, mapa muscular con carga **estimada**; una repetición con valgo de rodilla: alerta del motor de reglas y guía de corrección del gemelo digital |
-| 3 · The Brain | 0:35–0:50 | Arquitectura real: navegador (MediaPipe 2D, `engine.js`, triaje del Nivel 1) → solo coordenadas → API de Staging → `clinical.py`, `coach.py` y `soap.py` dentro del sobre del fisioterapeuta → AMD Token Factory; nota SOAP como documento FHIR R4 firmada por el fisioterapeuta. La pila de la MI300X va punteada: lista, todavía no corre |
-| 4 · The Impact | 0:50–1:10 | Pantalla dividida (panel del fisioterapeuta con datos sintéticos y la nota que pasa de borrador a firmada; paciente en su sesión guiada con voz situacional) y revelación del logo en vidrio |
+| 1 · The Problem | 0:00–0:10 | Rehabilitación tradicional en gris: sensores con cables, notas a mano, "?°". Barrido cian hacia la interfaz limpia |
+| 2 · The Capture | 0:10–0:26 | Logo de AXONFAS; HUD de la cámara con el esqueleto de sentarse y pararse, contador, ángulos de rodilla y tronco, mapa muscular con carga **estimada**; una repetición con valgo de rodilla: alerta del motor de reglas y guía de corrección del gemelo digital |
+| 3 · The Brain | 0:26–0:45 | Arquitectura real: navegador (MediaPipe 2D, `engine.js`, triaje del Nivel 1) → solo coordenadas → API de Staging → `clinical.py`, `coach.py` y `soap.py` dentro del sobre del fisioterapeuta → AMD Token Factory; nota SOAP como documento FHIR R4 firmada por el fisioterapeuta. La pila de la MI300X va punteada: lista, todavía no corre |
+| 4 · The Impact | 0:45–0:59 | Pantalla dividida (panel del fisioterapeuta con datos sintéticos y la nota que pasa de borrador a firmada; paciente en su sesión guiada con voz situacional) y revelación del logo en vidrio |
 
-Cada fase dura lo que su audio, con un mínimo igual a su duración base. Con la voz actual: 15 + 20 + 18.8 + 20 s.
+Cada fase dura lo que su audio, más la entrada (0,5 s), una pausa fija entre frases (0,45 s) y la salida (0,6 s); la
+última sostiene el logo 2 s más (`script/voiceover.json`). Ya no se estira hasta la duración base del guion, que dejaba
+pausas largas entre frases. Con la voz actual: 10,3 + 15,9 + 18,6 + 14,3 s ≈ 59 s.
 
 **Cambio respecto del documento (fase 3).** La frase original decía que los agentes de IA procesan la lógica del
 movimiento y que "edge GPU clusters" dan la baja latencia. Eso contradice ADR-004 (las alertas son solo del motor de
@@ -79,7 +81,7 @@ py video.py voice
 ```
 
 Genera la voz en off (voz `af_heart`). Opciones: `--voice am_michael`, `--speed 0.95`, `--backend sapi` (voces de
-Windows, sin descargar nada). Sin voz generada el video sale mudo, con la duración base del guion.
+Windows, sin descargar nada). Sin voz generada el video sale mudo, con la duración estimada a 2,6 palabras por segundo.
 
 ```bash
 py video.py check
