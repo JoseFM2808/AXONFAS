@@ -2,9 +2,9 @@
 
 Orden de preferencia:
   1. AMD Token Factory (catálogo de modelos hospedado por AMD, API compatible con OpenAI):
-       AMD_TOKENFACTORY_BASE_URL   p. ej. la URL que muestra la página de Token Factory, terminada en /v1
-       AMD_TOKENFACTORY_API_KEY    la clave de la página de Token Factory (secreto: solo en el entorno)
-       AMD_TOKENFACTORY_MODEL      un id del catálogo; vacío = el primero que devuelva GET /models
+       AMD_TOKENFACTORY_BASE_URL   https://developer.amd.com.cn/radeon/api/v1 (la que indica el manual de Token Factory)
+       AMD_TOKENFACTORY_API_KEY    la clave del equipo (rc-…) de la página de Token Factory (secreto: solo en el entorno)
+       AMD_TOKENFACTORY_MODEL      un id del catálogo, p. ej. DeepSeek-V4-Flash; vacío = el primer modelo de chat de GET /models
   2. vLLM propio en una MI300X de AMD Developer Cloud (ADR-016): AXONFAS_LLM_URL, AXONFAS_LLM_KEY, AXONFAS_LLM_MODEL.
 Sin ninguno, no hay IA: quien llama lo dice en pantalla y sigue con las reglas (TD-34). Nunca se usa otro proveedor.
 
@@ -13,6 +13,7 @@ Cada llamada queda en un contador en memoria (llamadas, errores, tokens y tiempo
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 
@@ -22,6 +23,8 @@ USAGE_LOCK = threading.Lock()
 USAGE: dict = {"calls": 0, "errors": 0, "prompt_tokens": 0, "completion_tokens": 0, "ms_total": 0, "last_error": None,
                "last_at": None, "by_purpose": {}}
 _model_cache: dict = {}
+# El catálogo también trae modelos que no conversan (OCR, embeddings): nunca se eligen solos.
+_NOT_CHAT = re.compile(r"mineru|ocr|embed|rerank|whisper|tts", re.I)
 
 
 def _env(key: str) -> str:
@@ -46,13 +49,17 @@ def missing() -> list[str]:
     return [k for k in ("AMD_TOKENFACTORY_BASE_URL", "AMD_TOKENFACTORY_API_KEY") if not _env(k)]
 
 
+def chat_models(ids: list[str]) -> list[str]:
+    return [i for i in ids if not _NOT_CHAT.search(i)]
+
+
 def _pick_model(cfg: dict, timeout: float) -> str:
     if cfg["model"]:
         return cfg["model"]
     cached = _model_cache.get(cfg["url"])
     if cached:
         return cached
-    ids = OpenAICompatible(url=cfg["url"], key=cfg["key"], model="-", timeout=timeout).models()
+    ids = chat_models(OpenAICompatible(url=cfg["url"], key=cfg["key"], model="-", timeout=timeout).models())
     if not ids:
         raise LLMError("el catálogo no devolvió modelos: define AMD_TOKENFACTORY_MODEL")
     _model_cache[cfg["url"]] = ids[0]
@@ -104,7 +111,7 @@ def status(timeout: float = 5.0) -> dict:
         ids = OpenAICompatible(url=cfg["url"], key=cfg["key"], model="-", timeout=timeout).models()
     except LLMError as err:
         return {"available": False, "provider": cfg["label"], "model": cfg["model"] or None, "models": [], "reason": str(err)}
-    model = cfg["model"] or (ids[0] if ids else None)
+    model = cfg["model"] or next(iter(chat_models(ids)), None)
     ok = bool(model) and (not ids or model in ids)
     return {"available": ok, "provider": cfg["label"], "model": model, "models": ids[:50],
             "reason": None if ok else f"el modelo {model!r} no está en el catálogo"}

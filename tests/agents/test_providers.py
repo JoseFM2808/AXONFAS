@@ -24,6 +24,7 @@ ENV = ("AMD_TOKENFACTORY_BASE_URL", "AMD_TOKENFACTORY_API_KEY", "AMD_TOKENFACTOR
 
 class Catalog(BaseHTTPRequestHandler):
     seen: list = []
+    busy = 0                                               # cuántos 429 quedan por devolver
 
     def log_message(self, *_):
         pass
@@ -42,13 +43,16 @@ class Catalog(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._ok():
             return self._send(401, {"error": "bad key"})
-        self._send(200, {"object": "list", "data": [{"id": "Qwen3.8-Flash"}, {"id": "DeepSeek-V4-Flash"}]})
+        self._send(200, {"object": "list", "data": [{"id": "MinerU2.5-Pro"}, {"id": "Qwen3.8-Flash"}, {"id": "DeepSeek-V4-Flash"}]})
 
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         Catalog.seen.append(req)
         if not self._ok():
             return self._send(401, {"error": "bad key"})
+        if Catalog.busy:
+            Catalog.busy -= 1
+            return self._send(429, {"error": "rate limited"})
         if "response_format" in req:                     # como un servicio que no acepta el modo JSON
             return self._send(400, {"error": "response_format not supported"})
         text = ('Claro: {"action": "adjust", "param": "rest_seconds", "old": 60, "new": 90, "reason": "cansancio"}'
@@ -90,7 +94,9 @@ class ProvidersTest(unittest.TestCase):
         cfg = providers.config()
         self.assertEqual((cfg["name"], cfg["url"]), ("tokenfactory", self.url))
         st = providers.status()
-        self.assertEqual((st["available"], st["provider"], st["model"]), (True, "AMD Token Factory", "Qwen3.8-Flash"))
+        self.assertEqual((st["available"], st["provider"], st["model"]), (True, "AMD Token Factory", "Qwen3.8-Flash"),
+                         "el modelo de OCR del catálogo no se elige para conversar")
+        self.assertEqual(providers.client("admin-test", timeout=5).model, "Qwen3.8-Flash")
         self.assertNotIn(KEY, json.dumps(st), "el estado nunca muestra la clave")
         os.environ["AMD_TOKENFACTORY_MODEL"] = "No-Existe"
         self.assertFalse(providers.status()["available"])
@@ -106,6 +112,17 @@ class ProvidersTest(unittest.TestCase):
         self.assertEqual(u["calls"], before + 1)
         self.assertGreaterEqual(u["by_purpose"]["clinical"], 1)
         self.assertGreaterEqual(u["completion_tokens"], 9)
+
+    def test_limite_de_la_clave_compartida_espera_y_reintenta(self):
+        os.environ.update(AMD_TOKENFACTORY_BASE_URL=self.url, AMD_TOKENFACTORY_API_KEY=KEY, AMD_TOKENFACTORY_MODEL="DeepSeek-V4-Flash")
+        llm = providers.client("admin-test", timeout=5)
+        llm.inner.MAX_WAIT_429 = 0.01
+        Catalog.busy = 2
+        self.assertEqual(llm.chat([{"role": "user", "content": "hola"}])["text"], "Listo.")
+        Catalog.busy = 3
+        with self.assertRaises(LLMError):
+            llm.chat([{"role": "user", "content": "hola"}])
+        Catalog.busy = 0
 
     def test_clave_equivocada_cuenta_como_error(self):
         os.environ.update(AMD_TOKENFACTORY_BASE_URL=self.url, AMD_TOKENFACTORY_API_KEY="mala", AMD_TOKENFACTORY_MODEL="X")

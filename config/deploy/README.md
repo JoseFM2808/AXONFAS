@@ -14,9 +14,12 @@ Todo dato es de prueba (ADR-010). Ningún secreto entra al repo: van en `~/.axon
 
 1. **AMD Token Factory** (https://notebooks.amd.com/tokenfactory): inicia sesión con tu cuenta del AMD AI Developer
    Program y copia tres datos:
-   - la URL base de la API (termina en `/v1`): va en `AMD_TOKENFACTORY_BASE_URL`;
-   - tu clave: va en `AMD_TOKENFACTORY_API_KEY`;
-   - el id de un modelo del catálogo: va en `AMD_TOKENFACTORY_MODEL` (si lo dejas vacío, se usa el primero).
+   - la URL base de la API, que según el manual («User Manual») es `https://developer.amd.com.cn/radeon/api/v1`: va
+     en `AMD_TOKENFACTORY_BASE_URL`;
+   - la clave del equipo (`rc-…`, se muestra cuando todos la canjearon): va en `AMD_TOKENFACTORY_API_KEY`. Los límites
+     son por clave y el equipo la comparte; ante un 429 el cliente espera y reintenta dos veces;
+   - el id de un modelo del catálogo: va en `AMD_TOKENFACTORY_MODEL`. Sugerido: `DeepSeek-V4-Flash`, que no "piensa"
+     por defecto y acepta el modo JSON. Si lo dejas vacío, se usa el primer modelo de chat (nunca el de OCR).
 2. **Google** (https://console.cloud.google.com → APIs y servicios → Credenciales):
    - Configura la pantalla de consentimiento (tipo «Externo», en modo de prueba) y agrega como usuarios de prueba a tu
      equipo y a quien vaya a evaluar.
