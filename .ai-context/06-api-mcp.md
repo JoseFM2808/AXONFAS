@@ -1,6 +1,6 @@
 # 06 · API y MCP
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-18
 > Estado de implementación: existe la **API de Staging** local (sección siguiente, ADR-012/013), servida por `serve.py`, con nota SOAP y export FHIR.
 > El gateway de la nube (FastAPI + WebSocket en AMD) sigue siendo un plan: sus interfaces previstas y los contratos ya
 > fijados van después. Se deducen de [01 · Lógica](01-logic.md), [02 · Arquitectura](02-architecture.md) y
@@ -10,7 +10,9 @@
 
 Código: `src/backend/staging_api.py`; tests: `tests/backend/test_staging_api.py`. JSON en el mismo origen que el prototipo.
 Autenticación de demostración: `Authorization: Bearer <token>`, que devuelven `POST /api/therapists` y `POST /api/join`.
-Errores: `{"error": "mensaje en español"}` (y `code: "auth_required"` cuando un invitado intenta algo que pide cuenta, ADR-028) con 400 (datos inválidos), 401 (sin token o token inválido), 403 (rol
+Idioma (ADR-032): cada petición puede traer `Accept-Language` (`api-client.js` manda el de la interfaz, `es` o `en`); el
+primer idioma nuestro según `q` decide los errores, los mensajes, la nota SOAP y FHIR. Sin cabecera, español.
+Errores: `{"error": "mensaje en el idioma de la petición"}` (y `code: "auth_required"` con `reason`, la frase del muro según la ruta, cuando un invitado intenta algo que pide cuenta, ADR-028) con 400 (datos inválidos), 401 (sin token o token inválido), 403 (rol
 equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejercicio fuera del plan, I-9, o nota ya firmada), 413 o 500 (error interno de la base, con mensaje).
 
 | Método y ruta | Rol | Cuerpo → respuesta |
@@ -28,7 +30,7 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `POST /api/auth/google` | — | `{credential}` (ID token de Google) → `{role, token, user}`. `role` = `admin` si el correo está en `AXONFAS_ADMIN_EMAILS`; `org` si es el correo de administración de una organización (ADR-026); si no, el rol ya elegido, o `user` si es una cuenta nueva. Vincula la licencia que espera a ese correo si ya es fisioterapeuta. Token inválido → 401; cuenta desactivada → 403 |
 | `POST /api/auth/role` | user | `{role: "therapist", name?}` → 201 `{role, token, therapist}`; `{role: "patient", code, consent: true}` → 201 `{role, token, patient, therapist}`; ya con rol → 409 |
 | `GET /api/auth/me` | cualquiera | → `{role, user}` (`user` null en cuentas de demostración y en el invitado); con `org`, además `organization: {id, name}` |
-| `POST /api/auth/guest` | — | → 201 `{role: "guest", token}`: invitado sin registro (ADR-028). Con ese token, las rutas GET de fisioterapeuta leen el consultorio de muestra (datos sintéticos); cualquier otra → 401 `{error, code: "auth_required"}` |
+| `POST /api/auth/guest` | — | → 201 `{role: "guest", token}`: invitado sin registro (ADR-028). Con ese token, las rutas GET de fisioterapeuta leen el consultorio de muestra (datos sintéticos); cualquier otra → 401 `{error, code: "auth_required", reason}` |
 | `POST /api/demo/runs` | — | `{source: "demo" \| "camera", exercise_id: "sit-to-stand", end_reason, reps_done (0–50), calibration_reps (0–10), duration_s?, trunk_events?, valgus_events?, low_confidence_reps?}` → 202 `{ok: true}`, sin devolver datos; otros campos se descartan; datos inválidos → 400; más de 500 en una hora → 429 (ADR-028) |
 | `GET /api/admin/demo-runs` | admin | → `{total, last_7d, by_source, by_end_reason, avg_reps, with_trunk_events, with_valgus_events, guests, recent (30)}` |
 | `POST /api/auth/logout` | cualquiera | Borra ese token |
@@ -37,21 +39,21 @@ equivocado o sin consentimiento), 404 (no existe o no es tuyo, I-10), 409 (ejerc
 | `GET /api/admin/ai` · `POST /api/admin/ai/test` | admin | Estado del proveedor (catálogo `/models`, modelo en uso, qué variables faltan) y uso · `{prompt?}` → `{model, text, ms}`; sin proveedor → 503 (ADR-018) |
 | `GET /api/me` | paciente | → `{patient, therapist, plan: [... , range_goal, done_7d, history]}`. `history`: horas de fin (ISO) de las sesiones completadas de ese ejercicio en 14 días, en orden, para la agenda del día (`care-plan.js`, ADR-025) |
 | `POST /api/sessions` | paciente | `{exercise_id, mode, source, started_at, ended_at, end_reason, reps_done, baseline?, reps?, events?, symptom_report_ids?}` → 201 `{session_id}`. `reps` (hasta 100): campos del motor o del conteo con cámara (`index, side, peak, holdSec, holdOk, seconds, overLimit`, ver [03](03-database.md)); lo demás se descarta. En `events`, `value`, `peak` y `threshold` son números finitos o faltan (si no, 400); `alertLatencyMs` fuera de 0–60000 se guarda vacío. `symptom_report_ids` (hasta 20 enteros) une las molestias a la sesión; los de otro paciente o ya unidos se ignoran. `no_camera_reason?` (`declined`, `denied`, `unavailable`): con `source: "guided"` el servidor marca la sesión sin cámara y responde `{session_id, no_camera: true}`; esa sesión no admite `peak` en `reps` ni `events` (400) (ADR-029) |
-| `PUT /api/sessions/{id}/pain` | paciente | `{score}` (entero 0–10) → `{session_id, pain_score, high, message}`: dolor al terminar (EVA, ADR-025). Otro tipo o fuera de rango → 400; sesión de otro paciente o inexistente → 404; ya marcada → 409. `high` = 7 o más; `message` es el texto fijo para el paciente. Avisa `pain_scored` al fisioterapeuta |
+| `PUT /api/sessions/{id}/pain` | paciente | `{score}` (entero 0–10) → `{session_id, pain_score, high, message}`: dolor al terminar (EVA, ADR-025). Otro tipo o fuera de rango → 400; sesión de otro paciente o inexistente → 404; ya marcada → 409. `high` = 7 o más; `message` es el texto fijo para el paciente, en su idioma. Avisa `pain_scored` al fisioterapeuta |
 | `POST /api/live` | paciente | marco en vivo (abajo) → 202 `{delivered_to}` |
 | `GET /api/me/stream` | paciente | Server-Sent Events con los señalamientos (`highlight`), `plan_updated` y `profile_updated` |
 | `PUT /api/me/profile` | paciente | `{limitations: [...], pain_areas: [...], note?}` → `{profile}`; ids desconocidos → 400; avisa `profile_updated` al fisioterapeuta (ADR-017) |
-| `POST /api/me/discomfort` | paciente | `{exercise_id?, option?, text?, in_session, current?: {rom_target?, reps?}}` → 201 `{report, action, adjustment, stop, message}`. `option` ∈ `pain_mild`, `fatigue`, `cramp`, `stiffness`, `red_flag`; `text` hasta 200. Sin `option` ni `text`, opción desconocida o tipos equivocados → 400; sin consentimiento → 403; ejercicio fuera del plan → 409. Decide con reglas, sin LLM (ADR-021): `session_stopped` (alarma), `demand_lowered` (con `adjustment {param, old, new}`, dentro del sobre), `paused` o `logged`. `message` es la frase para el paciente. Avisa `symptom_reported` al fisioterapeuta |
+| `POST /api/me/discomfort` | paciente | `{exercise_id?, option?, text?, in_session, current?: {rom_target?, reps?}}` → 201 `{report, action, adjustment, stop, message}`. `option` ∈ `pain_mild`, `fatigue`, `cramp`, `stiffness`, `red_flag`; `text` hasta 200. Sin `option` ni `text`, opción desconocida o tipos equivocados → 400; sin consentimiento → 403; ejercicio fuera del plan → 409. Decide con reglas, sin LLM (ADR-021): `session_stopped` (alarma), `demand_lowered` (con `adjustment {param, old, new}`, dentro del sobre), `paused` o `logged`. `message` es la frase para el paciente, en su idioma. Avisa `symptom_reported` al fisioterapeuta |
 | `PUT /api/patients/{id}/profile` | fisioterapeuta | Igual, para completar el perfil tras su evaluación; avisa al paciente |
-| `GET /api/ai/status` | fisioterapeuta | → `{available, reason}`: hay LLM solo con el túnel a la GPU y `AXONFAS_LLM_KEY` (ADR-016) |
-| `POST /api/patients/{id}/advice` | fisioterapeuta (o invitado, solo sobre el paciente de muestra; 60 por hora en total → 429, ADR-031) | `{suggestions: [{title, detail, because, priority}]}` (1–20) → `{text, source: 'llm'}` o `{text: null, source: 'rejected', reason}`; sin LLM → 503. Resume, no agrega sugerencias (ADR-017) |
-| `POST /api/sessions/{id}/report` | fisioterapeuta | → 201 `{report}` nuevo, o 200 con el que ya existe. `report` = `{session_id, status: "draft" | "final", source: "template" | "llm", soap: {S, O, A, P}, facts, created_at, reviewed_by, reviewed_by_name, reviewed_at}`. El LLM solo si `/api/ai/status` dice `available` (TD-09) |
-| `GET /api/sessions/{id}/report` | fisioterapeuta | → `{report}`; sin borrador → 404 |
-| `POST /api/sessions/{id}/report/approve` | fisioterapeuta | `{A?, P?}` (texto de hasta 1000) → `{report}` con `status: "final"`; S y O no se editan; ya firmada → 409; sin borrador → 404 |
-| `GET /api/sessions/{id}/fhir` | fisioterapeuta | → `Observation` FHIR R4 (abajo); no escribe nada (TD-10) |
-| `GET /api/sessions/{id}/fhir/document` | fisioterapeuta | → la nota SOAP como `Bundle` FHIR R4 de tipo `document` (abajo); sin nota → 404; no escribe nada (TD-103) |
+| `GET /api/ai/status` | fisioterapeuta | → `{available, provider, reason}` (`reason` en el idioma de la petición): hay LLM solo con el túnel a la GPU y `AXONFAS_LLM_KEY` (ADR-016) |
+| `POST /api/patients/{id}/advice` | fisioterapeuta (o invitado, solo sobre el paciente de muestra; 60 por hora en total → 429, ADR-031) | `{suggestions: [{title, detail, because, priority}]}` (1–20) → `{text, source: 'llm'}` o `{text: null, source: 'rejected', reason}`; sin LLM → 503. Resume, no agrega sugerencias (ADR-017). Escribe en el idioma de la petición y revisa los nombres de ejercicio en los dos catálogos (ADR-032) |
+| `POST /api/sessions/{id}/report` | fisioterapeuta | → 201 `{report}` nuevo, o 200 con el que ya existe. `report` = `{session_id, status: "draft" | "final", source: "template" | "llm", soap: {S, O, A, P}, facts, lang: "es" | "en", created_at, reviewed_by, reviewed_by_name, reviewed_at}`. El LLM solo si `/api/ai/status` dice `available` (TD-09). Se redacta en el idioma de la petición; `lang` dice en cuál está (ADR-032) |
+| `GET /api/sessions/{id}/report` | fisioterapeuta | → `{report}`; sin borrador → 404. Un borrador de plantilla sin firmar sale redactado en el idioma de la petición (mismos datos, no se guarda); lo firmado y lo que redactó la IA, en su `lang` |
+| `POST /api/sessions/{id}/report/approve` | fisioterapeuta | `{A?, P?}` (texto de hasta 1000) → `{report}` con `status: "final"`; S y O no se editan; se firma el texto que se veía, en el idioma de la petición; ya firmada → 409; sin borrador → 404 |
+| `GET /api/sessions/{id}/fhir` | fisioterapeuta | → `Observation` FHIR R4 (abajo); no escribe nada (TD-10). Textos en el idioma de la nota (o de la petición si no hay nota) y `language`; los códigos no cambian |
+| `GET /api/sessions/{id}/fhir/document` | fisioterapeuta | → la nota SOAP como `Bundle` FHIR R4 de tipo `document` (abajo); sin nota → 404; no escribe nada (TD-103). En el idioma de la nota, con `language` en el `Bundle` y la `Composition` |
 | `GET /api/admin/orgs` · `POST /api/admin/orgs` | admin | Organizaciones con su resumen y `admin_email` · `{name, plan: "clinic" \| "network", admin_email}` → 201; correo ya usado → 409; correo de un Administrador maestro o datos inválidos → 400 (ADR-026) |
-| `GET /api/org/summary` | org | → `{organization: {id, name, plan, plan_label}, seats: {total, used, free}, patients: {total, capacity, over}, professionals: [{license_id, email, status, linked, patients}], ehr: {fhir_base_url, enabled}}`. Sin datos clínicos (I-19) |
+| `GET /api/org/summary` | org | → `{organization: {id, name, plan, plan_label (en el idioma de la petición)}, seats: {total, used, free}, patients: {total, capacity, over}, professionals: [{license_id, email, status, linked, patients}], ehr: {fhir_base_url, enabled}}`. Sin datos clínicos (I-19) |
 | `POST /api/org/licenses` | org | `{email}` → 201 con el resumen; correo inválido, ya activo o sin licencias libres → 400; activo en otra organización → 409 |
 | `POST /api/org/licenses/{id}/revoke` | org | → el resumen con esa licencia `revoked`; de otra organización o inexistente → 404 |
 | `PUT /api/org/ehr` | org | `{fhir_base_url, enabled}` → el resumen. Solo https, sin usuario, clave, consulta ni fragmento; con `token`, `password` u otra credencial → 400 |
@@ -85,6 +87,8 @@ P, solo si hay nota).
   `false` en una sesión sin cámara, ADR-029). Cantidades en UCUM (`http://unitsofmeasure.org`). Sin dato no hay componente.
 - Los sistemas de código propios cuelgan de `https://axonfas.example/fhir/...` (dominio reservado: es Staging). No hay
   códigos LOINC. Nunca van el año de nacimiento ni el nombre del fisioterapeuta.
+- `language` (`es` o `en`): los textos legibles (`display`, `text`, unidades escritas) van en el idioma de la nota, o en
+  el de la petición si no hay nota; los `code` y `system` nunca cambian (ADR-032).
 
 **Documento FHIR R4 de la nota SOAP** (`GET /api/sessions/{id}/fhir/document`, `fhir.document`): `Bundle` con `type:
 "document"`, `identifier` y `timestamp` (firma o creación del borrador). El primer `entry` es la `Composition`:

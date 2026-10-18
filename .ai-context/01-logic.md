@@ -88,7 +88,7 @@ sequenceDiagram
 | 2. Propuesta | `clinical.propose` (LLM, JSON) | Un solo ajuste de `rom_target`, `reps` o `rest_seconds`, o ninguno. Respuesta rota o sin LLM = sin cambio (`rejected`). **Con molestia** (ADR-021), si el LLM no propone una baja válida, la propone el motor de reglas (`safety.reduce_demand`) y la decisión lleva `source: "rules"`, con lo que dijo el LLM en `llm_outcome` y `llm_proposal`; si no hay nada que bajar, `paused: true`. Las demás decisiones llevan `source: "llm"` |
 | 3. Validación | `safety.validate` (determinista) | `old` igual al valor actual, motivo no vacío, valor numérico. Cada parámetro necesita su límite del fisioterapeuta: `rom_target` exige `rom_min` y `rom_max` (con `rom_min < rom_max`) y `reps` exige `max_reps`; si falta → `rejected` (I-3). `rest_seconds` solo tiene los límites fijos 10–180. Dentro del sobre → `applied`; fuera → `escalated_to_therapist` y se pausa el ejercicio. **Regla de dirección (ADR-021):** si el paciente acaba de decir una molestia (`DISCOMFORT`: molestia, duele, dolor, pinchazo, punzada, tirón, ardor, calambre, cansado, fatiga, agotado, "me cuesta", "no aguanto", rígido, incómodo), solo se acepta bajar la exigencia; subirla → `escalated_to_therapist` con `within_envelope = true` (I-16). El sobre de Staging se traduce con `safety.agent_envelope` |
 | 4. Frase | `coach.reply` (LLM opcional) | Dice lo que decidió el motor. Si el LLM agrega un número que no está en la decisión (en cifras o en letras, como "veinte"), pasa de 30 palabras o devuelve JSON, se usa la plantilla |
-| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras (en cifras o en letras) que no están en los datos; la fecha no cuenta como dato citable (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8). En Staging la genera y la firma el fisioterapeuta desde el panel (sección "Cuentas y seguimiento") |
+| 5. Nota SOAP | `soap.draft` (LLM opcional) | S y O salen de una plantilla con los datos de la sesión; el LLM solo redacta A y P, y se descartan si traen cifras (en cifras o en letras) que no están en los datos; la fecha no cuenta como dato citable (I-6). Siempre `status: draft`, `reviewed_by: null` (I-8). En Staging la genera y la firma el fisioterapeuta desde el panel (sección "Cuentas y seguimiento"), en el idioma de su interfaz (TD-116) |
 | 6. Molestia | `safety.classify_symptom` y `safety.symptom_record` (deterministas) | Clasifica lo que dijo el paciente: `red_flag` (gana siempre) o `discomfort` con categoría `pain`, `cramp`, `fatigue`, `stiffness` u `other`. El turno devuelve `symptom` = `{kind, category, text (≤ 200), action, adjustment}`, con `action` `session_stopped`, `demand_lowered` o `paused`. Staging lo guardará con `source = 'voice_turn'` cuando se conecte TD-61 (TD-88) |
 
 Sin propuesta (`action: none`) no se guarda `agent_decision`. La alarma no es una decisión del agente: es un fin de sesión.
@@ -269,7 +269,24 @@ de la misma cuenta de Google, salvo el Administrador maestro: quien dirige la cl
 | Zona horaria | Solo si el navegador no declara idiomas: una zona de habla hispana (`America/Lima`, `Europe/Madrid`…) → español; otra → inglés |
 | Sin señales | Español, el idioma base. También en Node (tests) |
 | Qué cambia | El texto (`data-i18n` y `t()`), `<html lang>`, la voz (`es-PE` o `en-US`), las fechas y los números (`es-PE` o `en-US`) y el catálogo (`i18n/catalog.en.js`). Lo que falta en un idioma cae al español |
-| Qué no cambia | Ids, códigos y valores que se guardan; las fuentes citadas; lo que escribe el servidor (nota SOAP, FHIR, errores de la API), que sigue en español (TD-116) |
+| Qué no cambia | Ids, códigos y valores que se guardan; las fuentes citadas; lo que escribió una persona (nombres, seudónimos, notas, lo que dijo el paciente) |
+
+### Lo que escribe el servidor (TD-116, ADR-032)
+
+`api-client.js` manda el idioma de la interfaz en `Accept-Language` y la API redacta en él todo lo que escribe:
+
+| Qué | Regla |
+|---|---|
+| Idioma de la petición | `messages.lang_of`: el primer idioma que tengamos según el peso `q`; sin cabecera o sin ninguno nuestro, español (el idioma base; así siguen los tests y `curl`) |
+| Errores y mensajes | El código escribe en español y `messages.tr` traduce a la salida con la tabla `EN` (plantillas con `{dato}`; un dato que es a su vez un mensaje conocido, como el motivo de Google o de la IA, también se traduce). Abarca `data.error`, los mensajes al paciente de la EVA y de las molestias (misma fuerza que en español, I-22), el motivo sin IA, el de un resumen rechazado y la etiqueta del plan de la organización. Un test exige traducción para todo `ApiError`, `OrgError` y `AuthError` |
+| Muro del invitado | Un 401 `auth_required` trae `reason`, la frase que completa "Para {reason} hace falta una cuenta" según la ruta (`WALL_REASONS`: "afiliar a un paciente", "crear o firmar una nota SOAP", "guardar tu progreso"…; lo demás, "guardar cambios") |
+| Nota SOAP | `soap.draft(llm, sesión, lang)`: la plantilla y la petición al LLM en ese idioma. Las cifras y lo que escribió el paciente son los mismos datos (I-6); las claves de `facts` no cambian. Se guarda con su `lang` y con la entrada de `soap.facts` (`input`) |
+| Nota en otro idioma | Un borrador sin firmar hecho solo con la plantilla se vuelve a redactar en el idioma de quien lo abre, desde la entrada guardada (mismos datos; no se guarda). Lo que redactó la IA queda en su idioma y lo firmado no cambia (I-8). Al firmar se guarda lo que se veía, en ese idioma. El panel avisa si la nota está en otro idioma y la marca con `lang` para el lector de pantalla |
+| FHIR | Textos legibles (`display`, `text`, títulos, unidades escritas) en el idioma de la nota (o en el de quien pide, si todavía no hay nota) y `language` en el recurso. Los códigos (propios, LOINC, UCUM) nunca cambian |
+| Resumen con IA | Se pide en el idioma de la interfaz. Las sugerencias llegan escritas en ese idioma, así que la revisión de nombres usa el catálogo en español y en inglés (`catalog.js` e `i18n/catalog.en.js`): un ejercicio que no viene al caso se rechaza en cualquiera de los dos |
+| Consultorio de muestra | Lo comparten invitados en los dos idiomas: "Muestra para invitados · Guest sample (datos sintéticos · synthetic data)" y "Paciente de muestra · Sample patient". Las muestras creadas antes se ponen al día al usarlas |
+
+Lo que escribió una persona (nombre y nota del fisioterapeuta, seudónimos, lo que dijo el paciente) no se traduce.
 
 Las frases de alarma y de molestia del texto libre (`safety.py`) están en los dos idiomas: "I feel dizzy" o "sharp pain" detienen la sesión igual que "me mareo" o "dolor agudo" (I-7, I-22).
 

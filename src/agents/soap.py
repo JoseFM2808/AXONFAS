@@ -3,6 +3,9 @@
 La nota solo usa datos de la sesión. Las cifras las pone una plantilla determinista; el LLM puede redactar la valoración
 (A) y el plan (P), pero si su texto trae un número que no está en los datos, se descarta y queda la plantilla. Siempre
 sale como borrador: `reviewed_by` vacío hasta que un fisioterapeuta lo firma.
+
+Idioma (ADR-030, TD-116): la nota sale en el idioma de quien la pide ('es' o 'en'). Solo cambian los textos fijos; las
+cifras y lo que escribió el paciente son los mismos datos.
 """
 from __future__ import annotations
 
@@ -11,21 +14,55 @@ import json
 from .coach import numbers
 from .llm import LLMError, parse_json
 
-END = {"completed": "completada", "pain_stop": "detenida por dolor", "user_quit": "terminada por el paciente",
-       "envelope_breach": "detenida por salir del sobre de seguridad"}
-SYMPTOM = {"pain": "dolor o molestia", "cramp": "calambre", "fatigue": "cansancio", "stiffness": "rigidez",
-           "other": "otra molestia", "red_flag": "señal de alarma"}
-SYMPTOM_ACTION = {"session_stopped": "se detuvo la sesión", "demand_lowered": "se bajó la exigencia",
-                  "paused": "se hizo una pausa", "logged": "quedó registrada"}
-EVENT = {"trunk_flexion": "flexión de tronco", "knee_valgus": "valgo de rodilla"}
-
+# Textos fijos por idioma. Las claves de `facts` no cambian (las guarda la BD y las lee fhir.py): solo sus textos.
+LANGS = ("es", "en")
+END = {"es": {"completed": "completada", "pain_stop": "detenida por dolor", "user_quit": "terminada por el paciente",
+              "envelope_breach": "detenida por salir del sobre de seguridad"},
+       "en": {"completed": "completed", "pain_stop": "stopped because of pain", "user_quit": "ended by the patient",
+              "envelope_breach": "stopped for leaving the safety envelope"}}
+SYMPTOM = {"es": {"pain": "dolor o molestia", "cramp": "calambre", "fatigue": "cansancio", "stiffness": "rigidez",
+                  "other": "otra molestia", "red_flag": "señal de alarma"},
+           "en": {"pain": "pain or discomfort", "cramp": "cramp", "fatigue": "tiredness", "stiffness": "stiffness",
+                  "other": "other discomfort", "red_flag": "warning sign"}}
+SYMPTOM_ACTION = {"es": {"session_stopped": "se detuvo la sesión", "demand_lowered": "se bajó la exigencia",
+                         "paused": "se hizo una pausa", "logged": "quedó registrada"},
+                  "en": {"session_stopped": "the session was stopped", "demand_lowered": "the demand was lowered",
+                         "paused": "a pause was taken", "logged": "it was logged"}}
+EVENT = {"es": {"trunk_flexion": "flexión de tronco", "knee_valgus": "valgo de rodilla"},
+         "en": {"trunk_flexion": "trunk flexion", "knee_valgus": "knee valgus"}}
 
 # Sesión hecha sin cámara (TD-111): la nota lo dice en O, con este texto fijo, en lugar de "Compensaciones: ninguna".
-NO_CAMERA_NOTE = "Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales."
+# doctor.js muestra el mismo aviso con 'doctor.nocam' (i18n/clinic.js); un test exige que digan lo mismo en los dos idiomas.
+NO_CAMERA_NOTES = {
+    "es": "Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales.",
+    "en": "Session completed without a camera. No kinematic metrics or postural fault detection were recorded.",
+}
+NO_CAMERA_NOTE = NO_CAMERA_NOTES["es"]
+
+TEXT = {
+    "es": {"said": "Refiere: ", "no_comments": "Sin comentarios del paciente.", "pain": " Reportó dolor.",
+           "eva": " Dolor al terminar (EVA): {v}/10.", "outside": "fuera de la sesión", "symptoms": " Molestias reportadas: ",
+           "reps": "{done} repeticiones", "reps_of": "{done} de {target} repeticiones", "session": "sesión",
+           "comp": "Compensaciones: {comp}.", "none": "ninguna", "rom": " Flexión media de rodilla: {v}°.",
+           "adjust": " Ajustes aplicados dentro del sobre: ", "A": "Pendiente de valoración del fisioterapeuta.",
+           "P": "Revisar la técnica y decidir si se mantiene la dosis.", "quote": "«{t}»", "lang": "español"},
+    # "lang" = cómo se le pide el idioma al LLM (el prompt del sistema está en español).
+    "en": {"said": "Reports: ", "no_comments": "No comments from the patient.", "pain": " Reported pain.",
+           "eva": " Pain at the end (VAS): {v}/10.", "outside": "outside the session", "symptoms": " Reported discomfort: ",
+           "reps": "{done} repetitions", "reps_of": "{done} of {target} repetitions", "session": "session",
+           "comp": "Compensations: {comp}.", "none": "none", "rom": " Mean knee flexion: {v}°.",
+           "adjust": " Adjustments applied within the envelope: ", "A": "Pending the physiotherapist's assessment.",
+           "P": "Review the technique and decide whether to keep the dose.", "quote": "“{t}”", "lang": "inglés"},
+}
 
 
-def facts(session: dict) -> dict:
-    """Solo lo que la nota puede citar, sacado de la sesión."""
+def _lang(lang: str | None) -> str:
+    return lang if lang in LANGS else "es"
+
+
+def facts(session: dict, lang: str = "es") -> dict:
+    """Solo lo que la nota puede citar, sacado de la sesión. Los textos (fin, compensaciones, molestias) van en `lang`."""
+    lang = _lang(lang)
     events = session.get("events") or []
     count: dict[str, int] = {}
     for e in events:
@@ -35,8 +72,8 @@ def facts(session: dict) -> dict:
         "fecha": (session.get("ended_at") or "")[:10],
         "repeticiones_hechas": session.get("reps_done"),
         "repeticiones_indicadas": session.get("reps_target"),
-        "fin": END.get(session.get("end_reason"), session.get("end_reason")),
-        "compensaciones": {EVENT.get(k, k): v for k, v in count.items()},
+        "fin": END[lang].get(session.get("end_reason"), session.get("end_reason")),
+        "compensaciones": {EVENT[lang].get(k, k): v for k, v in count.items()},
         "rom_medio_grados": session.get("rom_mean"),
         "dolor_reportado": bool(session.get("pain_reported")),
         "dolor_al_terminar_eva": session.get("pain_score"),          # 0-10 que marcó el paciente (ADR-025); None sin dato
@@ -44,47 +81,47 @@ def facts(session: dict) -> dict:
         "ajustes_del_agente": [d.get("proposal") for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
         "lo_que_dijo_el_paciente": session.get("utterances") or [],
         # Sin horas: añadirían cifras citables a I-6. Los textos son lo que escribió el paciente.
-        "molestias": [{"categoria": SYMPTOM.get(x.get("category"), "otra molestia"), "texto": x.get("text"),
-                       "accion": SYMPTOM_ACTION.get(x.get("action"), "quedó registrada"), "en_la_sesion": bool(x.get("in_session"))}
+        "molestias": [{"categoria": SYMPTOM[lang].get(x.get("category"), SYMPTOM[lang]["other"]), "texto": x.get("text"),
+                       "accion": SYMPTOM_ACTION[lang].get(x.get("action"), SYMPTOM_ACTION[lang]["logged"]),
+                       "en_la_sesion": bool(x.get("in_session"))}
                       for x in session.get("symptom_reports") or []],
     }
 
 
-def template(f: dict) -> dict:
-    comp = ", ".join(f"{k}: {v}" for k, v in f["compensaciones"].items()) or "ninguna"
-    s = ("Refiere: " + "; ".join(f["lo_que_dijo_el_paciente"])) if f["lo_que_dijo_el_paciente"] else "Sin comentarios del paciente."
+def template(f: dict, lang: str = "es") -> dict:
+    T = TEXT[_lang(lang)]
+    comp = ", ".join(f"{k}: {v}" for k, v in f["compensaciones"].items()) or T["none"]
+    s = (T["said"] + "; ".join(f["lo_que_dijo_el_paciente"])) if f["lo_que_dijo_el_paciente"] else T["no_comments"]
     if f["dolor_reportado"]:
-        s += " Reportó dolor."
+        s += T["pain"]
     if f.get("dolor_al_terminar_eva") is not None:
-        s += f" Dolor al terminar (EVA): {f['dolor_al_terminar_eva']}/10."
+        s += T["eva"].format(v=f["dolor_al_terminar_eva"])
     if f["molestias"]:
         items = []
         for m in f["molestias"]:
-            parts = ([f"«{m['texto']}»"] if m["texto"] else []) + ([] if m["en_la_sesion"] else ["fuera de la sesión"]) + [m["accion"]]
+            parts = ([T["quote"].format(t=m["texto"])] if m["texto"] else []) + ([] if m["en_la_sesion"] else [T["outside"]]) + [m["accion"]]
             items.append(f"{m['categoria']} ({'; '.join(parts)})")
-        s += " Molestias reportadas: " + "; ".join(items) + "."
-    done = (f"{f['repeticiones_hechas']} repeticiones" if f["repeticiones_indicadas"] is None    # sin meta no se escribe "de None"
-            else f"{f['repeticiones_hechas']} de {f['repeticiones_indicadas']} repeticiones")
-    o = f"{f['ejercicio']}, {f['fecha']}: {done}, sesión {f['fin']}. " + (NO_CAMERA_NOTE if f.get("sin_camara")
-                                                                         else f"Compensaciones: {comp}.")
+        s += T["symptoms"] + "; ".join(items) + "."
+    done = (T["reps"].format(done=f["repeticiones_hechas"]) if f["repeticiones_indicadas"] is None    # sin meta no se escribe "de None"
+            else T["reps_of"].format(done=f["repeticiones_hechas"], target=f["repeticiones_indicadas"]))
+    o = f"{f['ejercicio']}, {f['fecha']}: {done}, {T['session']} {f['fin']}. " + (
+        NO_CAMERA_NOTES[_lang(lang)] if f.get("sin_camara") else T["comp"].format(comp=comp))
     if f["rom_medio_grados"] is not None:
-        o += f" Flexión media de rodilla: {f['rom_medio_grados']}°."
+        o += T["rom"].format(v=f["rom_medio_grados"])
     if f["ajustes_del_agente"]:
-        o += " Ajustes aplicados dentro del sobre: " + "; ".join(
-            f"{a['param']} {a['old']} → {a['new']}" for a in f["ajustes_del_agente"]) + "."
-    a = "Pendiente de valoración del fisioterapeuta."
-    p = "Revisar la técnica y decidir si se mantiene la dosis."
-    return {"S": s, "O": o, "A": a, "P": p}
+        o += T["adjust"] + "; ".join(f"{a['param']} {a['old']} → {a['new']}" for a in f["ajustes_del_agente"]) + "."
+    return {"S": s, "O": o, "A": T["A"], "P": T["P"]}
 
 
-def draft(llm, session: dict) -> dict:
-    """Borrador SOAP. S y O siempre de la plantilla; A y P del LLM solo si no inventa cifras."""
-    f = facts(session)
-    note = template(f)
+def draft(llm, session: dict, lang: str = "es") -> dict:
+    """Borrador SOAP en `lang`. S y O siempre de la plantilla; A y P del LLM solo si no inventa cifras."""
+    lang = _lang(lang)
+    f = facts(session, lang)
+    note = template(f, lang)
     source = "template"
     if llm is not None:
         messages = [
-            {"role": "system", "content": "Eres el agente de reporte de AXONFAS. Con los datos dados, redacta en español "
+            {"role": "system", "content": f"Eres el agente de reporte de AXONFAS. Con los datos dados, redacta en {TEXT[lang]['lang']} "
                                           "la Valoración (A) y el Plan (P) de una nota SOAP, en una o dos frases cada una. "
                                           "No diagnostiques. No uses ningún número que no esté en los datos. Responde solo "
                                           'con JSON: {"A": "...", "P": "..."}'},
@@ -99,4 +136,4 @@ def draft(llm, session: dict) -> dict:
         if all(isinstance(out.get(k), str) and out[k].strip() and numbers(out[k]) <= allowed for k in ("A", "P")):
             note["A"], note["P"] = out["A"].strip(), out["P"].strip()
             source = "llm"
-    return {"status": "draft", "reviewed_by": None, "source": source, "soap": note, "facts": f}
+    return {"status": "draft", "reviewed_by": None, "source": source, "soap": note, "facts": f, "lang": lang}

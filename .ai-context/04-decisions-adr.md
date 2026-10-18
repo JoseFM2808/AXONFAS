@@ -656,7 +656,7 @@
   - Cambiar de idioma en medio de una sesión con cámara la reinicia, porque la página se recarga.
   - Un texto nuevo de la interfaz necesita su clave en los dos idiomas. Los tests revisan que es y en tengan las mismas
     claves y que cada `data-i18n` y cada `t()` existan.
-  - La traducción al inglés la hizo el equipo, no un fisioterapeuta nativo. Se valida antes de Producción (TD-116).
+  - La traducción al inglés la hizo el equipo, no un fisioterapeuta nativo. Se valida antes de Producción (TD-116; desde ADR-032, TD-117).
 
 ## ADR-031 · Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT — Aceptada
 
@@ -679,6 +679,33 @@
   - El peor caso suma los dos tiempos de espera.
   - El tope protege la clave compartida del equipo; con más uso público, la medida es por IP (TD-114).
   - Cierra TD-26.
+
+---
+
+## ADR-032 · El servidor escribe en el idioma de la interfaz — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:** ADR-030 tradujo la interfaz, pero lo que escribe el servidor seguía en español (TD-116): la nota SOAP, la
+  Observation y el documento FHIR, los errores de la API y los mensajes al paciente. Un juez con el navegador en inglés
+  veía la nota de muestra del invitado en español, y el resumen con IA podía rechazar un resumen válido porque revisaba
+  los nombres solo contra el catálogo en español. Además el muro mostraba siempre el motivo genérico.
+- **Decisión:**
+  - `api-client.js` manda `Accept-Language` con el idioma de la interfaz; la API lo lee en cada petición (`messages.lang_of`)
+    y, sin cabecera, usa español.
+  - Los mensajes se siguen escribiendo en español en el código y `messages.tr` los traduce a la salida con una tabla de
+    plantillas, en vez de mandar códigos que traduzca el cliente: no cambia el contrato de la API para quien ya la usa y
+    un test exige que todo `ApiError` tenga su traducción.
+  - La nota SOAP se redacta en el idioma de quien la crea y se guarda con `lang` y con su entrada (`input`). Un borrador
+    sin firmar hecho solo con la plantilla se vuelve a redactar al leerlo en otro idioma, desde esa entrada (mismos
+    datos, I-6). Lo que redactó la IA queda en su idioma y lo firmado no cambia (I-8); al firmar se guarda lo que se veía.
+  - FHIR: textos legibles en el idioma de la nota y `language` en el recurso; los códigos nunca cambian.
+  - El resumen con IA se pide en el idioma de la interfaz y revisa los nombres en los dos catálogos.
+  - Un 401 `auth_required` trae `reason`, la frase del muro según la ruta.
+- **Consecuencias:**
+  - Una tabla más que mantener (`messages.EN`); el test la mantiene completa.
+  - Una nota firmada puede quedar en un idioma distinto del de quien la lee: el panel lo avisa.
+  - Los textos que escribió una persona no se traducen.
+  - Cierra TD-116, salvo la revisión clínica de la traducción por un fisioterapeuta con inglés nativo (TD-117).
 
 ---
 

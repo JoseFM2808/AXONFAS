@@ -1,7 +1,7 @@
 /* AXONFAS · vista del Administrador maestro (ADR-019): configuración, IA de AMD Token Factory (estado, catálogo, uso y
  * prueba) y cuentas de Google (rol y desactivación). Sin datos clínicos de pacientes: solo conteos.
- * Textos en i18n/common.js (ADR-030). Lo que escribe el servidor (errores, motivo sin IA, nombre del plan, respuesta del
- * modelo) llega tal cual, en español en esta etapa.
+ * Textos en i18n/common.js (ADR-030). Los errores y el motivo sin IA llegan en el idioma de la
+ * página (Accept-Language, TD-116); el nombre del plan y la respuesta del modelo, tal como los guarda o escribe el servidor.
  */
 (() => {
   'use strict';

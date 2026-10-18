@@ -15,8 +15,8 @@
   const END = { completed: t('doctor.end.completed'), pain_stop: t('doctor.end.pain_stop'), user_quit: t('doctor.end.user_quit'),
     envelope_breach: t('doctor.end.envelope_breach') };
   const SOURCE = { camera: t('doctor.source.camera'), demo: t('doctor.source.demo'), guided: t('doctor.source.guided') };
-  // Texto fijo de una sesión sin cámara (TD-111) tal como lo escribe la nota SOAP (agents/soap.py, NO_CAMERA_NOTE), que el
-  // servidor redacta en español. En pantalla va 'doctor.nocam' del idioma elegido; su versión es es este mismo texto (test).
+  // Texto fijo de una sesión sin cámara (TD-111) tal como lo escribe la nota SOAP (agents/soap.py, NO_CAMERA_NOTES). En
+  // pantalla va 'doctor.nocam' del idioma elegido; en los dos idiomas dice lo mismo que la nota (test, TD-116).
   const NO_CAMERA_NOTE_SOAP = 'Sesión completada sin cámara. No se registraron métricas cinemáticas ni detección de fallos posturales.';
   const NO_CAMERA_NOTE = I18N.has('doctor.nocam') ? t('doctor.nocam') : NO_CAMERA_NOTE_SOAP;
   const REPORT_ACTION = { none: t('doctor.report.none'), draft: t('doctor.report.draft'), final: t('doctor.report.final') };
@@ -392,14 +392,16 @@
       stateBox.append(el('span', 'tag warn', t('doctor.soap.draft')), ' ', el('strong', null, t('doctor.soap.unsigned')),
         ' ', t('doctor.soap.notRecord'));
     }
-    // El texto de la nota (S, O, A, P) lo redacta el servidor en español: aquí solo se traducen sus rótulos.
-    if (final) $('soap-source').textContent = '';
-    else if (r.source === 'llm') $('soap-source').textContent = t('doctor.soap.byAi');
-    else $('soap-source').textContent = t('doctor.soap.byTemplate');
+    // El texto de la nota (S, O, A, P) lo redacta el servidor en el idioma de la interfaz (TD-116). Lo firmado y lo que
+    // redactó la IA quedan en el idioma en que se escribieron: `r.lang` lo dice y aquí se avisa si no es el de la página.
+    const noteLang = r.lang || 'es';
+    const source = final ? '' : (r.source === 'llm' ? t('doctor.soap.byAi') : t('doctor.soap.byTemplate'));
+    const other = noteLang !== I18N.lang ? t('doctor.soap.writtenIn', { language: t(`doctor.soap.lang.${noteLang === 'en' ? 'en' : 'es'}`) }) : '';
+    $('soap-source').textContent = [source, other].filter(Boolean).join(' ');
     const body = $('soap-body');
     body.replaceChildren();
-    // lang="es": el lector de pantalla lo lee con voz española aunque la interfaz esté en inglés (WCAG 3.1.2, TD-116).
-    const readOnly = (title, text) => { const dd = el('dd', null, text); dd.lang = 'es'; body.append(el('dt', null, title), dd); };
+    // lang de la nota: el lector de pantalla la lee con la voz de su idioma aunque la interfaz esté en otro (WCAG 3.1.2).
+    const readOnly = (title, text) => { const dd = el('dd', null, text); dd.lang = noteLang; body.append(el('dt', null, title), dd); };
     readOnly(t('doctor.soap.S'), r.soap.S);
     readOnly(t('doctor.soap.O'), r.soap.O);
     [['A', t('doctor.soap.Aedit'), t('doctor.soap.A')], ['P', t('doctor.soap.P'), t('doctor.soap.P')]].forEach(([key, title, finalTitle]) => {
@@ -407,7 +409,7 @@
       const label = el('label', null, title);
       label.htmlFor = `soap-edit-${key}`;
       const area = document.createElement('textarea');
-      Object.assign(area, { id: `soap-edit-${key}`, maxLength: 1000, value: r.soap[key] });
+      Object.assign(area, { id: `soap-edit-${key}`, maxLength: 1000, value: r.soap[key], lang: noteLang });
       const dt = el('dt');
       dt.appendChild(label);
       const dd = el('dd');

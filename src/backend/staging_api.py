@@ -10,6 +10,8 @@ ADR-012 y ADR-013. La sirve serve.py en el mismo origen que el prototipo (rutas 
   plan para ese ejercicio no se registran sesiones (I-3, I-9).
 - Un fisioterapeuta solo ve a sus pacientes (I-10). El canal en vivo lleva ángulos, fase, repeticiones, eventos y
   puntos 2D del cuerpo; nunca video ni imágenes (ADR-003, I-11).
+- Idioma (ADR-030, TD-116): cada petición trae el de la interfaz en `Accept-Language` (api-client.js). Los errores, los
+  mensajes al paciente, la nota SOAP y FHIR salen en ese idioma (messages.py); sin cabecera, en español.
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ import google_auth  # noqa: E402
 import settings  # noqa: E402
 
 import fhir  # noqa: E402
+import messages  # noqa: E402 — idioma de lo que escribe el servidor (ADR-030, TD-116)
 import organizations  # noqa: E402 — Nivel 3: organizaciones y licencias (ADR-026) — export FHIR R4; vive junto a este módulo (serve.py y los tests ponen src/backend en sys.path)
 from agents import coach, safety  # noqa: E402
 from agents.safety import PARAMS  # noqa: E402 — límites fijos del rango, para no duplicar números
@@ -80,6 +83,8 @@ CREATE TABLE IF NOT EXISTS clinical_report (
   source TEXT NOT NULL CHECK (source IN ('template', 'llm')),
   created_at TEXT NOT NULL,
   reviewed_by INTEGER REFERENCES therapist(id), reviewed_at TEXT,
+  lang TEXT NOT NULL DEFAULT 'es' CHECK (lang IN ('es', 'en')),   -- idioma en que está escrita la nota (TD-116)
+  input TEXT,                          -- JSON: la entrada de soap.facts al crear la nota (para redactarla en otro idioma)
   CHECK ((reviewed_by IS NULL) = (reviewed_at IS NULL)));
 CREATE TABLE IF NOT EXISTS symptom_report (
   id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patient(id),
@@ -147,12 +152,38 @@ GUEST_AI_PER_HOUR = 60
 GUEST_PROFILE = {"limitations": ["balance"], "pain_areas": ["knee"], "note": "Perfil sintético de muestra.",
                  "updated_at": "2026-10-18T00:00:00+00:00"}
 DEFAULT_TRACKER = Path(__file__).resolve().parents[1] / "frontend" / "validation-prototype" / "tracker.js"
+DEFAULT_CATALOG_EN = Path(__file__).resolve().parents[1] / "frontend" / "validation-prototype" / "i18n" / "catalog.en.js"
+# Consultorio de muestra del invitado (TD-106): lo comparten invitados en español y en inglés, así que sus nombres van en
+# los dos idiomas (TD-116). Son seudónimos sintéticos, nunca personas reales (ADR-010).
+GUEST_THERAPIST_NAME = "Muestra para invitados · Guest sample (datos sintéticos · synthetic data)"
+GUEST_PATIENT_ALIAS = "Paciente de muestra · Sample patient"
+GUEST_OLD_NAMES = {"therapist": "Muestra para invitados (datos sintéticos)", "patient": "Paciente de muestra"}
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str, code: str | None = None):
+    def __init__(self, status: int, message: str, code: str | None = None, reason: str | None = None):
         super().__init__(message)
         self.status, self.message, self.code = status, message, code    # code = 'auth_required' abre el muro (TD-107)
+        self.reason = reason            # con auth_required: qué intentaba hacer, para el texto del muro ("Para {reason}…")
+
+
+# Muro de autenticación (TD-107): qué intentaba hacer el invitado, como frase que completa "Para {reason} hace falta una
+# cuenta" (auth-wall.js). Va en español y messages.py la traduce. Lo que no está aquí: "guardar cambios".
+WALL_REASONS = [
+    ("POST", re.compile(r"/api/patients"), "afiliar a un paciente"),
+    ("PUT", re.compile(r"/api/patients/\d+/plan"), "cambiar un plan"),
+    ("POST", re.compile(r"/api/patients/\d+/invite"), "generar un código de afiliación"),
+    ("POST", re.compile(r"/api/patients/\d+/highlight"), "señalarle un ejercicio al paciente"),
+    ("PUT", re.compile(r"/api/patients/\d+/profile"), "cambiar el perfil del paciente"),
+    ("POST", re.compile(r"/api/sessions/\d+/report(/approve)?"), "crear o firmar una nota SOAP"),
+    ("POST", re.compile(r"/api/sessions"), "guardar tu progreso"),
+    ("PUT", re.compile(r"/api/sessions/\d+/pain"), "guardar tu progreso"),
+    (None, re.compile(r"/api/(me|live)(/.*)?"), "guardar tu progreso"),
+]
+
+
+def wall_reason(method: str, path: str) -> str:
+    return next((text for m, rx, text in WALL_REASONS if m in (None, method) and rx.fullmatch(path)), "guardar cambios")
 
 
 @dataclass
@@ -174,6 +205,14 @@ def parse_iso(value: str) -> datetime:
 def load_names(path: Path) -> dict[str, str]:
     """{id: nombre} de catalog.js, para validar que la IA no nombre ejercicios que no vienen al caso (ADR-017)."""
     return dict(re.findall(r"id: '([a-z0-9-]+)', theme: '[a-z-]+', name: '([^']+)'", path.read_text(encoding="utf-8")))
+
+
+def load_names_en(path: Path) -> dict[str, str]:
+    """{id: nombre en inglés} de i18n/catalog.en.js (ADR-030): la nota SOAP en inglés y la revisión del resumen con IA.
+    Solo el bloque `exercises` (los temas también tienen `name`)."""
+    text = path.read_text(encoding="utf-8")
+    text = text[text.find("exercises: {"):] if "exercises: {" in text else ""
+    return dict(re.findall(r"'?([a-z0-9-]+)'?: \{\s*name: '([^']+)'", text))
 
 
 def clean_profile(data: dict) -> dict:
@@ -374,7 +413,7 @@ def clean_rep(rep: dict) -> dict:
 # ------------------------------------------------------------------------------------------------ API
 class StagingApi:
     def __init__(self, db_path: str | Path, catalog: dict[str, str], names: dict[str, str] | None = None,
-                 tracking: dict[str, dict] | None = None):
+                 tracking: dict[str, dict] | None = None, names_en: dict[str, str] | None = None):
         if str(db_path) != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -410,9 +449,17 @@ class StagingApi:
                 self.db.execute("ALTER TABLE session ADD COLUMN no_camera_reason TEXT CHECK (no_camera_reason IS NULL OR "
                                 "no_camera_reason IN ('declined', 'denied', 'unavailable', 'guided_view'))")
                 self.db.execute("UPDATE session SET no_camera = 1, no_camera_reason = 'guided_view' WHERE source = 'guided'")
+        if "lang" not in {r["name"] for r in self.db.execute("PRAGMA table_info(clinical_report)")}:     # bases anteriores a TD-116
+            with self.db:
+                self.db.execute("ALTER TABLE clinical_report ADD COLUMN lang TEXT NOT NULL DEFAULT 'es' CHECK (lang IN ('es', 'en'))")
+                self.db.execute("ALTER TABLE clinical_report ADD COLUMN input TEXT")
         self.lock = threading.RLock()
         self.catalog = catalog
         self.names = names or {}
+        if names_en is None:
+            names_en = load_names_en(DEFAULT_CATALOG_EN) if DEFAULT_CATALOG_EN.exists() else {}
+        self.names_en = names_en
+        self._req = threading.local()                       # idioma de la petición en curso (cada petición, su hilo)
         self.tracking = tracking if tracking is not None else (load_tracking(DEFAULT_TRACKER) if DEFAULT_TRACKER.exists() else {})
         self._ai = {"checked": 0.0, "available": False}
         self.hub = LiveHub()
@@ -466,6 +513,7 @@ class StagingApi:
     def handle(self, method: str, path: str, headers, body: bytes):
         """Devuelve (status, payload) o un Stream. Nunca lanza: los errores salen como (status, {'error': ...})."""
         path = path.split("?", 1)[0].rstrip("/") or "/"
+        lang = self._req.lang = messages.lang_of(headers.get("Accept-Language"))
         try:
             for m, pattern, fn, role in self.routes:
                 match = re.fullmatch(pattern, path)
@@ -484,11 +532,20 @@ class StagingApi:
                 raise ApiError(405, "Método no permitido.")
             raise ApiError(404, "No existe esa ruta.")
         except ApiError as err:
-            return err.status, {"error": err.message, **({"code": err.code} if err.code else {})}
+            return err.status, {"error": messages.tr(err.message, lang), **({"code": err.code} if err.code else {}),
+                                **({"reason": messages.tr(err.reason, lang)} if err.reason else {})}
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return 400, {"error": "JSON inválido."}
+            return 400, {"error": messages.tr("JSON inválido.", lang)}
         except sqlite3.Error:
-            return 500, {"error": "Error interno de la base de Staging."}
+            return 500, {"error": messages.tr("Error interno de la base de Staging.", lang)}
+
+    def lang(self) -> str:
+        """Idioma de la petición en curso ('es' | 'en'); fuera de una petición, español."""
+        return getattr(self._req, "lang", messages.BASE)
+
+    def _names(self, lang: str) -> dict[str, str]:
+        """{id: nombre} del catálogo en `lang` (lo que falte en inglés, en español)."""
+        return {**self.names, **self.names_en} if lang == "en" else self.names
 
     def _auth(self, headers, role: str, method: str = "GET", path: str = "") -> int:
         value = (headers.get("Authorization") or "").strip()
@@ -507,7 +564,8 @@ class StagingApi:
             if role == "therapist" and method == "POST" and GUEST_AI_PATH.fullmatch(path):
                 self._guest_ai_quota()
                 return self._guest_sandbox()
-            raise ApiError(401, "Para esto necesitas una cuenta: crea la tuya o entra con Google.", code="auth_required")
+            raise ApiError(401, "Para esto necesitas una cuenta: crea la tuya o entra con Google.", code="auth_required",
+                           reason=wall_reason(method, path))
         if row["role"] != role:
             raise ApiError(403, "Esta acción no corresponde a tu tipo de cuenta.")
         return row["subject_id"]
@@ -743,7 +801,7 @@ class StagingApi:
         # registra sesión sin plan (I-9), se toma el plan más antiguo de ese ejercicio en vez de dejar la meta vacía.
         return dict(rows[-1]) if rows else None
 
-    def _report_input(self, row: sqlite3.Row) -> dict:
+    def _report_input(self, row: sqlite3.Row, lang: str = "es") -> dict:
         """Entrada de `soap.facts` armada solo con datos guardados de la sesión (I-6). Staging todavía no guarda
         `agent_decision` ni `voice_turn` (TD-61): la nota los recibe vacíos."""
         item = self._plan_item_at(row["patient_id"], row["exercise_id"], row["ended_at"])
@@ -762,7 +820,7 @@ class StagingApi:
                     for x in reversed(self._symptoms(row["patient_id"]))
                     if x["session_id"] == row["id"] or (x["session_id"] is None and x["reported_at"][:10] == day)]
         return {"id": row["id"], "patient_id": row["patient_id"], "monitored": row["mode"] == "monitored",
-                "exercise_id": row["exercise_id"], "exercise_name": self.names.get(row["exercise_id"], row["exercise_id"]),
+                "exercise_id": row["exercise_id"], "exercise_name": self._names(lang).get(row["exercise_id"], row["exercise_id"]),
                 "started_at": row["started_at"], "ended_at": row["ended_at"], "reps_done": row["reps_done"],
                 "reps_target": target, "end_reason": row["end_reason"], "events": [{"type": e["type"]} for e in events],
                 "rom_mean": round(sum(knees) / len(knees), 1) if knees else None,
@@ -770,43 +828,61 @@ class StagingApi:
                 "no_camera": bool(row["no_camera"]),
                 "symptom_reports": symptoms}
 
-    def _report_public(self, session_id: int) -> dict:
+    def _report_public(self, session_id: int, lang: str | None = None) -> dict:
+        """La nota guardada. Un borrador sin firmar hecho solo con la plantilla se vuelve a redactar en `lang` desde la
+        entrada guardada al crearlo (mismos datos, I-6; no se guarda). Lo firmado no cambia (I-8) y lo que redactó la IA
+        queda en su idioma: `lang` de la respuesta dice en cuál está."""
         r = self.db.execute("SELECT c.*, t.name AS reviewer FROM clinical_report c LEFT JOIN therapist t ON t.id = c.reviewed_by "
                             "WHERE c.session_id = ?", (session_id,)).fetchone()
+        soap_note, facts, note_lang = json.loads(r["soap_draft"]), json.loads(r["facts"]), r["lang"]
+        if lang and lang != note_lang and r["reviewed_by"] is None and r["source"] == "template" and r["input"]:
+            from agents import soap
+            entry = json.loads(r["input"])
+            entry["exercise_name"] = self._names(lang).get(entry.get("exercise_id"), entry.get("exercise_name"))
+            redone = soap.draft(None, entry, lang)
+            soap_note, facts, note_lang = redone["soap"], redone["facts"], lang
         return {"report": {"session_id": session_id, "status": "draft" if r["reviewed_by"] is None else "final",
-                           "source": r["source"], "soap": json.loads(r["soap_draft"]), "facts": json.loads(r["facts"]),
+                           "source": r["source"], "soap": soap_note, "facts": facts, "lang": note_lang,
                            "created_at": r["created_at"], "reviewed_by": r["reviewed_by"], "reviewed_by_name": r["reviewer"],
                            "reviewed_at": r["reviewed_at"]}}
 
+    def _store_report(self, session_id: int, entry: dict, draft: dict, created_at: str) -> int:
+        return self.db.execute("INSERT OR IGNORE INTO clinical_report (session_id, soap_draft, facts, source, created_at, lang, "
+                               "input) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (session_id, json.dumps(draft["soap"], ensure_ascii=False),
+                                json.dumps(draft["facts"], ensure_ascii=False), draft["source"], created_at, draft["lang"],
+                                json.dumps(entry, ensure_ascii=False))).rowcount
+
     def create_report(self, therapist_id, _data, session_id):
-        """Borrador SOAP: plantilla determinista, y el LLM solo si hay GPU conectada (y sin inventar cifras, I-6)."""
+        """Borrador SOAP en el idioma de quien lo pide: plantilla determinista, y el LLM solo si hay GPU conectada (y sin
+        inventar cifras, I-6)."""
+        lang = self.lang()
         with self.lock:
             row = self._own_session(therapist_id, session_id)
             if self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
-                return 200, self._report_public(session_id)
-            entry = self._report_input(row)
+                return 200, self._report_public(session_id, lang)
+            entry = self._report_input(row, lang)
         from agents import soap
         llm = self._llm() if self.ai_status(therapist_id, {})[1]["available"] else None
-        draft = soap.draft(llm, entry)
+        draft = soap.draft(llm, entry, lang)
         with self.lock, self.db:
-            created = self.db.execute("INSERT OR IGNORE INTO clinical_report (session_id, soap_draft, facts, source, created_at) "
-                                      "VALUES (?, ?, ?, ?, ?)", (session_id, json.dumps(draft["soap"], ensure_ascii=False),
-                                                                 json.dumps(draft["facts"], ensure_ascii=False), draft["source"],
-                                                                 now_iso())).rowcount
-            out = self._report_public(session_id)
+            created = self._store_report(session_id, entry, draft, now_iso())
+            out = self._report_public(session_id, lang)
         return (201 if created else 200), out
 
     def session_fhir(self, therapist_id, _data, session_id):
         """Observation FHIR R4 de la sesión: `preliminary` mientras la nota es borrador y `final` cuando está firmada.
-        Se genera al pedirla y no se guarda ni escribe nada."""
+        Se genera al pedirla y no se guarda ni escribe nada. Sale en el idioma de la nota, o en el de quien la pide si
+        todavía no hay nota (TD-116)."""
         from agents import soap
         with self.lock:
             row = self._own_session(therapist_id, session_id)
-            entry = self._report_input(row)
             has_report = self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone()
-            report = self._report_public(session_id)["report"] if has_report else None
+            report = self._report_public(session_id, self.lang())["report"] if has_report else None
+            lang = report["lang"] if report else self.lang()
+            entry = self._report_input(row, lang)
             patient = self.db.execute("SELECT id, alias FROM patient WHERE id = ?", (row["patient_id"],)).fetchone()
-        return 200, fhir.observation(entry, soap.facts(entry), report, {"id": patient["id"], "alias": patient["alias"]})
+        return 200, fhir.observation(entry, soap.facts(entry, lang), report, {"id": patient["id"], "alias": patient["alias"]}, lang)
 
     def session_fhir_document(self, therapist_id, _data, session_id):
         """Nota SOAP como Bundle FHIR R4 de tipo `document` (TD-103): `preliminary` hasta la firma. Con licencia de una
@@ -816,22 +892,23 @@ class StagingApi:
             row = self._own_session(therapist_id, session_id)
             if not self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
                 raise ApiError(404, "Todavía no hay nota SOAP para esta sesión.")
-            entry = self._report_input(row)
-            report = self._report_public(session_id)["report"]
+            report = self._report_public(session_id, self.lang())["report"]
+            entry = self._report_input(row, report["lang"])               # el documento va en el idioma de la nota
             patient = self.db.execute("SELECT id, alias FROM patient WHERE id = ?", (row["patient_id"],)).fetchone()
             org = self._org_of_therapist(therapist_id)
-        return 200, fhir.document(entry, soap.facts(entry), report, {"id": patient["id"], "alias": patient["alias"]},
-                                  {"id": org["id"], "name": org["name"]} if org else None)
+        return 200, fhir.document(entry, soap.facts(entry, report["lang"]), report, {"id": patient["id"], "alias": patient["alias"]},
+                                  {"id": org["id"], "name": org["name"]} if org else None, report["lang"])
 
     def get_report(self, therapist_id, _data, session_id):
         with self.lock:
             self._own_session(therapist_id, session_id)
             if not self.db.execute("SELECT 1 FROM clinical_report WHERE session_id = ?", (session_id,)).fetchone():
                 raise ApiError(404, "Todavía no hay borrador para esta sesión.")
-            return 200, self._report_public(session_id)
+            return 200, self._report_public(session_id, self.lang())
 
     def approve_report(self, therapist_id, data, session_id):
-        """Firma la nota. Solo A y P se pueden completar: S y O son datos de la BD (I-6). Una vez firmada, no se toca (I-8)."""
+        """Firma la nota. Solo A y P se pueden completar: S y O son datos de la BD (I-6). Una vez firmada, no se toca (I-8).
+        Se firma lo que se ve: si el borrador se mostraba redactado en el idioma de quien firma, queda en ese idioma."""
         edits = {k: self._text(data, k, 1000, required=False) for k in ("A", "P")}
         with self.lock, self.db:
             self._own_session(therapist_id, session_id)
@@ -840,11 +917,14 @@ class StagingApi:
                 raise ApiError(404, "Todavía no hay borrador para esta sesión.")
             if r["reviewed_by"] is not None:
                 raise ApiError(409, "La nota ya está firmada.")
-            soap_note = json.loads(r["soap_draft"])
+            shown = self._report_public(session_id, self.lang())["report"]
+            soap_note = shown["soap"]
             soap_note.update({k: v for k, v in edits.items() if v})
-            self.db.execute("UPDATE clinical_report SET soap_draft = ?, reviewed_by = ?, reviewed_at = ? WHERE session_id = ?",
-                            (json.dumps(soap_note, ensure_ascii=False), therapist_id, now_iso(), session_id))
-            return 200, self._report_public(session_id)
+            self.db.execute("UPDATE clinical_report SET soap_draft = ?, facts = ?, lang = ?, reviewed_by = ?, reviewed_at = ? "
+                            "WHERE session_id = ?", (json.dumps(soap_note, ensure_ascii=False),
+                                                     json.dumps(shown["facts"], ensure_ascii=False), shown["lang"], therapist_id,
+                                                     now_iso(), session_id))
+            return 200, self._report_public(session_id, self.lang())
 
     # ------------------------------------------------------------------ inicio de sesión con Google (ADR-019)
     def _user_public(self, row) -> dict:
@@ -1030,16 +1110,27 @@ class StagingApi:
                 with self.db:                              # muestras creadas antes de ADR-031: ganan el perfil sintético
                     self.db.execute("UPDATE patient SET profile = ? WHERE therapist_id = ? AND profile IS NULL",
                                     (json.dumps(GUEST_PROFILE), int(row["value"])))
+                with self.db:                              # muestras creadas antes de TD-116: nombres en los dos idiomas
+                    self.db.execute("UPDATE therapist SET name = ? WHERE id = ? AND name = ?",
+                                    (GUEST_THERAPIST_NAME, int(row["value"]), GUEST_OLD_NAMES["therapist"]))
+                    self.db.execute("UPDATE patient SET alias = ? WHERE therapist_id = ? AND alias = ?",
+                                    (GUEST_PATIENT_ALIAS, int(row["value"]), GUEST_OLD_NAMES["patient"]))
+                    for r in self.db.execute(
+                            "SELECT s.* FROM clinical_report c JOIN session s ON s.id = c.session_id JOIN patient p ON p.id = s.patient_id "
+                            "WHERE p.therapist_id = ? AND c.input IS NULL AND c.reviewed_by IS NULL AND c.source = 'template'",
+                            (int(row["value"]),)).fetchall():          # la muestra es de solo lectura: su entrada no cambió
+                        self.db.execute("UPDATE clinical_report SET input = ? WHERE session_id = ?",
+                                        (json.dumps(self._report_input(r), ensure_ascii=False), r["id"]))
                 return int(row["value"])
             from agents import soap
             now = datetime.now(timezone.utc)
             at = lambda days, minutes=0: (now - timedelta(days=days, minutes=minutes)).isoformat()  # noqa: E731
             with self.db:
                 tid = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)",
-                                      ("Muestra para invitados (datos sintéticos)", at(10))).lastrowid
+                                      (GUEST_THERAPIST_NAME, at(10))).lastrowid
                 pid = self.db.execute("INSERT INTO patient (therapist_id, alias, consent_given, joined_at, created_at, profile) "
-                                      "VALUES (?, 'Paciente de muestra', 1, ?, ?, ?)",
-                                      (tid, at(9), at(10), json.dumps(GUEST_PROFILE))).lastrowid
+                                      "VALUES (?, ?, 1, ?, ?, ?)",
+                                      (tid, GUEST_PATIENT_ALIAS, at(9), at(10), json.dumps(GUEST_PROFILE))).lastrowid
                 plan = [("sit-to-stand", 1, 10, 0, 3, json.dumps({"trunk_margin": 15, "valgus_margin": 10, "max_reps": 10})),
                         ("half-squat", 2, 8, 0, 3, json.dumps({}))]
                 for ex_id, sets, reps, hold, per_week, env in plan:
@@ -1065,10 +1156,9 @@ class StagingApi:
                                 "reps_done, reps, no_camera, no_camera_reason) VALUES (?, 'half-squat', 'guided', 'guided', ?, ?, "
                                 "'completed', 16, '[]', 1, 'declined')", (pid, at(0, 70), at(0, 60)))
                 self.db.execute("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('guest_sandbox', ?)", (str(tid),))
-                draft = soap.draft(None, self._report_input(self.db.execute("SELECT * FROM session WHERE id = ?", (s1,)).fetchone()))
-                self.db.execute("INSERT INTO clinical_report (session_id, soap_draft, facts, source, created_at) VALUES (?, ?, ?, ?, ?)",
-                                (s1, json.dumps(draft["soap"], ensure_ascii=False), json.dumps(draft["facts"], ensure_ascii=False),
-                                 draft["source"], at(2)))
+                # Borrador de plantilla en español con su entrada guardada: un invitado en inglés lo lee en inglés (TD-116).
+                entry = self._report_input(self.db.execute("SELECT * FROM session WHERE id = ?", (s1,)).fetchone())
+                self._store_report(s1, entry, soap.draft(None, entry), at(2))
             return tid
 
     def demo_run(self, _subject, data):
@@ -1137,7 +1227,9 @@ class StagingApi:
             marks = ",".join("?" * len(ids))
             counts = {r["therapist_id"]: r["n"] for r in self.db.execute(
                 f"SELECT therapist_id, COUNT(*) AS n FROM patient WHERE therapist_id IN ({marks}) GROUP BY therapist_id", ids)}
-        return organizations.summary(dict(org), licenses, counts)
+        out = organizations.summary(dict(org), licenses, counts)
+        out["organization"]["plan_label"] = messages.tr(out["organization"]["plan_label"], self.lang())   # TD-116
+        return out
 
     def admin_orgs(self, _admin_id, _data):
         with self.lock:
@@ -1219,7 +1311,9 @@ class StagingApi:
 
     def admin_ai_test(self, _admin_id, data):
         """Una pregunta corta al modelo de AMD, para comprobar la conexión desde la vista de control."""
-        prompt = self._text(data, "prompt", 300, required=False) or "Responde en una frase: ¿qué es la fisioterapia en casa?"
+        prompt = self._text(data, "prompt", 300, required=False) or (
+            "Answer in one sentence: what is physiotherapy at home?" if self.lang() == "en"
+            else "Responde en una frase: ¿qué es la fisioterapia en casa?")
         llm = self._llm("admin-test")
         if llm is None:
             raise ApiError(503, "Sin proveedor de IA: configura AMD Token Factory (AMD_TOKENFACTORY_BASE_URL y AMD_TOKENFACTORY_API_KEY).")
@@ -1257,11 +1351,12 @@ class StagingApi:
         """¿Hay IA de AMD conectada (Token Factory o vLLM propio)? Se consulta el catálogo como mucho cada 30 s."""
         from agents import providers
         if not providers.config():
-            return 200, {"available": False, "provider": None, "reason": "sin proveedor de IA configurado"}
+            return 200, {"available": False, "provider": None, "reason": messages.tr("sin proveedor de IA configurado", self.lang())}
         if time.time() - self._ai["checked"] > 30:
             st = providers.status(timeout=4)
             self._ai.update(checked=time.time(), available=st["available"], provider=st["provider"], reason=st["reason"])
-        return 200, {"available": self._ai["available"], "provider": self._ai.get("provider"), "reason": self._ai.get("reason")}
+        return 200, {"available": self._ai["available"], "provider": self._ai.get("provider"),
+                     "reason": messages.tr(self._ai.get("reason"), self.lang())}
 
     def advice(self, therapist_id, data, patient_id):
         """Resumen con IA de las sugerencias que ya calcularon las reglas. Sin LLM conectado: 503."""
@@ -1276,15 +1371,22 @@ class StagingApi:
         if not self.ai_status(therapist_id, {})[1]["available"]:
             raise ApiError(503, "La IA no está conectada: falta configurar AMD Token Factory en el servidor.")
         from agents import advisor
+        lang = self.lang()
+        # Las sugerencias llegan en el idioma de la interfaz: los nombres se revisan en español y en inglés (TD-116).
+        both = list(dict.fromkeys([*self.names.values(), *self.names_en.values()]))
         text_all = " ".join(f"{s['title']} {s['detail']}" for s in clean)
-        known = [self.names.get(x["exercise_id"], x["exercise_id"]) for x in plan]
-        known += [n for n in self.names.values() if n in text_all]
+        known = [self._names(lang).get(x["exercise_id"], x["exercise_id"]) for x in plan]
+        known += [n for x in plan for n in (self.names.get(x["exercise_id"]), self.names_en.get(x["exercise_id"])) if n]
+        known += [n for n in both if n in text_all]
+        known = list(dict.fromkeys(known))
         llm = self._llm()
         if llm is None:
             raise ApiError(503, "La IA no está conectada: falta configurar AMD Token Factory en el servidor.")
-        out = advisor.summarize(llm, json.loads(p["profile"]) if p["profile"] else None, clean, known)
-        if out.get("text") and advisor.mentions_unknown(out["text"], known, list(self.names.values())):
+        out = advisor.summarize(llm, json.loads(p["profile"]) if p["profile"] else None, clean, known, lang)
+        if out.get("text") and advisor.mentions_unknown(out["text"], known, both):
             out = {"text": None, "source": "rejected", "reason": "el resumen nombra ejercicios que no están en el plan ni en las sugerencias"}
+        if out.get("reason"):
+            out["reason"] = messages.tr(out["reason"], lang)
         return 200, out
 
     def highlight(self, therapist_id, data, patient_id):
@@ -1440,7 +1542,7 @@ class StagingApi:
                                                      "exercise_id": row["exercise_id"], "score": score, "high": high, "at": at})
         message = ("Es un dolor alto: no repitas el ejercicio hoy y avísale a tu fisioterapeuta. Si es un dolor fuerte, te "
                    "mareas o pierdes fuerza, busca atención." if high else "Gracias: tu fisioterapeuta verá cómo terminaste.")
-        return 200, {"session_id": session_id, "pain_score": score, "high": high, "message": message}
+        return 200, {"session_id": session_id, "pain_score": score, "high": high, "message": messages.tr(message, self.lang())}
 
     # ------------------------------------------------------------------ molestias del paciente (ADR-021)
     def _assess_symptom(self, patient_id: int, exercise_id: str | None, option: str | None, text: str | None,
@@ -1514,7 +1616,7 @@ class StagingApi:
                    "demand_lowered": coach.template({"outcome": "applied", "proposal": adjustment}) if adjustment else coach.PAUSE_TEXT,
                    "logged": "Gracias: se lo avisamos a tu fisioterapeuta. Si empeora, no hagas el ejercicio y consúltale."}[action]
         return 201, {"report": report, "action": action, "adjustment": adjustment, "stop": action == "session_stopped",
-                     "message": message}
+                     "message": messages.tr(message, self.lang())}
 
     def publish_live(self, patient_id, data):
         frame = {"kind": "frame", "at": now_iso(), "exercise_id": data.get("exercise_id") if data.get("exercise_id") in self.catalog else None}

@@ -99,7 +99,7 @@
       status.textContent = t('symptom.sending');
       try {
         const res = await root.AxonApi.call('patient', 'POST', '/api/me/discomfort', body);
-        status.textContent = res.message;               // lo escribe el servidor (en español en esta etapa)
+        status.textContent = res.message;               // lo escribe el servidor en el idioma de la página (TD-116)
         form.reset();
         close(true);
         if (opts.onResult) opts.onResult(res);

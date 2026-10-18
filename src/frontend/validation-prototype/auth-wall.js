@@ -35,6 +35,8 @@
   // El motivo puede ser texto ya traducido o una clave del diccionario (p. ej. 'tracking.wall.reason').
   const reasonText = (reason) => (reason && (I18N.has(reason) || I18N.has(reason, I18N.BASE)) ? t(reason) : reason);
   const bodyText = (reason) => t('wall.body', { reason: reasonText(reason) || TEXT.fallback });
+  /** Motivo de un evento `axon:auth-required`. `message` es una frase completa: no sirve para "Para {reason}…". */
+  const reasonOf = (ev) => (ev && ev.detail && typeof ev.detail.reason === 'string' && ev.detail.reason) || null;
 
   let dialog = null;
   function build(doc) {
@@ -112,11 +114,12 @@
   }
 
   if (root.document && root.addEventListener) {
-    root.addEventListener('axon:auth-required', (ev) => open(ev.detail && ev.detail.reason));
+    // api-client.js manda `reason` (la frase del servidor, ya en el idioma de la página); sin ella, el motivo genérico.
+    root.addEventListener('axon:auth-required', (ev) => open(reasonOf(ev)));
     const run = () => guestBar(root.document);
     if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', run);
     else run();
   }
 
-  return { TEXT, ACCOUNT_ROLES, hasAccount, isGuest, require, open, bodyText };
+  return { TEXT, ACCOUNT_ROLES, hasAccount, isGuest, require, open, bodyText, reasonOf };
 }));

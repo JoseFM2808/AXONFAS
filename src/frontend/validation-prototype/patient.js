@@ -243,7 +243,7 @@
     if (!g) return;
     g.symptomIds.push(res.report.id);
     if (res.stop) { endGuided('pain_stop'); return; }
-    speak(res.message);                                   // texto del servidor (en español en esta etapa)
+    speak(res.message);                                   // texto del servidor, en el idioma de la página (TD-116)
     if (res.action === 'paused') startRest();             // tras una molestia, el descanso recomendado
   }
 

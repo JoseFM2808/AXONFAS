@@ -14,9 +14,10 @@
   function previewAs(role, as) { alias[role] = as; }
   const BASE = ((root.AXONFAS_CONFIG && root.AXONFAS_CONFIG.apiBase) || '').replace(/\/$/, '');
   const url = (path) => (/^https?:/.test(path) ? path : `${BASE}${path}`);
-  // Textos de la interfaz (ADR-030): i18n.js se carga antes que este archivo. Los errores que manda el servidor quedan
-  // como vienen (en español en esta etapa).
+  // Textos de la interfaz (ADR-030): i18n.js se carga antes que este archivo. El idioma viaja en Accept-Language y el
+  // servidor redacta en él sus errores, la nota SOAP y FHIR (TD-116): sus textos se muestran tal como llegan.
   const t = (key, vars) => (root.AxonI18n ? root.AxonI18n.t(key, vars) : key);
+  const lang = () => (root.AxonI18n && root.AxonI18n.lang) || 'es';
 
   function load(role) {
     try { return JSON.parse(localStorage.getItem(KEYS[role]) || 'null'); } catch { return null; }
@@ -30,7 +31,7 @@
   }
 
   async function call(role, method, path, body) {
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = { 'Content-Type': 'application/json', 'Accept-Language': lang() };
     const account = role ? load(alias[role] || role) : null;
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
     let res;
@@ -48,8 +49,9 @@
       err.status = res.status;
       err.code = data && data.code;
       // Muro de autenticación diferido (TD-107): lo permanente o clínico pide una cuenta; auth-wall.js lo muestra.
+      // `reason` es la frase que completa su texto ("Para guardar tu progreso…"); `message`, el error completo.
       if (err.code === 'auth_required' && root.dispatchEvent && typeof CustomEvent === 'function') {
-        root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { message: err.message, path } }));
+        root.dispatchEvent(new CustomEvent('axon:auth-required', { detail: { reason: (data && data.reason) || null, message: err.message, path } }));
       }
       throw err;
     }
@@ -66,7 +68,7 @@
         try {
           if (onState) onState('connecting');
           const account = load(alias[role] || role);
-          const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}` }, signal: controller.signal, cache: 'no-store' });
+          const res = await fetch(url(path), { headers: { Authorization: `Bearer ${account && account.token}`, 'Accept-Language': lang() }, signal: controller.signal, cache: 'no-store' });
           if (!res.ok) {
             if (onState) onState('error', res.status);
             if ([401, 403, 404].includes(res.status)) return;

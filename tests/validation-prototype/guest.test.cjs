@@ -94,3 +94,36 @@ test('el Administrador ve la demo pública', () => {
   assert.ok(read('admin.html').includes('id="demo-runs"'));
   assert.ok(read('admin.js').includes("'/api/admin/demo-runs'"));
 });
+
+// TD-116: el cliente manda el idioma de la interfaz y el muro usa el motivo que manda el servidor, nunca el error completo.
+test('api-client manda Accept-Language y pasa al muro el motivo del servidor', async () => {
+  const vm = require('node:vm');
+  const sent = [];
+  const events = [];
+  const ctx = {
+    AxonI18n: { lang: 'en', t: (k) => k },
+    localStorage: { getItem: () => JSON.stringify({ token: 'tok' }), setItem() {}, removeItem() {} },
+    fetch: async (url, opts) => {
+      sent.push(opts.headers);
+      return { ok: false, status: 401, json: async () => ({ error: 'You need an account for this: create yours or sign in with Google.',
+        code: 'auth_required', reason: 'add a patient' }) };
+    },
+    CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init.detail; } },
+    dispatchEvent: (ev) => { events.push(ev); return true; },
+  };
+  ctx.self = ctx;
+  vm.runInNewContext(read('api-client.js'), ctx);
+  await assert.rejects(ctx.AxonApi.call('guest', 'POST', '/api/patients', { alias: 'X' }), (err) => err.code === 'auth_required');
+  assert.equal(sent[0]['Accept-Language'], 'en');
+  assert.equal(events[0].type, 'axon:auth-required');
+  assert.equal(events[0].detail.reason, 'add a patient');
+  assert.equal(W.reasonOf(events[0]), 'add a patient');
+  I18N.use('en');
+  assert.ok(W.bodyText(W.reasonOf(events[0])).includes('To add a patient you need an account'));
+  // Sin motivo (servidor anterior): el texto genérico, nunca la frase completa del error dentro de "To {reason}…".
+  const old = { detail: { message: 'You need an account for this: create yours or sign in with Google.' } };
+  assert.equal(W.reasonOf(old), null);
+  assert.ok(W.bodyText(W.reasonOf(old)).includes('To do this you need an account'));
+  I18N.use('es');
+  assert.ok(read('auth-wall.js').includes("open(reasonOf(ev))"));
+});

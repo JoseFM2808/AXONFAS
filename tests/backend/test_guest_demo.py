@@ -42,7 +42,8 @@ class GuestTest(unittest.TestCase):
         status, me = self.guest.call("GET", "/api/therapists/me")
         self.assertEqual(status, 200)
         self.assertIn("Muestra", me["therapist"]["name"])
-        self.assertEqual([p["alias"] for p in me["patients"]], ["Paciente de muestra"])
+        self.assertEqual([p["alias"] for p in me["patients"]], [staging_api.GUEST_PATIENT_ALIAS])   # en los dos idiomas (TD-116)
+        self.assertIn("Sample patient", staging_api.GUEST_PATIENT_ALIAS)
         pid = me["patients"][0]["id"]
         _, detail = self.guest.call("GET", f"/api/patients/{pid}")
         self.assertEqual(len(detail["sessions"]), 3)
