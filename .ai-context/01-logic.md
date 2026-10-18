@@ -422,7 +422,7 @@ sesiones completadas de los últimos 14 días (`history` de `GET /api/me`). Test
    eventos, flexión media de rodilla (sin calibración), motivo de fin, dolor y el dolor al terminar (EVA, ADR-025).
    Staging todavía no guarda
    `agent_decision` ni `voice_turn`: la nota los recibe vacíos (TD-61, TD-82).
-3. Sin GPU, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
+3. Sin IA configurada, A y P salen de la plantilla y la UI dice "sin IA". El LLM solo se usa si está conectado (`/api/ai/status`).
 4. S y O no se editan. El fisioterapeuta completa A y P y firma: queda `reviewed_by` y `reviewed_at`, y la nota ya no
    cambia (una segunda firma da 409).
 5. "Descargar Observation FHIR (JSON)" baja la `Observation` R4 de la sesión: `preliminary` mientras es borrador y

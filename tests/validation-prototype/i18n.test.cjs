@@ -206,3 +206,23 @@ test('textos de seguridad: urgencias con SAMU 106 y el número del país en los 
   }
   I.use('es');
 });
+
+test('la IA no se atribuye a la GPU donde no corre y el panel no se dice sin nube (TD-34, TD-117)', () => {
+  for (const l of LANGS) {
+    I.use(l);
+    for (const k of ['doctor.tagline', 'doctor.ai.idle', 'doctor.ai.off', 'doctor.ai.nothing', 'doctor.ai.asking',
+      'index.tagline', 'gallery.tagline', 'tracking.tagline']) {
+      const s = I.t(k);
+      assert.ok(!/GPU|MI300X/.test(s) || /No usa (?:IA ni GPU|GPU ni IA)|No (?:AI or GPU|GPU or AI)/.test(s), `${l} ${k}: ${s}`);
+      assert.ok(!/sin conexión|offline|red local|local network/i.test(s), `${l} ${k}: ${s}`);
+    }
+    assert.match(I.t('doctor.ai.idle'), /AMD Token Factory/, `${l}: el resumen nombra a Token Factory`);
+    assert.match(I.t('doctor.tagline'), /^Staging/, l);
+  }
+  I.use('es');
+  // el texto sale de /api/ai/status: sin IA configurada no promete el botón
+  const js = read('doctor.js');
+  assert.match(js, /'doctor\.ai\.off'/);
+  assert.match(js, /'doctor\.ai\.nothing'/);
+  assert.match(js, /'doctor\.ai\.idleOwn'/);
+});

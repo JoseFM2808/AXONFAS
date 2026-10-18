@@ -535,15 +535,21 @@
       actionLabel: t('doctor.suggest.action'),
       onAction: (s) => openPlanEditor(s.action),
     });
-    $('p-ai-text').textContent = t('doctor.ai.idle');
     checkAi();
   }
 
   async function checkAi() {
     if (state.ai == null) {
-      try { state.ai = (await A.call('therapist', 'GET', '/api/ai/status')).available; } catch { state.ai = false; }
+      try {
+        const st = await A.call('therapist', 'GET', '/api/ai/status');
+        state.ai = st.available;
+        state.aiOwn = /vllm/i.test(st.provider || '');
+      } catch { state.ai = false; }
     }
-    $('p-ai-btn').hidden = !state.ai || !state.suggestions.length;
+    // El texto dice lo que pasa de verdad: sin IA configurada no se ofrece; con IA, nombra al proveedor que resume.
+    const ready = state.ai && state.suggestions.length;
+    $('p-ai-text').textContent = t(!state.ai ? 'doctor.ai.off' : !ready ? 'doctor.ai.nothing' : state.aiOwn ? 'doctor.ai.idleOwn' : 'doctor.ai.idle');
+    $('p-ai-btn').hidden = !ready;
   }
 
   $('p-ai-btn').addEventListener('click', async () => {
