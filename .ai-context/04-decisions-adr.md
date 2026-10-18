@@ -37,6 +37,8 @@
 | 029 | 2026-10-18 | Aceptada | Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base |
 | 030 | 2026-10-18 | Aceptada | Idioma de la interfaz según el navegador (español e inglés), con selector manual y sin geolocalización por IP |
 | 031 | 2026-10-18 | Aceptada | Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT |
+| 032 | 2026-10-18 | Aceptada | El servidor escribe en el idioma de la interfaz |
+| 033 | 2026-10-18 | Aceptada | Auditoría UI/UX: cabecera estable, tarjetas que caben en celular, cámara sin deformar y entorno visible |
 
 ---
 
@@ -706,6 +708,31 @@
   - Una nota firmada puede quedar en un idioma distinto del de quien la lee: el panel lo avisa.
   - Los textos que escribió una persona no se traducen.
   - Cierra TD-116, salvo la revisión clínica de la traducción por un fisioterapeuta con inglés nativo (TD-117).
+
+## ADR-033 · Auditoría UI/UX: cabecera estable, tarjetas que caben en celular, cámara sin deformar y entorno visible — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:** el owner reportó cinco problemas de UI/UX. La auditoría, con mediciones en el navegador, los confirmó:
+  - **Menú:** saltaba de una página a otra. Su borde izquierdo iba de 522 a 676 px según el largo del subtítulo y la
+    barra de scroll, y en celular la cabecera fija medía 160–229 px.
+  - **Tarjetas:** en celular medían 920–1.100 px y no entraban en pantalla.
+  - **Cámara:** el cuadro era 16:9 fijo y el canvas tomaba 1280×720 si el video todavía no informaba su tamaño, lo que
+    desalineaba el esqueleto. Además, `camera-setup.js` fallaba en cada frame sin nadie a la vista, porque el parámetro
+    de tiempo `t` tapaba la función de traducción `t`.
+  - **Entorno:** nada distinguía la demo pública de la plataforma clínica.
+- **Decisión:**
+  - Cabecera en grilla (marca | menú | idioma) con `scrollbar-gutter: stable`. El texto de la marca se corta con "…" y
+    la etiqueta del Prototipo se oculta. En celular, la cabecera queda en 100 px con el menú en una fila desplazable.
+  - Tarjetas en celular sin subgrid, con la figura y el mapa lado a lado, la figura apilada y los botones en una fila.
+  - Cámara: `pose-camera.js` espera el tamaño real y lo vuelve a aplicar con `resize`. El cuadro toma `--src-ratio`
+    también en escritorio. En `camera-setup.js` el parámetro pasa a llamarse `now`.
+  - `env-banner.js` con los dos entornos y sus colores de token (ámbar y verde). Los textos van en `i18n/common.js`, en
+    español e inglés.
+- **Consecuencias:**
+  - Mismas medidas de cabecera en las ocho páginas.
+  - axe-core sin violaciones en escritorio, celular y los dos idiomas.
+  - La reestructuración del Home, los nombres del menú, la densidad de las tarjetas en escritorio y los colores del
+    entorno necesitan una decisión del owner (TD-120 a TD-123).
 
 ---
 

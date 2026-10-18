@@ -1189,3 +1189,75 @@ div.eva-card { padding-left: 14px; margin: 12px 0; }
 .guest-entry { display: grid; gap: 10px; }
 .guest-entry .btn { justify-self: start; min-height: 44px; }
 .demo-share { margin-top: 10px; display: grid; gap: 4px; }
+
+/* ==========================================================================
+   AUDITORÍA UI/UX 2026-10-18 (ADR-033): cabecera estable, tarjetas que caben, cámara sin deformar y aviso de entorno
+   ========================================================================== */
+/* Cabecera en grilla: marca | menú | idioma. La marca se encoge (su texto se corta con "…") y el menú queda siempre en el
+   mismo lugar, sin importar el largo del subtítulo de cada página. Ningún estado (hover, foco, actual) cambia medidas. */
+header.top-header { border-bottom-width: 2px; }       /* mismo alto con y sin el color de entorno */
+html { scrollbar-gutter: stable; }                     /* la barra de scroll no corre la página entre una vista y otra */
+header.top-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 16px; row-gap: 8px; }
+.header-brand, .brand-info { min-width: 0; }
+.brand-info h1, .brand-info p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-nav { flex-wrap: nowrap; }
+.top-nav a { white-space: nowrap; display: inline-flex; align-items: center; min-height: 36px;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease; }
+.top-header .header-badge { display: none; }          /* el aviso de entorno (env-banner.js) dice en qué entorno estás */
+.lang-switch { justify-self: end; }
+@media (max-width: 1024px) {                            /* tablet: el menú baja a su propia fila, siempre igual */
+  header.top-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .top-nav { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; scrollbar-width: none; }
+  .top-nav::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 640px) {                             /* celular: cabecera de ~100 px en vez de 160–230 px */
+  header.top-header { padding: 8px 12px; row-gap: 6px; }
+  .header-brand { padding-right: 0; }
+  .brand-info p { display: none; }
+  .lang-switch { position: static; }
+  .top-nav { width: auto; scroll-snap-type: x proximity; padding-bottom: 2px; }
+  .top-nav a { scroll-snap-align: start; padding: 8px 12px; font-size: 0.78rem; }
+}
+
+/* Tarjetas de ejercicio en celular: una columna sin subgrid (no hay otra tarjeta con la que alinear), y la figura y el
+   mapa muscular lado a lado. Pasan de ~1000 px a menos de una pantalla. */
+@media (max-width: 640px) {
+  .card-grid > .ex-card, .card-grid > .ex-card:not(.patient-card) { grid-row: auto; grid-template-rows: none; }
+  .ex-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px; row-gap: 8px; padding: 14px; }
+  .ex-card > * { grid-column: 1 / -1; }
+  .ex-card > .ex-fig { grid-column: 1; align-self: center; }
+  .ex-card > .ex-map { grid-column: 2; align-self: center; }
+  .ex-card > .ex-map .bodymap-svg { max-height: 190px; }
+  .ex-card > .ex-map .bodymap-note, .ex-card > .ex-map .bodymap-view { font-size: 0.7rem; }
+  .ex-card .facts { font-size: 0.8rem; }
+  /* En media columna, la figura apila escena, botón y leyenda a todo el ancho (antes la leyenda iba en 65 px). */
+  .ex-card > .ex-fig .fig { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .ex-card > .ex-fig .fig-cap { grid-column: 1; min-height: 0; font-size: 0.74rem;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .ex-card > .ex-fig .fig-play { justify-self: start; }
+  .ex-card .badge-row { gap: 6px; }
+  .ex-card .badge-row .tag { font-size: 0.66rem; padding: 2px 8px; }
+  .ex-card .dose { font-size: 0.74rem; }
+  .ex-card > .row-between { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .ex-card > .row-between .btn { padding: 8px 10px; font-size: 0.8rem; min-height: 44px; }
+  .ex-card > .row-between > :only-child { grid-column: 1 / -1; }
+}
+
+/* Cámara: el cuadro toma la forma real de la cámara también en escritorio (4:3, 16:9 o vertical), centrado y sin pasar
+   del 75 % de la altura. El video y el esqueleto usan el mismo `contain`, así que no se deforman ni se desalinean. */
+.viewport.mirror { aspect-ratio: var(--src-ratio, 16 / 9); max-height: 75svh; margin-inline: auto; }
+.viewport > video { background: var(--stage); }
+
+/* Aviso de entorno (env-banner.js): Demo pública en ámbar, Plataforma clínica en verde. La línea de la cabecera repite el
+   color para que se note en cualquier página. */
+:root[data-env="demo"] header.top-header { border-bottom: 2px solid var(--hold); }
+:root[data-env="clinical"] header.top-header { border-bottom: 2px solid var(--safe); }
+.env-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 16px; padding: 10px 14px;
+  border-radius: var(--radius-sm); border-left: 4px solid currentColor; font-size: 0.9rem; line-height: 1.45; }
+.env-banner .env-label { font: 800 0.72rem var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.env-banner .env-text { flex: 1 1 18rem; color: var(--ink); }
+.env-banner .btn { min-height: 40px; }
+.env-banner.env-demo { color: var(--hold); background: var(--hold-soft); }
+.env-banner.env-clinical { color: var(--safe); background: var(--safe-soft); }
+:root[data-env="demo"] .guest-bar { border-left-color: var(--hold); background: var(--hold-soft); }
