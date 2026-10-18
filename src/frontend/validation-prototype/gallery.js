@@ -48,10 +48,12 @@
     let guide = null;
     if (window.AxonGuide && AxonGuide.GUIDES[e.id]) {
       guide = document.createElement('div');
+      guide.className = 'ex-fig';                           // en celular, la figura y el mapa van lado a lado (hud.css)
       const holdS = hold == null ? e.dose.hold : hold;
       queueMicrotask(() => AxonGuide.render(guide, e.id, { hold: holdS, variant: 'card', autoplay: 'visible' }));
     }
     const map = document.createElement('div');
+    map.className = 'ex-map';
     const dose = document.createElement('p');
     dose.className = 'dose';
     dose.textContent = doseText || e.dose.text;

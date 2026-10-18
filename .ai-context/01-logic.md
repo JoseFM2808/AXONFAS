@@ -244,6 +244,28 @@ vale sobre la muestra y tiene un tope de 60 por hora para todos los invitados ju
 Con una cuenta de verdad, el modo invitado termina y `login.html?next=` vuelve a la página que pidió la cuenta (solo un nombre
 de página local).
 
+## Entorno visible y diseño responsivo (ADR-033)
+
+Cada página dice en qué entorno estás (`env-banner.js`), con un aviso arriba del contenido y el color de la línea de la
+cabecera:
+
+| Entorno | Cuándo | Cómo se ve |
+|---|---|---|
+| Demo pública | Sin cuenta, o como invitado, en cualquier página; también con una cuenta en una página que no es la suya | Ámbar (`--hold`): "Demo pública · Estás probando AXONFAS sin cuenta, con datos de muestra" y "Entrar o crear cuenta". El invitado conserva su barra (ADR-028), pintada en ámbar, sin un segundo aviso |
+| Plataforma clínica | Con la cuenta de esa página (fisioterapeuta, paciente, administración, empresa) o con el plan del paciente (`?plan=`) | Verde (`--safe`): "Plataforma clínica · Sesión de {rol}. Entorno de pruebas con datos sintéticos" |
+| Neutro | `login.html` | Sin aviso |
+
+Reglas de diseño que fijó la auditoría (Modern Web Guidance; se miden en 375, 768 y 1280 px):
+
+- **Cabecera estable:** grilla marca | menú | idioma. La marca se corta con "…", el menú no se parte y ningún estado
+  (hover, foco, página actual) cambia medidas. `scrollbar-gutter: stable` evita el salto de 15 px entre páginas cortas
+  y largas. En celular, la cabecera mide 100 px y el menú se desplaza en una fila.
+- **Tarjetas que caben:** en celular, una tarjeta de ejercicio entra entera en la pantalla (568–664 px de 712 visibles),
+  con la figura y el mapa muscular lado a lado y los botones en una fila.
+- **Cámara sin deformar:** el canvas mide lo mismo que el video. Se espera el tamaño real y se rehace al girar el celular
+  (`resize`). El cuadro toma la forma de la cámara también en escritorio (4:3, 16:9 o vertical), centrado y hasta el 75 %
+  de la altura.
+
 ## Tutorial y rutina sin cámara (ADR-029)
 
 | Paso | Regla (`practice.js`, `seguimiento.js`) |

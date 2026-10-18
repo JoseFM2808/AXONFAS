@@ -53,6 +53,22 @@
     return TEXT.failed;
   }
 
+  /** Espera (hasta ~1,5 s) a que el video informe su tamaño real. */
+  async function whenSized(video, tries = 30) {
+    for (let i = 0; i < tries && !(video.videoWidth && video.videoHeight); i += 1) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  /** Canvas con el tamaño del video y el cuadro con su forma (--src-ratio): video y esqueleto quedan alineados. */
+  function sizeTo(video, canvas, viewport) {
+    const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    viewport.style.setProperty('--src-ratio', `${w} / ${h}`);
+    return { w, h };
+  }
+
   /**
    * Abre el modelo y la cámara y ajusta el lienzo a la forma del video (vertical en celular), espejado.
    * opts: video, canvas, viewport, status(texto), unsupported (qué decir si el navegador no permite la cámara aquí) y
@@ -83,9 +99,12 @@
     }
     video.srcObject = stream;
     await video.play();
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
-    viewport.style.setProperty('--src-ratio', `${canvas.width} / ${canvas.height}`);
+    // El canvas tiene que medir lo mismo que el video: si no, el esqueleto sale desplazado o estirado. Algunos navegadores
+    // (Safari, Firefox) informan el tamaño un poco después de play(); y al girar el celular el video cambia de forma.
+    await whenSized(video);
+    const fit = () => sizeTo(video, canvas, viewport);
+    fit();
+    video.onresize = fit;                                   // una sola vez aunque se vuelva a abrir la cámara
     viewport.classList.add('mirror');
     say(TEXT.active);
     return createRun({ landmarker, stream, video });
@@ -140,5 +159,5 @@
     };
   }
 
-  return { MP_VERSION, MODEL_URL, TEXT, loadLandmarker, open, createRun, cameraError };
+  return { MP_VERSION, MODEL_URL, TEXT, loadLandmarker, open, createRun, cameraError, sizeTo, whenSized };
 }));

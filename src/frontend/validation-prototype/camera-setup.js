@@ -137,20 +137,20 @@
   }
 
   /**
-   * Chequeo en vivo: update(image, t, aspect) → { frame, det, view, quality, matches, progress, ready }. Está listo
+   * Chequeo en vivo: update(image, now, aspect) → { frame, det, view, quality, matches, progress, ready }. Está listo
    * cuando el encuadre se mantiene bien `stableMs` seguidos.
    */
   function createCheck({ measures, need, chosen, stableMs = 1500 }) {
     let okSince = null;
     let last = null;
     return {
-      update(image, t, aspect) {
+      update(image, now, aspect) {                  // `now`, no `t`: `t` es la traducción (sin cámara, fallaba en cada frame)
         const frame = image ? checkFrame(image, need) : { ok: false, missing: [t('camera.part.all')], distance: 'ok', extent: 0 };
         const det = image ? detectView(image, aspect) : null;
         const view = det ? det.view : null;
         const good = frame.ok && Boolean(view);
-        if (good) { if (okSince == null) okSince = t; } else okSince = null;
-        const progress = good ? Math.min(1, (t - okSince) / stableMs) : 0;
+        if (good) { if (okSince == null) okSince = now; } else okSince = null;
+        const progress = good ? Math.min(1, (now - okSince) / stableMs) : 0;
         last = { frame, det, view, quality: view ? qualityOf(measures, view) : [], matches: view === chosen,
           progress, ready: good && progress >= 1 };
         return last;
