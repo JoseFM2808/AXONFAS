@@ -60,9 +60,9 @@ datos, decisiones (ADRs, hasta el ADR-022 aceptado) y pendientes. Los agentes de
 
 ## Licencias
 
-El código de AXONFAS todavía no tiene archivo de licencia: la regla de la entrega pide que sea compatible con MIT y el
-owner decide si se agrega `LICENSE` (MIT) en la raíz. Estas son las licencias de lo que usa el proyecto (según la ficha
-de cada modelo o proyecto, revisado 2026-10-17; pendiente de confirmar en las fichas oficiales, TD-26):
+El código de AXONFAS se publica con licencia MIT ([LICENSE](LICENSE), desde el 2026-10-18; la regla de la entrega pide
+que sea compatible con MIT). Estas son las licencias de lo que usa el proyecto (según la ficha de cada modelo o
+proyecto, revisado 2026-10-17; pendiente de confirmar en las fichas oficiales, TD-26):
 
 | Componente | Para qué | Licencia | Dónde |
 |---|---|---|---|

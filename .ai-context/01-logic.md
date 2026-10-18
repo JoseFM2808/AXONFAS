@@ -126,7 +126,7 @@ Resumen de lo que el código nunca puede violar. Cada uno sale de las secciones 
 | I-18 | El dolor al terminar (EVA) lo marca solo el paciente, una vez por sesión. No detiene ni cambia el plan y ningún LLM decide con él; ante dolor agudo, mareo o pérdida de fuerza vale I-7 | ADR-025 |
 | I-19 | La administración de una organización (Nivel 3) solo ve su plan, sus licencias y cuántos pacientes atiende cada profesional: nunca sesiones, notas, molestias ni alias de pacientes. La dirección FHIR de su historia clínica es https y nunca lleva credenciales | ADR-026 |
 | I-20 | Una sesión sin cámara la marca el servidor (`no_camera`, por `source = 'guided'`) y no lleva métricas cinemáticas ni eventos. El panel, la nota SOAP y FHIR lo dicen siempre con el mismo texto | ADR-029 |
-| I-21 | El invitado solo mira: lo permanente o clínico responde `auth_required` y pide una cuenta. La demo pública guarda solo números anónimos que nadie más que el Administrador lee | ADR-028 |
+| I-21 | El invitado solo mira (la única excepción es pedir el resumen con IA del paciente de muestra, que no guarda nada y tiene un tope por hora): lo permanente o clínico responde `auth_required` y pide una cuenta. La demo pública guarda solo números anónimos que nadie más que el Administrador lee | ADR-028, ADR-031 |
 | I-22 | Los textos de seguridad (descargo, banderas rojas, urgencias, alertas y dolor) dicen lo mismo en todos los idiomas, y las urgencias citan el SAMU (106) y el número de emergencias del país. El idioma se decide en el navegador: nunca se manda la IP ni otro dato a un tercero para saber la región | ADR-030, ADR-003 |
 
 ## Reglas de seguridad de la pista Health and Wellbeing
@@ -218,6 +218,10 @@ pinta en `--alert` los segmentos que compensan y agrega una guía de corrección
 Solo dibuja: la alerta sale del motor de reglas (I-1). No escribe texto en el canvas, porque el espejo lo invertiría.
 
 ## Invitado, muro de autenticación y demo pública (ADR-028)
+
+Para que los jueces vean la IA de AMD sin crear cuenta, el invitado puede pedir el resumen con IA del paciente de muestra
+(perfil sintético: rodilla con dolor y equilibrio). Es la única escritura permitida al invitado: no guarda nada, solo
+vale sobre la muestra y tiene un tope de 60 por hora para todos los invitados juntos (ADR-031).
 
 | Pieza | Regla | Valor de partida (TD-113) |
 |---|---|---|
@@ -465,7 +469,7 @@ ejercicios ajenos a los datos.
 | Fisioterapeuta | Cuenta de Google nueva que elige "Soy fisioterapeuta", o una cuenta que el Administrador deja como fisioterapeuta; también la cuenta de demostración | `doctor.html` |
 | Paciente | Cuenta de Google nueva con el código de su fisioterapeuta y el consentimiento; también el código sin cuenta (demostración) | `paciente.html` |
 | Pendiente | Cuenta de Google nueva que todavía no eligió | `login.html` para elegir |
-| Invitado | "Ingresar como invitado" en `login.html`, sin registro (ADR-028) | Galería, demo y `doctor.html` con el consultorio de muestra (datos sintéticos, solo lectura). Lo permanente abre el muro (I-21) |
+| Invitado | "Ingresar como invitado" en `login.html`, sin registro (ADR-028) | Galería, demo y `doctor.html` con el consultorio de muestra (datos sintéticos, solo lectura; puede pedir el resumen con IA de la muestra, ADR-031). Lo permanente abre el muro (I-21) |
 | Empresa (Nivel 3) | Correo de administración de una organización que creó el Administrador (ADR-026) | `empresa.html`: plan, licencias, pacientes por profesional y dirección FHIR. Sin datos clínicos (I-19) |
 
 Una cuenta desactivada no puede entrar y pierde sus tokens. Con `AXONFAS_DEMO_ACCOUNTS=0` solo se entra con Google.

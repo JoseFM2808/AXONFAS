@@ -204,7 +204,9 @@ flowchart LR
 
 - **IA:** Token Factory expone `https://developer.amd.com.cn/radeon/api/v1` (compatible con OpenAI). La clave es una
   por equipo con límites por clave, así que `llm.py` reintenta dos veces ante 429 (respeta `Retry-After`, máximo 5 s) y
-  `providers.py` nunca elige solo un modelo que no conversa (OCR, embeddings). Modelo sugerido: `DeepSeek-V4-Flash`.
+  `providers.py` nunca elige solo un modelo que no conversa (OCR, embeddings). `AMD_TOKENFACTORY_MODEL` acepta varios
+  modelos en orden de preferencia: hoy `DeepSeek-V4-Flash,Gemma-4-31B-IT` (DeepSeek responde más rápido; si falla o se
+  pasa del tiempo, responde Gemma; ADR-031). El contador de uso registra qué modelo respondió (`by_model`).
 - **Configuración:** `src/backend/settings.py` lee variables de entorno y, en una PC, `~/.axonfas/axonfas.env`.
   Plantillas en `config/.env.web.example` (servidor) y `config/.env.vercel.example` (web). Los secretos nunca van al
   repo.

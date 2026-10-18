@@ -36,6 +36,7 @@
 | 028 | 2026-10-18 | Aceptada | Invitado sin registro, muro de autenticación diferido y demo pública con datos solo para el Administrador |
 | 029 | 2026-10-18 | Aceptada | Tutorial "Mira y sigue" antes de la cámara y rutina sin cámara marcada en la base |
 | 030 | 2026-10-18 | Aceptada | Idioma de la interfaz según el navegador (español e inglés), con selector manual y sin geolocalización por IP |
+| 031 | 2026-10-18 | Aceptada | Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT |
 
 ---
 
@@ -656,6 +657,28 @@
   - Un texto nuevo de la interfaz necesita su clave en los dos idiomas. Los tests revisan que es y en tengan las mismas
     claves y que cada `data-i18n` y cada `t()` existan.
   - La traducción al inglés la hizo el equipo, no un fisioterapeuta nativo. Se valida antes de Producción (TD-116).
+
+## ADR-031 · Gemma como alternativa de DeepSeek en Token Factory, el invitado ve el resumen con IA y licencia MIT — Aceptada
+
+- **Fecha:** 2026-10-18
+- **Contexto:** a horas del cierre, la revisión contra las bases del hackathon dejó tres cosas:
+  - La página reserva el premio de Google para proyectos que usen Gemma, y Token Factory ofrece `Gemma-4-31B-IT`.
+  - Los jueces no veían la IA de AMD sin crear una cuenta: el invitado (ADR-028) no podía pedir nada que la usara.
+  - Las entregas tienen que ser "MIT-compliant" y el repo no tenía licencia (TD-26).
+  - El owner pidió sumar Gemma como alternativa y usar primero el modelo que responda más rápido.
+- **Decisión:**
+  - `AMD_TOKENFACTORY_MODEL` acepta una lista en orden de preferencia: `DeepSeek-V4-Flash,Gemma-4-31B-IT`.
+    `MeteredLLM` prueba en orden y, si un modelo falla o se pasa del tiempo, responde el siguiente.
+  - Medido el 2026-10-18 con 5 llamadas cortas a cada modelo: mediana de 7,4 s para DeepSeek y 10,2 s para Gemma.
+    Gemma pasó el turno del agente clínico (propuesta del LLM, dentro del sobre, `applied`).
+  - El invitado puede hacer `POST /api/patients/{id}/advice` solo sobre el paciente de muestra, que trae un perfil
+    sintético, con un tope de 60 llamadas por hora para todos los invitados juntos. No guarda nada.
+  - `LICENSE` MIT en la raíz, aprobado por el owner y sumado a los archivos raíz permitidos de CLAUDE.md.
+- **Consecuencias:**
+  - Sigue siendo solo IA de AMD (ADR-018, I-15). Si DeepSeek se cae o se demora, la app sigue con Gemma.
+  - El peor caso suma los dos tiempos de espera.
+  - El tope protege la clave compartida del equipo; con más uso público, la medida es por IP (TD-114).
+  - Cierra TD-26.
 
 ---
 

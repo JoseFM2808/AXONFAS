@@ -141,6 +141,11 @@ PAIN_HIGH = 7
 NO_CAMERA_REASONS = {"declined", "denied", "unavailable", "guided_view"}
 # Demo pública (TD-108): tope de resultados anónimos por hora, contra el abuso. Valor de partida.
 DEMO_RUNS_PER_HOUR = 500
+# Invitado (ADR-031): puede pedir el resumen con IA del paciente de muestra, con un tope por hora para todos juntos.
+GUEST_AI_PATH = re.compile(r"/api/patients/\d+/advice")
+GUEST_AI_PER_HOUR = 60
+GUEST_PROFILE = {"limitations": ["balance"], "pain_areas": ["knee"], "note": "Perfil sintético de muestra.",
+                 "updated_at": "2026-10-18T00:00:00+00:00"}
 DEFAULT_TRACKER = Path(__file__).resolve().parents[1] / "frontend" / "validation-prototype" / "tracker.js"
 
 
@@ -473,7 +478,7 @@ class StagingApi:
                     if role == "*":
                         subject = self._who(headers)
                     else:
-                        subject = self._auth(headers, role, method) if role else None
+                        subject = self._auth(headers, role, method, path) if role else None
                     return fn(subject, data, *[int(g) for g in match.groups()])
             if any(re.fullmatch(p, path) for _, p, _, _ in self.routes):
                 raise ApiError(405, "Método no permitido.")
@@ -485,7 +490,7 @@ class StagingApi:
         except sqlite3.Error:
             return 500, {"error": "Error interno de la base de Staging."}
 
-    def _auth(self, headers, role: str, method: str = "GET") -> int:
+    def _auth(self, headers, role: str, method: str = "GET", path: str = "") -> int:
         value = (headers.get("Authorization") or "").strip()
         if not value.startswith("Bearer "):
             raise ApiError(401, "Falta el token. Vuelve a entrar.")
@@ -496,6 +501,11 @@ class StagingApi:
         if row["role"] == "guest" and role != "guest":
             # Invitado (TD-106): mira la interfaz clínica de muestra, solo lectura. Lo permanente pide cuenta (TD-107).
             if role == "therapist" and method == "GET":
+                return self._guest_sandbox()
+            # Única escritura permitida: pedir el resumen con IA de la muestra, para ver la IA de AMD sin cuenta (ADR-031).
+            # No guarda nada y tiene un tope por hora para todos los invitados juntos.
+            if role == "therapist" and method == "POST" and GUEST_AI_PATH.fullmatch(path):
+                self._guest_ai_quota()
                 return self._guest_sandbox()
             raise ApiError(401, "Para esto necesitas una cuenta: crea la tuya o entra con Google.", code="auth_required")
         if row["role"] != role:
@@ -1002,12 +1012,24 @@ class StagingApi:
             token = self._token("guest", cur.lastrowid)
         return 201, {"role": "guest", "token": token}
 
+    def _guest_ai_quota(self) -> None:
+        now = time.monotonic()
+        with self.lock:
+            calls = [t for t in getattr(self, "_guest_ai_calls", []) if now - t < 3600]
+            if len(calls) >= GUEST_AI_PER_HOUR:
+                self._guest_ai_calls = calls
+                raise ApiError(429, "Los invitados ya usaron la IA muchas veces en la última hora. Prueba más tarde o crea tu cuenta.")
+            self._guest_ai_calls = calls + [now]
+
     def _guest_sandbox(self) -> int:
         """Consultorio de muestra compartido por todos los invitados (solo lectura): un fisioterapeuta, un paciente con
         seudónimo, su plan y tres sesiones sintéticas (ADR-010). Se crea una vez y se reutiliza."""
         with self.lock:
             row = self.db.execute("SELECT value FROM app_meta WHERE key = 'guest_sandbox'").fetchone()
             if row and self.db.execute("SELECT 1 FROM therapist WHERE id = ?", (int(row["value"]),)).fetchone():
+                with self.db:                              # muestras creadas antes de ADR-031: ganan el perfil sintético
+                    self.db.execute("UPDATE patient SET profile = ? WHERE therapist_id = ? AND profile IS NULL",
+                                    (json.dumps(GUEST_PROFILE), int(row["value"])))
                 return int(row["value"])
             from agents import soap
             now = datetime.now(timezone.utc)
@@ -1015,8 +1037,9 @@ class StagingApi:
             with self.db:
                 tid = self.db.execute("INSERT INTO therapist (name, created_at) VALUES (?, ?)",
                                       ("Muestra para invitados (datos sintéticos)", at(10))).lastrowid
-                pid = self.db.execute("INSERT INTO patient (therapist_id, alias, consent_given, joined_at, created_at) "
-                                      "VALUES (?, 'Paciente de muestra', 1, ?, ?)", (tid, at(9), at(10))).lastrowid
+                pid = self.db.execute("INSERT INTO patient (therapist_id, alias, consent_given, joined_at, created_at, profile) "
+                                      "VALUES (?, 'Paciente de muestra', 1, ?, ?, ?)",
+                                      (tid, at(9), at(10), json.dumps(GUEST_PROFILE))).lastrowid
                 plan = [("sit-to-stand", 1, 10, 0, 3, json.dumps({"trunk_margin": 15, "valgus_margin": 10, "max_reps": 10})),
                         ("half-squat", 2, 8, 0, 3, json.dumps({}))]
                 for ex_id, sets, reps, hold, per_week, env in plan:

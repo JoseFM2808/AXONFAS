@@ -4,7 +4,9 @@ Orden de preferencia:
   1. AMD Token Factory (catálogo de modelos hospedado por AMD, API compatible con OpenAI):
        AMD_TOKENFACTORY_BASE_URL   https://developer.amd.com.cn/radeon/api/v1 (la que indica el manual de Token Factory)
        AMD_TOKENFACTORY_API_KEY    la clave del equipo (rc-…) de la página de Token Factory (secreto: solo en el entorno)
-       AMD_TOKENFACTORY_MODEL      un id del catálogo, p. ej. DeepSeek-V4-Flash; vacío = el primer modelo de chat de GET /models
+       AMD_TOKENFACTORY_MODEL      un id del catálogo, o varios separados por comas en orden de preferencia, p. ej.
+                                   "DeepSeek-V4-Flash,Gemma-4-31B-IT": si uno falla o se pasa del tiempo, responde el
+                                   siguiente; vacío = el primer modelo de chat de GET /models
   2. vLLM propio en una MI300X de AMD Developer Cloud (ADR-016): AXONFAS_LLM_URL, AXONFAS_LLM_KEY, AXONFAS_LLM_MODEL.
 Sin ninguno, no hay IA: quien llama lo dice en pantalla y sigue con las reglas (TD-34). Nunca se usa otro proveedor.
 
@@ -54,8 +56,8 @@ def chat_models(ids: list[str]) -> list[str]:
 
 
 def _pick_model(cfg: dict, timeout: float) -> str:
-    if cfg["model"]:
-        return cfg["model"]
+    if model_list(cfg):
+        return model_list(cfg)[0]
     cached = _model_cache.get(cfg["url"])
     if cached:
         return cached
@@ -66,31 +68,44 @@ def _pick_model(cfg: dict, timeout: float) -> str:
     return ids[0]
 
 
-class MeteredLLM:
-    """El cliente real más el contador de uso. `purpose` agrupa el uso (clinical, coach, soap, advice, admin-test…)."""
+def model_list(cfg: dict) -> list[str]:
+    """Los modelos configurados, en orden de preferencia (el primero es el principal; los demás, alternativas)."""
+    return [m.strip() for m in (cfg.get("model") or "").split(",") if m.strip()]
 
-    def __init__(self, inner: OpenAICompatible, provider: str, purpose: str = "general"):
-        self.inner, self.provider, self.purpose = inner, provider, purpose
-        self.model = inner.model
+
+class MeteredLLM:
+    """El cliente real más el contador de uso. `purpose` agrupa el uso (clinical, coach, soap, advice, admin-test…).
+    Con varios modelos, si uno falla o se pasa del tiempo responde el siguiente; `model` dice cuál respondió."""
+
+    def __init__(self, inner: OpenAICompatible | list[OpenAICompatible], provider: str, purpose: str = "general"):
+        self.chain = inner if isinstance(inner, list) else [inner]
+        self.inner, self.provider, self.purpose = self.chain[0], provider, purpose
+        self.model = self.inner.model
 
     def chat(self, messages: list[dict], **kwargs) -> dict:
-        try:
-            out = self.inner.chat(messages, **kwargs)
-        except LLMError as err:
+        last = None
+        for inner in self.chain:
+            try:
+                out = inner.chat(messages, **kwargs)
+            except LLMError as err:
+                last = err
+                with USAGE_LOCK:
+                    USAGE["calls"] += 1
+                    USAGE["errors"] += 1
+                    USAGE["last_error"] = f"{inner.model}: {str(err)[:280]}"
+                    USAGE["last_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                continue
+            self.model = inner.model
             with USAGE_LOCK:
                 USAGE["calls"] += 1
-                USAGE["errors"] += 1
-                USAGE["last_error"] = str(err)[:300]
+                USAGE["prompt_tokens"] += out.get("prompt_tokens") or 0
+                USAGE["completion_tokens"] += out.get("completion_tokens") or 0
+                USAGE["ms_total"] += out.get("ms") or 0
                 USAGE["last_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-            raise
-        with USAGE_LOCK:
-            USAGE["calls"] += 1
-            USAGE["prompt_tokens"] += out.get("prompt_tokens") or 0
-            USAGE["completion_tokens"] += out.get("completion_tokens") or 0
-            USAGE["ms_total"] += out.get("ms") or 0
-            USAGE["last_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-            USAGE["by_purpose"][self.purpose] = USAGE["by_purpose"].get(self.purpose, 0) + 1
-        return out
+                USAGE["by_purpose"][self.purpose] = USAGE["by_purpose"].get(self.purpose, 0) + 1
+                USAGE.setdefault("by_model", {})[inner.model] = USAGE.setdefault("by_model", {}).get(inner.model, 0) + 1
+            return {**out, "model": inner.model}
+        raise last
 
 
 def client(purpose: str = "general", timeout: float = 30.0) -> MeteredLLM | None:
@@ -98,8 +113,9 @@ def client(purpose: str = "general", timeout: float = 30.0) -> MeteredLLM | None
     cfg = config()
     if not cfg:
         return None
-    model = _pick_model(cfg, timeout)
-    return MeteredLLM(OpenAICompatible(url=cfg["url"], key=cfg["key"], model=model, timeout=timeout), cfg["name"], purpose)
+    models = model_list(cfg) or [_pick_model(cfg, timeout)]
+    return MeteredLLM([OpenAICompatible(url=cfg["url"], key=cfg["key"], model=m, timeout=timeout) for m in models],
+                      cfg["name"], purpose)
 
 
 def status(timeout: float = 5.0) -> dict:
@@ -111,12 +127,13 @@ def status(timeout: float = 5.0) -> dict:
         ids = OpenAICompatible(url=cfg["url"], key=cfg["key"], model="-", timeout=timeout).models()
     except LLMError as err:
         return {"available": False, "provider": cfg["label"], "model": cfg["model"] or None, "models": [], "reason": str(err)}
-    model = cfg["model"] or next(iter(chat_models(ids)), None)
-    ok = bool(model) and (not ids or model in ids)
-    return {"available": ok, "provider": cfg["label"], "model": model, "models": ids[:50],
-            "reason": None if ok else f"el modelo {model!r} no está en el catálogo"}
+    chosen = model_list(cfg) or [m for m in [next(iter(chat_models(ids)), None)] if m]
+    missing_ids = [m for m in chosen if ids and m not in ids]
+    ok = bool(chosen) and not missing_ids
+    return {"available": ok, "provider": cfg["label"], "model": chosen[0] if chosen else None, "fallback": chosen[1:],
+            "models": ids[:50], "reason": None if ok else f"el modelo {missing_ids[0]!r} no está en el catálogo"}
 
 
 def usage() -> dict:
     with USAGE_LOCK:
-        return {**USAGE, "by_purpose": dict(USAGE["by_purpose"])}
+        return {**USAGE, "by_purpose": dict(USAGE["by_purpose"]), "by_model": dict(USAGE.get("by_model") or {})}
