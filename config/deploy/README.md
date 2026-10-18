@@ -41,14 +41,16 @@ ahí "Probar el modelo" confirma que Token Factory responde.
 
 ## 2 · Forma A: todo en la nube de AMD
 
-Requisitos: `doctl` con un token de escritura en el contexto `amd-write` y la llave `~/.ssh/axonfas_amd` (ver
+Requisitos: `doctl` con un token de **acceso completo** en el contexto `amd-write` (uno de solo lectura da 403 al subir
+la llave) y la llave `~/.ssh/axonfas_amd` (ver
 `src/backend/README.md`). Crear el droplet cuesta unos USD 0,009 por hora hasta destruirlo.
 
 ```bash
 .\src\backend\cloud\axonfas-cloud.ps1 web-up -Yes
 ```
 
-Espera 2–3 minutos (cloud-init instala Docker y clona el repo) y agrega a los orígenes de Google el dominio que
+Se crea en `sfo2` (`-WebRegion`), porque `s-1vcpu-1gb` no existe en `atl1`. Espera 2–3 minutos (cloud-init instala
+Docker y clona el repo) y agrega a los orígenes de Google el dominio que
 imprime (`https://<ip>.sslip.io`). Después:
 
 ```bash

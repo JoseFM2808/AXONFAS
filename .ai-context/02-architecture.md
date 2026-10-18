@@ -213,7 +213,8 @@ flowchart LR
     raíz, `vercel.json`.
   - `serve.py --cloud` escucha en `$PORT` sin HTTPS propio ni QR, y responde a CORS para los orígenes de
     `AXONFAS_CORS_ORIGINS`.
-  - El ciclo del droplet web lo hace `axonfas-cloud.ps1` (`web-up -Yes`, `web-deploy`, `web-down -Yes`).
+  - El ciclo del droplet web lo hace `axonfas-cloud.ps1` (`web-up -Yes`, `web-deploy`, `web-down -Yes`), en `sfo2` por
+    defecto (`-WebRegion`: `s-1vcpu-1gb` no existe en `atl1`). Publicado en `https://167-71-116-13.sslip.io` (TD-71).
   - Guía paso a paso en `config/deploy/README.md`.
 
 ## Entornos

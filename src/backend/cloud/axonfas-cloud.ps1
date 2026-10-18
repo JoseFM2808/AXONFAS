@@ -47,6 +47,7 @@ param(
   [int]$Duration = 60,
   [switch]$Snapshot,
   [string]$WebSize = 's-1vcpu-1gb',
+  [string]$WebRegion = 'sfo2',                         # s-1vcpu-1gb no existe en atl1 (sí en sfo2, ams3, fra1, lon1, sgp1, blr1)
   [string]$EnvFile = (Join-Path $HOME '.axonfas\axonfas.env'),
   [switch]$Yes
 )
@@ -259,8 +260,8 @@ switch ($Command) {
       } catch { Write-Warning "Sin firewall de la nube: $_. El droplet igual activa ufw (22, 80, 443) con cloud-init." }
     }
     $init = Join-Path $Root 'config\deploy\cloud-init.yml'
-    Write-Host "Creando $WebName ($WebSize, $Region, Ubuntu 24.04 + Docker)…"
-    $d = Get-DoctlJson compute droplet create $WebName --region $Region --size $WebSize --image ubuntu-24-04-x64 `
+    Write-Host "Creando $WebName ($WebSize, $WebRegion, Ubuntu 24.04 + Docker)…"
+    $d = Get-DoctlJson compute droplet create $WebName --region $WebRegion --size $WebSize --image ubuntu-24-04-x64 `
       --ssh-keys $keyId --tag-names $WebTag --user-data-file $init --wait
     $ip = Get-Ip $d[0]
     Write-Host "Listo: $WebName  IP $ip"
