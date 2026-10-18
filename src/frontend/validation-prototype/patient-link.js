@@ -19,6 +19,7 @@
   let inFlight = false;
   let saved = false;
   let symptomIds = [];
+  let turnIds = [];
 
   const banner = document.createElement('section');
   banner.className = 'panel-card';
@@ -26,6 +27,20 @@
   banner.innerHTML = '<h2>Modo paciente</h2><p id="pl-text" class="muted">Cargando tu plan…</p><div id="symptom-index"></div>';
   document.querySelector('.wrap').prepend(banner);
   const text = (msg) => { $('pl-text').textContent = msg; };
+
+  // TD-34: en modo paciente la página sí habla con el servidor, así que sus textos de prototipo aislado ya no serían verdad.
+  // Las alertas de postura siguen siendo reglas fijas de este navegador; la molestia la revisan las reglas del servidor y,
+  // si está conectada, la IA de AMD Token Factory (el turno dice en pantalla cuál respondió).
+  const chip = $('chip-status');
+  if (chip) chip.textContent = 'Modo paciente · alertas con reglas en este navegador';
+  const lead = document.querySelector('.header-brand .brand-info p');
+  if (lead) lead.textContent = 'Las alertas salen de reglas fijas en este navegador. Si avisas una molestia, la revisan las reglas del '
+    + 'servidor y, si está conectada, la IA de AMD Token Factory.';
+  const foot = document.querySelector('footer');
+  if (foot) foot.textContent = 'AXONFAS · prototipo de validación en modo paciente. La pose se estima en este navegador con MediaPipe y '
+    + 'las alertas salen de reglas fijas (ADR-004), con los umbrales que fija el fisioterapeuta. El video no sale del equipo (ADR-003). '
+    + 'Si avisas una molestia, la revisan las reglas del servidor y, si está conectada, la IA de AMD Token Factory. '
+    + 'No es un dispositivo médico.';
 
   function setLocked(id, value) {
     const el = $(id);
@@ -45,6 +60,7 @@
     source = e.detail.source;
     saved = false;
     symptomIds = [];
+    turnIds = [];
   });
 
   window.addEventListener('axon:frame', (e) => {
@@ -76,6 +92,7 @@
         exercise_id: exerciseId, mode: 'monitored', source: d.source === 'camera' ? 'camera' : 'demo',
         started_at: startedAt || d.endedAt, ended_at: d.endedAt, end_reason: d.endReason, reps_done: d.reps.length,
         baseline: d.baseline || undefined, reps: d.reps, events: d.events, symptom_report_ids: symptomIds,
+        voice_turn_ids: turnIds,
       });
       text(`Sesión guardada y enviada a tu fisioterapeuta (${d.reps.length} repeticiones). Puedes volver a tu plan.`);
     } catch (err) {
@@ -109,9 +126,11 @@
       // Molestia en plena sesión (ADR-021): el servidor decide con reglas; aquí se aplica la baja o se detiene (I-7).
       if (window.AxonSymptom) {
         AxonSymptom.render($('symptom-index'), { exerciseId, inSession: () => Boolean(window.AxonApp && AxonApp.current()),
-          current: () => (window.AxonApp ? AxonApp.current() : null),
+          current: () => (window.AxonApp ? AxonApp.current() : null), turn: true, assistant: me.assistant,
+          recent: () => (window.AxonApp ? AxonApp.recent() : []),
           onResult: (res) => {
-            symptomIds.push(res.report.id);
+            if (res.report) symptomIds.push(res.report.id);
+            if (res.turn) turnIds.push(res.turn.id);
             if (res.stop && window.AxonApp) AxonApp.stop();
             else if (res.action === 'demand_lowered' && window.AxonApp) AxonApp.adjust(res.adjustment);
           } });

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from .coach import numbers
+from .coach import MEDICAL, numbers
 from .llm import LLMError
 from .safety import normalize
 
@@ -30,6 +30,8 @@ def summarize(llm, profile: dict | None, suggestions: list[dict], exercise_names
     text = (out.get("text") or "").strip()
     if not text or len(text.split()) > 90:
         return {"text": None, "source": "rejected", "reason": "el resumen está vacío o es demasiado largo"}
+    if MEDICAL.search(normalize(text)):
+        return {"text": None, "source": "rejected", "reason": "el resumen nombra medicamentos o diagnósticos"}
     if not numbers(text) <= numbers(raw):
         return {"text": None, "source": "rejected", "reason": "el resumen trae cifras que no están en los datos"}
     return {"text": text, "source": "llm", "ms": out.get("ms")}

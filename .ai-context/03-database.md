@@ -1,6 +1,6 @@
 # 03 · Base de datos
 
-> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Motor: PostgreSQL · Entorno actual: **Staging** · Actualizado: 2026-10-18
 > Estado de implementación: modelo diseñado, sin migraciones todavía. En Staging solo hay pacientes ficticios ([ADR-010](04-decisions-adr.md)).
 
 ## Diagrama entidad-relación
@@ -161,7 +161,7 @@ erDiagram
 | `agent_decision` | `proposal` | jsonb | `{param, old, new, reason}` propuesto por el LLM |
 | `agent_decision` | `within_envelope` | boolean | Resultado de validar contra `safety_envelope` |
 | `agent_decision` | `outcome` | text | `applied`, `rejected`, `escalated_to_therapist`. Sin propuesta del agente no hay fila; una frase de alarma termina la sesión (`end_reason = 'pain_stop'`) y tampoco es una decisión del agente (ADR-016) |
-| `agent_decision` | `agent` | text | Quién propuso. Además de los agentes, `rules` cuando, ante una molestia, la baja la propone el motor de reglas porque el LLM no propuso una válida (ADR-021). En el código de hoy es `source` (`llm` o `rules`) |
+| `agent_decision` | `agent` | text | Quién propuso. Además de los agentes, `rules` cuando, ante una molestia, la baja la propone el motor de reglas porque el LLM no propuso una válida (ADR-021). En Staging se guarda como `clinical` o `rules` (ADR-025) |
 | `symptom_report` | `kind` / `action` | text | `kind`: `red_flag` o `discomfort`. `action`: `session_stopped`, `demand_lowered`, `paused` o `logged`. Dato de salud (ADR-021) |
 | `plan_exercise` | `rest_min_seconds` / `rest_max_seconds` | int | Descanso entre series recomendado, 10–180 s. Es una recomendación, no forma parte de `safety_envelope` (ADR-022) |
 | `clinical_report` | `reviewed_by` | uuid | Terapeuta que aprobó el borrador. Sin revisión, el reporte es borrador |
@@ -191,6 +191,8 @@ del repo y de Drive. Solo datos sintéticos o del equipo con consentimiento (ADR
 | `compensation_event` | `COMPENSATION_EVENT` | Agrega `side`, `value`, `peak` y `threshold`; `rep` es el índice de la repetición |
 | `clinical_report` | `CLINICAL_REPORT` | Una por sesión (`session_id` UNIQUE). `soap_draft` es JSON `{S, O, A, P}`; agrega `facts` (JSON con los datos que la nota puede citar, de `soap.facts`), `source` (`template` o `llm`) y `created_at`. `reviewed_by` y `reviewed_at` van juntos (CHECK): sin ellos es borrador. No guarda `fhir_bundle`: la Observation se genera al pedirla. Las bases anteriores ganan la tabla al arrancar (`CREATE TABLE IF NOT EXISTS`) |
 | `symptom_report` | `SYMPTOM_REPORT` (nueva; parte de lo que hoy sería `VOICE_TURN`) | Molestias que avisa el paciente: `patient_id`, `session_id` (se une al guardar la sesión, por id), `exercise_id`, `reported_at`, `kind`, `category` (`red_flag`, `pain`, `cramp`, `fatigue`, `stiffness`, `other`), `text` (≤ 200), `action`, `adjustment` (JSON `{param, old, new}` solo con `demand_lowered`) y `source` (`patient_form` o `voice_turn`). Dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan la tabla al arrancar |
+| `voice_turn` | `VOICE_TURN` | Un registro por turno de texto del paciente (ADR-025): `patient_id`, `session_id` (se une al guardar la sesión, por id), `exercise_id`, `created_at`, `speaker` (solo `patient`), `input` (`text`; `voice` queda para TD-105), `transcript` (1–200, ya filtrado de datos personales, ADR-026), `pain_score` (0–10; por ahora siempre vacío, TD-106), `reply` (≤ 300, la frase que vio el paciente), `reply_source` (`template` o `llm`), `action` (la de la molestia), `ai_provider`, `ai_model`, `ai_skipped`, `clinical_ms`, `coach_ms`, `total_ms`, `symptom_report_id` y `redactions` (cuántos datos personales se ocultaron; las bases con la tabla anterior ganan la columna al arrancar). A diferencia de PostgreSQL, guarda la respuesta y los datos de la IA en la misma fila. Dato de salud: Staging, seudónimo y consentimiento. Las bases anteriores ganan la tabla al arrancar |
+| `agent_decision` | `AGENT_DECISION` | Solo si hubo propuesta (del agente clínico o del motor de reglas): `patient_id`, `session_id`, `voice_turn_id`, `exercise_id`, `created_at`, `agent` (`clinical` o `rules`), `proposal` (JSON `{param, old, new, reason}`), `current` (JSON con los valores actuales usados), `within_envelope` (0 o 1), `outcome` (`applied`, `rejected`, `escalated_to_therapist`), `rationale` (≤ 300, la nota del motor de reglas), `llm_outcome` y `llm_proposal` (lo que dijo el LLM cuando decidieron las reglas), `ai_provider`, `ai_model` y `llm_ms`. CHECK: `outcome = 'applied'` exige `within_envelope = 1`. No guarda el texto crudo del LLM. Las bases anteriores ganan la tabla al arrancar |
 
 Reglas que aplica la API:
 
@@ -209,6 +211,12 @@ Reglas que aplica la API:
 - Una molestia solo se registra con consentimiento (403 sin él). Si trae un ejercicio, tiene que estar en el plan
   activo (409). Su decisión es determinista y nunca sale del sobre.
 - `symptom_report_ids` de otro paciente o ya unidos a una sesión se ignoran sin error.
+- `voice_turn_ids` funciona igual: une los turnos y sus decisiones a la sesión; los de otro paciente o ya unidos se
+  ignoran sin error (ADR-025).
+- Un turno de alarma guarda `voice_turn` y `symptom_report`, pero no `agent_decision`: la alarma no es una decisión del
+  agente.
+- El texto libre de `symptom_report.text` y `voice_turn.transcript` se guarda filtrado de datos personales, igual que se
+  envía al LLM; las reglas de seguridad leyeron el original (ADR-026).
 - Un código de afiliación nuevo pone `consent_given = 0` (TD-85).
 
 ## Almacenamiento en el navegador

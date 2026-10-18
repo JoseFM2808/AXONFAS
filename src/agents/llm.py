@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -18,18 +19,26 @@ class LLMError(RuntimeError):
     pass
 
 
+# Servicios (por URL) que ya rechazaron response_format: no se vuelve a mandar y cada llamada es una sola petición.
+_NO_JSON_MODE: set[str] = set()
+_NO_JSON_LOCK = threading.Lock()
+
+
 class OpenAICompatible:
     """Chat con un servidor compatible con OpenAI (vLLM). `json_mode` pide una respuesta JSON válida."""
 
-    def __init__(self, url: str | None = None, key: str | None = None, model: str | None = None, timeout: float = 30.0):
+    def __init__(self, url: str | None = None, key: str | None = None, model: str | None = None, timeout: float = 30.0,
+                 retries_429: int | None = None):
         self.url = (url or os.environ.get("AXONFAS_LLM_URL") or "http://127.0.0.1:8000/v1").rstrip("/")
         self.key = key if key is not None else os.environ.get("AXONFAS_LLM_KEY", "")
         self.model = model or os.environ.get("AXONFAS_LLM_MODEL", "axonfas-llm")
         self.timeout = timeout
+        if retries_429 is not None:                           # el turno del paciente no espera: 429 = sin respuesta (ADR-025)
+            self.RETRIES_429 = retries_429
 
     def chat(self, messages: list[dict], *, json_mode: bool = False, max_tokens: int = 256, temperature: float = 0.2) -> dict:
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
-        if json_mode:
+        if json_mode and self.url not in _NO_JSON_MODE:
             body["response_format"] = {"type": "json_object"}
         headers = {"Content-Type": "application/json"}
         if self.key:
@@ -45,6 +54,8 @@ class OpenAICompatible:
                 # parse_json() rescata el JSON del texto.
                 if "response_format" in body and err.code in (400, 422):
                     body.pop("response_format")
+                    with _NO_JSON_LOCK:
+                        _NO_JSON_MODE.add(self.url)
                     continue
                 # Token Factory limita por clave (compartida por el equipo): ante 429 se espera y se reintenta poco.
                 if err.code == 429 and busy < self.RETRIES_429:

@@ -15,6 +15,9 @@ PAUSE_TEXT = "Hacemos una pausa y se lo avisamos a tu fisioterapeuta. Descansa; 
 PARAM_TEXT = {"rom_target": "baja solo hasta {new} grados", "reps": "hagamos {new} repeticiones más",
               "rest_seconds": "descansa {new} segundos entre series"}
 NUM = re.compile(r"\d+(?:[.,]\d+)?")
+# Medicamentos y diagnósticos: la frase de AXONFAS no receta ni diagnostica. Lista cerrada sobre el texto sin tildes (ADR-004).
+MEDICAL = re.compile(r"ibuprofeno|paracetamol|naproxeno|diclofenaco|aspirina|analgesic|antiinflamatori|pastilla|medicament|crema|pomada|"
+                     r"infiltracion|diagnostic|tendinitis|desgarro|fractura|esguince|hernia|artrosis|artritis|menisco|ligamento roto|lesion")
 
 
 def template(decision: dict) -> str:
@@ -117,5 +120,6 @@ def reply(llm, utterance: str, decision: dict) -> dict:
     except LLMError:
         return {"text": base, "source": "template", "llm_ms": None}
     text = (out["text"] or "").strip().strip("«»\"")
-    ok = bool(text) and not text.startswith("{") and len(text.split()) <= 30 and numbers(text) <= numbers(base)
+    ok = (bool(text) and not text.startswith("{") and len(text.split()) <= 30 and numbers(text) <= numbers(base)
+          and not MEDICAL.search(normalize(text)))
     return {"text": text if ok else base, "source": "llm" if ok else "template", "llm_ms": out["ms"]}

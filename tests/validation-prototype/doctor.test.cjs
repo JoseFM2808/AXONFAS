@@ -69,3 +69,32 @@ test('el panel muestra y anuncia las molestias del paciente (ADR-021)', () => {
 test('el aviso de alarma no repite "señal de alarma" dos veces', () => {
   assert.ok(!js.includes('`Señal de alarma: ${what}'));
 });
+
+// ---------------------------------------------------------------- decisiones del agente (ADR-025)
+test('el panel tiene la sección «Decisiones del agente» con nombre accesible y recibe el turno en vivo', () => {
+  assert.match(html, /<section[^>]*aria-labelledby="p-decisions-title"[^>]*>\s*<h2 id="p-decisions-title">Decisiones del agente<\/h2>/);
+  assert.match(html, /id="p-decisions"/);
+  assert.match(js, /msg\.kind === 'agent_turn'/);
+  assert.ok(js.includes('renderDecisions(d)'));
+});
+
+test('el modelo solo se nombra cuando propuso el agente clínico; si decidieron las reglas se dice así (TD-34)', () => {
+  const withModel = js.split('\n').filter((l) => l.includes('ai_model'));
+  assert.ok(withModel.length > 0 && withModel.every((l) => l.includes("d.agent === 'clinical'")), 'ai_model solo en la rama del agente clínico');
+  assert.ok(js.includes('Propuso el motor de reglas'));
+  assert.ok(js.includes('sin cambio de dosis; respondieron las reglas'));
+  const live = js.split('\n').filter((l) => l.includes('msg.model'));
+  assert.ok(live.length > 0 && live.every((l) => l.includes("msg.decided_by === 'llm'")), 'el modelo del aviso en vivo solo si lo decidió la IA');
+  assert.ok(js.includes('d.ai_provider') && !/Token Factory/.test(js), 'el proveedor sale de los datos, no se escribe a mano');
+});
+
+test('el resultado de la decisión se dice con texto y no solo con color, y lo escrito por el paciente va como texto', () => {
+  assert.ok(js.includes("'Aplicado'") && js.includes("'Escalado'") && js.includes("'Rechazado'"));
+  const render = js.split('function renderDecisions')[1].split('/** Aviso en vivo')[0];
+  assert.ok(!render.includes('innerHTML'));
+});
+
+test('el panel ya no atribuye la IA a la GPU (TD-34)', () => {
+  assert.ok(!/GPU AMD esté conectada|modelo en la GPU|IA en la GPU AMD/.test(js + html));
+  assert.ok(js.includes('Pidiendo el resumen al modelo de ${state.aiProvider'));
+});

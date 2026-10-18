@@ -250,6 +250,7 @@
         + `(umbral ${e.threshold}°) · severidad ${e.severity}${e.alert_latency_ms != null ? ` · ${e.alert_latency_ms} ms` : ''}`));
     });
     renderSymptoms(d);
+    renderDecisions(d);
     renderTeach(d.plan);
     renderProfile(d);
     renderSuggestions(d);
@@ -279,6 +280,53 @@
       const text = `${fmtDate(s.reported_at)} · ${ex ? ex.name : 'sin ejercicio'} · ${SYMPTOM_CATEGORY[s.category] || s.category}`
         + `${s.text ? ` · «${s.text}»` : ''} · ${symptomAction(s)}`;
       row.append(el('span', null, text), el('span', `tag ${s.kind === 'red_flag' ? 'bad' : 'warn'}`, s.kind === 'red_flag' ? 'Alarma' : 'Molestia'));
+      box.appendChild(row);
+    });
+  }
+
+  // ------------------------------------------------------------------ decisiones del agente (ADR-025)
+  // Lo que escribió el paciente es texto libre: solo textContent. El modelo y el proveedor salen de los datos guardados y
+  // solo se nombran cuando el agente clínico propuso; si decidieron las reglas, se dice así.
+  const DECISION_OUTCOME = { applied: ['ok', 'Aplicado'], escalated_to_therapist: ['warn', 'Escalado'], rejected: ['bad', 'Rechazado'] };
+  const WHY_NO_AI = { red_flag: 'la alarma se decide sin IA', guided: 'ejercicio sin sobre de seguridad', no_provider: 'sin IA configurada',
+    unavailable: 'la IA no estaba disponible', rate_limited: 'límite de uso de la IA', busy: 'la IA estaba ocupada' };
+  const secondsText = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+
+  function proposalText(p) {
+    if (!p) return '';
+    const unit = PARAM_UNIT[p.param] || '';
+    const verb = p.new < p.old ? 'bajar' : p.new > p.old ? 'subir' : 'mantener';
+    return `${verb} ${PARAM_NAME[p.param] || p.param} de ${p.old}${unit} a ${p.new}${unit}`;
+  }
+
+  function decisionWho(d) {
+    if (d.agent === 'clinical') return `Propuso ${d.ai_model || 'el modelo'} (${d.ai_provider || 'IA de AMD'}${d.llm_ms != null ? `, ${secondsText(d.llm_ms)}` : ''})`;
+    const why = d.llm_outcome === 'timeout' ? ' (la IA no respondió a tiempo)' : d.llm_outcome === 'llm_error' ? ' (la IA no respondió)'
+      : d.llm_proposal ? ` (la IA propuso ${proposalText(d.llm_proposal)} y no se aplicó)` : '';
+    return `Propuso el motor de reglas${why}`;
+  }
+
+  function renderDecisions(d) {
+    const box = $('p-decisions');
+    box.replaceChildren();
+    const decisions = d.decisions || [];
+    const quiet = (d.turns || []).filter((t) => !t.has_decision && (t.action === 'paused' || t.action === 'session_stopped'));
+    if (!decisions.length && !quiet.length) box.appendChild(el('p', 'muted', 'Sin decisiones del agente todavía.'));
+    decisions.slice(0, 12).forEach((x) => {
+      const ex = C.get(x.exercise_id);
+      const [tone, label] = DECISION_OUTCOME[x.outcome] || ['warn', x.outcome];
+      const row = el('div', 'row-between');
+      const body = el('span', null, `${fmtDate(x.created_at)} · ${ex ? ex.name : 'sin ejercicio'} · «${x.turn.transcript}» · ${proposalText(x.proposal)}`
+        + `${x.rationale ? ` · ${x.rationale}` : ''} · ${decisionWho(x)}`);
+      row.append(body, el('span', `tag ${tone}`, label));
+      box.appendChild(row);
+    });
+    quiet.slice(0, 12).forEach((t) => {
+      const ex = C.get(t.exercise_id);
+      const row = el('div', 'row-between');
+      const why = WHY_NO_AI[t.ai_skipped] ? `; ${WHY_NO_AI[t.ai_skipped]}` : '';
+      row.append(el('span', null, `${fmtDate(t.created_at)} · ${ex ? ex.name : 'sin ejercicio'} · «${t.transcript}» · sin cambio de dosis; respondieron las reglas${why}`),
+        el('span', `tag ${t.action === 'session_stopped' ? 'bad' : 'warn'}`, t.action === 'session_stopped' ? 'Alarma' : 'Pausa'));
       box.appendChild(row);
     });
   }
@@ -332,7 +380,7 @@
         ' No es un registro clínico hasta que lo firmes. S y O salen de los datos guardados de la sesión.');
     }
     if (final) $('soap-source').textContent = '';
-    else if (r.source === 'llm') $('soap-source').textContent = 'La valoración y el plan los propuso la IA en la GPU AMD; las cifras se comprobaron contra los datos. Revísalos antes de firmar.';
+    else if (r.source === 'llm') $('soap-source').textContent = 'La valoración y el plan los propuso la IA de AMD; las cifras se comprobaron contra los datos. Revísalos antes de firmar.';
     else $('soap-source').textContent = 'Redactado con una plantilla a partir de los datos de la sesión (sin IA).';
     const body = $('soap-body');
     body.replaceChildren();
@@ -453,13 +501,17 @@
       actionLabel: 'Revisar en el plan',
       onAction: (s) => openPlanEditor(s.action),
     });
-    $('p-ai-text').textContent = 'Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba salen de reglas y de los datos del paciente.';
+    $('p-ai-text').textContent = 'Resumen con IA: disponible cuando la IA de AMD esté conectada. Las sugerencias de arriba salen de reglas y de los datos del paciente.';
     checkAi();
   }
 
   async function checkAi() {
     if (state.ai == null) {
-      try { state.ai = (await A.call('therapist', 'GET', '/api/ai/status')).available; } catch { state.ai = false; }
+      try {
+        const st = await A.call('therapist', 'GET', '/api/ai/status');
+        state.ai = st.available;
+        state.aiProvider = st.provider || null;
+      } catch { state.ai = false; }
     }
     $('p-ai-btn').hidden = !state.ai || !state.suggestions.length;
   }
@@ -467,7 +519,7 @@
   $('p-ai-btn').addEventListener('click', async () => {
     const btn = $('p-ai-btn');
     btn.disabled = true;
-    $('p-ai-text').textContent = 'Pidiendo el resumen al modelo en la GPU…';
+    $('p-ai-text').textContent = `Pidiendo el resumen al modelo de ${state.aiProvider || 'AMD'}…`;
     try {
       const out = await A.call('therapist', 'POST', `/api/patients/${state.selected}/advice`, { suggestions: state.suggestions });
       $('p-ai-text').textContent = out.text
@@ -676,6 +728,12 @@
       announceSymptom(msg);
       loadDetail().catch(() => {});
       refreshPatients().catch(() => {});
+      return;
+    }
+    if (msg.kind === 'agent_turn') {
+      const who = msg.decided_by === 'llm' ? `propuesto por ${msg.model || 'el modelo'}` : 'decidieron las reglas';
+      pushFeed(`Turno del paciente: ${symptomAction({ action: msg.action })} (${who}).`);
+      loadDetail().catch(() => {});
       return;
     }
     if (msg.kind === 'session_saved') {

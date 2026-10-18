@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+from . import privacy
 from .coach import numbers
 from .llm import LLMError, parse_json
 
@@ -18,6 +19,18 @@ SYMPTOM = {"pain": "dolor o molestia", "cramp": "calambre", "fatigue": "cansanci
 SYMPTOM_ACTION = {"session_stopped": "se detuvo la sesión", "demand_lowered": "se bajó la exigencia",
                   "paused": "se hizo una pausa", "logged": "quedó registrada"}
 EVENT = {"trunk_flexion": "flexión de tronco", "knee_valgus": "valgo de rodilla"}
+
+
+AUTHOR = {"clinical": "agente clínico", "rules": "motor de reglas"}
+
+
+def _adjustment(decision: dict) -> dict:
+    """{param, old, new, por}: sin el motivo, que es texto libre del LLM y no debe sumar cifras citables (I-6)."""
+    p = decision.get("proposal") or {}
+    out = {k: p.get(k) for k in ("param", "old", "new")}
+    if decision.get("agent") in AUTHOR:
+        out["por"] = AUTHOR[decision["agent"]]
+    return out
 
 
 def facts(session: dict) -> dict:
@@ -35,7 +48,7 @@ def facts(session: dict) -> dict:
         "compensaciones": {EVENT.get(k, k): v for k, v in count.items()},
         "rom_medio_grados": session.get("rom_mean"),
         "dolor_reportado": bool(session.get("pain_reported")),
-        "ajustes_del_agente": [d.get("proposal") for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
+        "ajustes_del_agente": [_adjustment(d) for d in session.get("decisions") or [] if d.get("outcome") == "applied"],
         "lo_que_dijo_el_paciente": session.get("utterances") or [],
         # Sin horas: añadirían cifras citables a I-6. Los textos son lo que escribió el paciente.
         "molestias": [{"categoria": SYMPTOM.get(x.get("category"), "otra molestia"), "texto": x.get("text"),
@@ -62,10 +75,18 @@ def template(f: dict) -> dict:
         o += f" Flexión media de rodilla: {f['rom_medio_grados']}°."
     if f["ajustes_del_agente"]:
         o += " Ajustes aplicados dentro del sobre: " + "; ".join(
-            f"{a['param']} {a['old']} → {a['new']}" for a in f["ajustes_del_agente"]) + "."
+            f"{a['param']} {a['old']} → {a['new']}" + (f" ({a['por']})" if a.get("por") else "")
+            for a in f["ajustes_del_agente"]) + "."
     a = "Pendiente de valoración del fisioterapeuta."
     p = "Revisar la técnica y decidir si se mantiene la dosis."
     return {"S": s, "O": o, "A": a, "P": p}
+
+
+def _private(f: dict) -> dict:
+    """Los hechos tal como salen hacia el LLM: el texto libre del paciente, sin datos personales (ADR-026). Las filas nuevas
+    ya se guardan filtradas; esto cubre las anteriores. La plantilla de la nota no cambia."""
+    return {**f, "lo_que_dijo_el_paciente": [privacy.redact(t)[0] for t in f["lo_que_dijo_el_paciente"]],
+            "molestias": [{**m, "texto": privacy.redact(m["texto"])[0] if m.get("texto") else m.get("texto")} for m in f["molestias"]]}
 
 
 def draft(llm, session: dict) -> dict:
@@ -79,7 +100,7 @@ def draft(llm, session: dict) -> dict:
                                           "la Valoración (A) y el Plan (P) de una nota SOAP, en una o dos frases cada una. "
                                           "No diagnostiques. No uses ningún número que no esté en los datos. Responde solo "
                                           'con JSON: {"A": "...", "P": "..."}'},
-            {"role": "user", "content": json.dumps(f, ensure_ascii=False)},
+            {"role": "user", "content": json.dumps(_private(f), ensure_ascii=False)},
         ]
         try:
             out = parse_json(llm.chat(messages, json_mode=True, max_tokens=220)["text"]) or {}

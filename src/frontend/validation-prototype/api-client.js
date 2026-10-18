@@ -21,26 +21,37 @@
     } catch { /* sin almacenamiento: la sesión dura lo que la pestaña */ }
   }
 
-  async function call(role, method, path, body) {
+  /** opts.timeoutMs corta la espera (AbortController): el error trae status 0 y timeout true. Sin opts, espera lo normal. */
+  async function call(role, method, path, body, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
     const account = role ? load(role) : null;
     if (account && account.token) headers.Authorization = `Bearer ${account.token}`;
-    let res;
+    const controller = opts.timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : null;
     try {
-      res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
-    } catch {
-      const err = new Error('No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.');
-      err.status = 0;
-      throw err;
+      let res;
+      try {
+        res = await fetch(url(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store',
+          signal: controller ? controller.signal : undefined });
+      } catch {
+        const timedOut = Boolean(controller && controller.signal.aborted);
+        const err = new Error(timedOut ? 'No llegó la respuesta a tiempo.'
+          : 'No hay conexión con el servidor de AXONFAS. Revisa tu internet o, en esta PC, que esté corriendo lanzar-prototipo.cmd.');
+        err.status = 0;
+        err.timeout = timedOut;
+        throw err;
+      }
+      let data = null;
+      try { data = await res.json(); } catch { /* sin cuerpo, o cortado por el tiempo límite */ }
+      if (!res.ok) {
+        const err = new Error((data && data.error) || `Error ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    let data = null;
-    try { data = await res.json(); } catch { /* sin cuerpo */ }
-    if (!res.ok) {
-      const err = new Error((data && data.error) || `Error ${res.status}`);
-      err.status = res.status;
-      throw err;
-    }
-    return data;
   }
 
   /** Lee un canal de eventos con reconexión automática. Devuelve { stop() }. */

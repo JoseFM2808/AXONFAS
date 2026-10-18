@@ -106,7 +106,7 @@
       <section class="panel-card stack" id="p-advice-card" aria-label="Sugerencias para el fisioterapeuta">
         <div id="p-suggest"></div>
         <div class="ai-summary" id="p-ai">
-          <p class="muted" id="p-ai-text">Resumen con IA: disponible cuando la GPU AMD esté conectada. Las sugerencias de arriba
+          <p class="muted" id="p-ai-text">Resumen con IA: disponible cuando la IA de AMD esté conectada. Las sugerencias de arriba
             salen de reglas y de los datos del paciente.</p>
           <button class="btn" id="p-ai-btn" type="button" hidden>Resumir con IA</button>
         </div>
@@ -192,6 +192,13 @@
             <h2 id="p-symptoms-title">Molestias reportadas</h2>
             <p class="status-line" id="p-symptom-alert" role="status" aria-live="polite"></p>
             <div class="feed" id="p-symptoms" style="max-height:none;"></div>
+          </section>
+          <section class="panel-card" aria-labelledby="p-decisions-title">
+            <h2 id="p-decisions-title">Decisiones del agente</h2>
+            <p class="muted">Cuando el paciente avisa de una molestia durante la sesión, las reglas de seguridad deciden primero y,
+              si la IA de AMD está conectada, el agente clínico propone una baja dentro de tu sobre. Aquí ves qué se propuso,
+              quién lo propuso y qué se aplicó. Nada sube la exigencia.</p>
+            <div class="feed" id="p-decisions" style="max-height:none;"></div>
           </section>
           <section class="panel-card">
             <h2>Compensaciones recientes</h2>

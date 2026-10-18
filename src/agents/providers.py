@@ -69,9 +69,10 @@ def _pick_model(cfg: dict, timeout: float) -> str:
 class MeteredLLM:
     """El cliente real más el contador de uso. `purpose` agrupa el uso (clinical, coach, soap, advice, admin-test…)."""
 
-    def __init__(self, inner: OpenAICompatible, provider: str, purpose: str = "general"):
+    def __init__(self, inner: OpenAICompatible, provider: str, purpose: str = "general", label: str | None = None):
         self.inner, self.provider, self.purpose = inner, provider, purpose
         self.model = inner.model
+        self.label = label or provider                        # lo que la pantalla dice del proveedor (TD-34)
 
     def chat(self, messages: list[dict], **kwargs) -> dict:
         try:
@@ -93,13 +94,14 @@ class MeteredLLM:
         return out
 
 
-def client(purpose: str = "general", timeout: float = 30.0) -> MeteredLLM | None:
-    """Cliente listo para usar, o None si no hay proveedor configurado."""
+def client(purpose: str = "general", timeout: float = 30.0, retries_429: int | None = None) -> MeteredLLM | None:
+    """Cliente listo para usar, o None si no hay proveedor configurado. `retries_429=0` no espera ante un límite de uso."""
     cfg = config()
     if not cfg:
         return None
     model = _pick_model(cfg, timeout)
-    return MeteredLLM(OpenAICompatible(url=cfg["url"], key=cfg["key"], model=model, timeout=timeout), cfg["name"], purpose)
+    return MeteredLLM(OpenAICompatible(url=cfg["url"], key=cfg["key"], model=model, timeout=timeout, retries_429=retries_429),
+                      cfg["name"], purpose, cfg["label"])
 
 
 def status(timeout: float = 5.0) -> dict:

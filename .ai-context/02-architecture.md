@@ -1,6 +1,6 @@
 # 02 · Arquitectura
 
-> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-17
+> Proyecto: **AXONFAS** · Entorno actual: **Staging** · Actualizado: 2026-10-18
 > Estado de implementación: en `src/` hay el prototipo de validación (con cuentas de demostración, vista en vivo, nota
 > SOAP y export FHIR en la red local, sección "Staging local"), los agentes y la pila de la GPU listos para correr
 > (ADR-016), el aviso de molestias y el descanso recomendado (ADR-021/019) y el generador del panel de contexto. Falta lo que corre en la GPU (TD-04), el lifter 3D (TD-05) y el
@@ -135,7 +135,7 @@ Estructura de `_Plantilla Proyecto IA`. Cada componente del diagrama tiene una c
 | `tests/agents/` | Tests de los agentes sin GPU: alarmas, sobre (límites del fisioterapeuta y regla de dirección tras una molestia), traducción del sobre de Staging, clasificación de molestias, reducción determinista y respaldo del motor de reglas, propuestas rotas, números inventados (en cifras y en letras), nota SOAP y la conexión HTTP contra servidores de mentira con la forma de vLLM y del servidor de voz |
 | `src/frontend/context-panel/` | Generador del panel de contexto: `build_panel.py` (solo biblioteca estándar) convierte estas seis pestañas en una página HTML con `template.html` (tema claro y oscuro; tablas con borde y cabecera de contraste ≥ 3:1 y filas alternadas, TD-60). La salida va a `dist/` (no se versiona) y se publica como artifact |
 | `src/backend/` | Hoy: `staging_api.py`, la API de Staging (cuentas de demostración, planes, sesiones, indicadores, canal en vivo y nota SOAP con borrador y firma; ADR-012/013, TD-09); `fhir.py`, la `Observation` FHIR R4 de cada sesión (función pura, sin estado; TD-10); `gpu/`, lo que corre en la MI300X (ADR-016): `bootstrap.sh` (prepara el contenedor `rocm` y arranca vLLM y la voz), `run.sh`, `voice_server.py` (Whisper y Kokoro en PyTorch sobre ROCm), `smoke.py` (prueba de humo) y `bench.py` (sesiones concurrentes); `cloud/axonfas-cloud.ps1`, el ciclo del droplet con `doctl`. Planificado: gateway FastAPI + WebSocket, servicio de pose (lifter 3D), motor biomecánico de reglas, servicios STT/TTS, acceso a PostgreSQL y el PDF de la nota (TD-84) |
-| `src/agents/` | Los tres agentes LLM y sus reglas deterministas, solo biblioteca estándar (ADR-016): `safety.py` (frases de alarma, validación contra el sobre, regla de dirección tras una molestia, `classify_symptom`, `reduce_demand` y `symptom_record` (ADR-021) y `agent_envelope`, que traduce el sobre de Staging), `clinical.py`, `coach.py`, `soap.py`, `turn.py` (turno de voz completo y demo con `--fake`), `llm.py` (cliente de vLLM compatible con OpenAI y LLM de mentira) y `voice.py` (cliente del servidor de voz), `advisor.py` (resumen con IA de las sugerencias para el fisioterapeuta, con controles de cifras y ejercicios; ADR-017), `providers.py` (proveedor de IA de AMD: Token Factory o vLLM propio, con contador de uso; ADR-018) |
+| `src/agents/` | Los tres agentes LLM y sus reglas deterministas, solo biblioteca estándar (ADR-016): `safety.py` (frases de alarma, validación contra el sobre, regla de dirección tras una molestia, `classify_symptom`, `reduce_demand` y `symptom_record` (ADR-021) y `agent_envelope`, que traduce el sobre de Staging), `clinical.py`, `coach.py`, `soap.py`, `turn.py` (turno de voz completo y demo con `--fake`; `run_text_turn`, el turno de texto del paciente con tiempo límite, ADR-025), `llm.py` (cliente de vLLM compatible con OpenAI y LLM de mentira) y `voice.py` (cliente del servidor de voz), `advisor.py` (resumen con IA de las sugerencias para el fisioterapeuta, con controles de cifras y ejercicios; ADR-017), `providers.py` (proveedor de IA de AMD: Token Factory o vLLM propio, con contador de uso; ADR-018), `privacy.py` (filtro determinista de datos personales antes de cualquier LLM; ADR-026) |
 | `tests/` | Pruebas del motor de reglas y del sobre de seguridad, benchmark de latencia y concurrencia, validación FHIR |
 | `config/` | Plantillas de entorno sin valores: `config/.env.staging.example` y `config/.env.prod.example` |
 | `data/` | Solo datos sintéticos o del equipo con consentimiento (`raw/`, `processed/`, `vector_store/`). Nunca se versiona |
@@ -203,6 +203,13 @@ flowchart LR
 - **IA:** Token Factory expone `https://developer.amd.com.cn/radeon/api/v1` (compatible con OpenAI). La clave es una
   por equipo con límites por clave, así que `llm.py` reintenta dos veces ante 429 (respeta `Retry-After`, máximo 5 s) y
   `providers.py` nunca elige solo un modelo que no conversa (OCR, embeddings). Modelo sugerido: `DeepSeek-V4-Flash`.
+  El turno del paciente (`POST /api/me/turn`, ADR-025) no espera ante un 429 (`retries_429=0`): corre en un grupo de 4
+  hilos con 18 s en total, 12 s para el agente clínico y 5 s para el conversacional (solo si el clínico tardó 6 s o
+  menos), ajustables con `AXONFAS_TURN_*`; lo que no llega a tiempo lo decide el motor de reglas. El cupo por paciente y
+  por servidor vive en memoria (TD-108). Si el proveedor rechaza `response_format`, `llm.py` lo recuerda y no lo vuelve a
+  mandar. `serve.py` precalienta el estado de la IA (`warm_ai`) y, ya caliente, se refresca en segundo plano. La latencia
+  real se mide con `py -m agents.turn --measure N` (no imprime la clave ni la dirección). Antes de cualquier LLM,
+  `agents/privacy.py` oculta los datos personales del texto (ADR-026).
 - **Configuración:** `src/backend/settings.py` lee variables de entorno y, en una PC, `~/.axonfas/axonfas.env`.
   Plantillas en `config/.env.web.example` (servidor) y `config/.env.vercel.example` (web). Los secretos nunca van al
   repo.
